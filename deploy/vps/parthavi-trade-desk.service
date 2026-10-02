@@ -1,0 +1,21 @@
+[Unit]
+Description=PARTHAVI TRADE DESK PRO
+After=network.target
+
+[Service]
+Type=simple
+User=parthavi
+WorkingDirectory=/opt/parthavi/app
+Environment=NODE_ENV=production
+EnvironmentFile=/opt/parthavi/app/.env
+ExecStart=/usr/bin/node /opt/parthavi/app/server.js
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/parthavi/app
+
+[Install]
+WantedBy=multi-user.target
