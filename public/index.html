@@ -46,7 +46,13 @@
 </div>
 
 <div>
-<div class="panel"><h2>Angel One Account</h2><div class="cardgrid">
+<div class="panel"><h2>Angel One Account</h2>
+<div class="status">
+<input id="totp" inputmode="numeric" maxlength="6" placeholder="Angel One TOTP (6 digits)" style="flex:1;min-width:180px">
+<button class="btn secondary" onclick="brokerConnect()">Connect Angel One</button>
+<button class="btn secondary" onclick="brokerLogout()">Disconnect</button>
+</div>
+<div class="cardgrid">
 <div class="mini"><div class="k">Available cash</div><div class="v" id="cash">—</div></div><div class="mini"><div class="k">Net</div><div class="v" id="net">—</div></div><div class="mini"><div class="k">Used margin</div><div class="v" id="margin">—</div></div><div class="mini"><div class="k">Today P&L</div><div class="v" id="pnl">—</div></div>
 </div></div>
 <div class="panel" style="margin-top:14px"><h2>Final Trade Blueprint</h2><div class="row"><span>Direction</span><b id="dir">NO TRADE</b></div><div class="row"><span>Entry</span><b id="entry">—</b></div><div class="row"><span>Stop Loss</span><b id="sl">—</b></div><div class="row"><span>T1 / T2</span><b id="tg">—</b></div><div class="row"><span>R:R</span><b id="rr">—</b></div><button class="btn danger" style="width:100%;margin-top:12px" onclick="orderBlocked()">BUY / SELL — SAFETY LOCK</button></div>
@@ -64,6 +70,19 @@ function setTF(x){active=x;$('tf').textContent=x;document.querySelectorAll('.tab
 function contract(){ $('contract').textContent=$('ex').value+' • '+$('under').value.toUpperCase()+' • '+$('strike').value+' '+$('otype').value; }
 ['ex','seg','under','expiry','otype','strike'].forEach(id=>$(id).addEventListener('input',contract));
 async function get(u){try{let r=await fetch(u);return r.ok?await r.json():null}catch(e){return null}}
+async function brokerConnect(){
+  const totp=$('totp').value.replace(/\D/g,'');
+  if(totp.length!==6){addAlert('Angel One connection','Enter the current 6-digit TOTP.','warn');return}
+  try{
+    const r=await fetch('/api/broker/connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({totp})});
+    const d=await r.json();
+    if(d.connected){addAlert('Angel One connected','Broker session established for '+d.clientCode+'.','good');$('totp').value='';refreshAll()}
+    else addAlert('Angel One connection failed',d.error||'Broker connection failed.','warn');
+  }catch(e){addAlert('Angel One connection failed','Backend connection error.','warn')}
+}
+async function brokerLogout(){
+  try{await fetch('/api/broker/logout',{method:'POST'});addAlert('Angel One disconnected','Session cleared from server memory.','good');refreshAll()}catch(e){}
+}
 async function refreshAll(){
  const h=await get('/api/health'); if(h){$('health').textContent='● '+(h.ok?'Backend online':'Backend locked');$('health').className='pill '+(h.ok?'':'dangertext')} else {$('health').textContent='● Backend unreachable'}
  const a=await get('/api/account'); if(a&&a.connected){$('cash').textContent='₹'+a.cash.toLocaleString('en-IN');$('net').textContent='₹'+a.net.toLocaleString('en-IN');$('margin').textContent='₹'+a.usedMargin.toLocaleString('en-IN');$('pnl').textContent='₹'+a.dayPnl.toLocaleString('en-IN');$('gate').textContent='Broker session verified. Order gate still requires risk checks + final user confirmation.';$('gate').className='gate ok'}
