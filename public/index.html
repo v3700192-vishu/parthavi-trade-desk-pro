@@ -9,12 +9,54 @@
 .wrap{max-width:1450px;margin:auto;padding:18px}.top{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:14px}.brand{display:flex;align-items:center;gap:12px}.logo{width:48px;height:48px;border:1px solid #6043a0;border-radius:15px;display:grid;place-items:center;background:linear-gradient(135deg,#f0d37a,#9d70ff);color:#0b0b15;font-weight:900}.brand h1{font-size:20px;margin:0}.brand p{margin:4px 0 0;color:var(--muted);font-size:12px}.pill{padding:8px 12px;border:1px solid var(--line);border-radius:999px;background:#11152a}.grid{display:grid;grid-template-columns:1.5fr .9fr;gap:14px}.panel{background:linear-gradient(180deg,#111427ee,#0e1120ee);border:1px solid var(--line);border-radius:18px;padding:14px;box-shadow:0 15px 45px #0008}.panel h2{font-size:14px;margin:0 0 12px}.controls{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}.controls>*{width:100%;background:#0b0e1a;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:9px}.btn{background:#6f49c9;color:#fff}.btn.secondary{background:#202542}.btn.danger{background:#8d2431}.status{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}.cardgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.mini{padding:11px;border:1px solid var(--line);border-radius:13px;background:#0d1020}.k{color:var(--muted);font-size:11px}.v{font-size:18px;font-weight:800;margin-top:4px}.v.bull{color:var(--bull)}.v.bear{color:var(--bear)}.v.warn{color:var(--warn)}.chart{height:420px;border:1px solid var(--line);border-radius:14px;background:#090c17;position:relative;overflow:hidden}.chart canvas{width:100%;height:100%}.chartbar{position:absolute;top:10px;left:10px;right:10px;display:flex;justify-content:space-between;pointer-events:none}.tabs{display:flex;gap:6px;pointer-events:auto}.tab{padding:7px 10px;border-radius:9px;border:1px solid var(--line);background:#111528;color:var(--muted)}.tab.on{color:#fff;background:#28204a;border-color:#7356b0}.table{width:100%;border-collapse:collapse}.table th,.table td{text-align:left;padding:8px;border-bottom:1px solid var(--line);font-size:12px}.badge{display:inline-block;padding:5px 8px;border-radius:999px;border:1px solid var(--line);font-size:11px}.row{display:flex;justify-content:space-between;gap:12px;align-items:center}.alerts{max-height:220px;overflow:auto}.alert{padding:9px;border-bottom:1px solid var(--line)}.alert b{display:block}.muted{color:var(--muted)}.dangertext{color:var(--bear)}.goodtext{color:var(--good)}.warntext{color:var(--warn)}.footer{color:var(--muted);font-size:11px;text-align:center;margin:16px}.gate{padding:12px;border:1px solid #7f3340;border-radius:12px;background:#2a1219;color:#ffd8dc}.gate.ok{border-color:#356f58;background:#12251d;color:#d8ffe9}@media(max-width:1000px){.grid{grid-template-columns:1fr}.controls{grid-template-columns:repeat(3,1fr)}.cardgrid{grid-template-columns:repeat(2,1fr)}}@media(max-width:600px){.wrap{padding:10px}.controls{grid-template-columns:1fr 1fr}.cardgrid{grid-template-columns:1fr 1fr}.chart{height:330px}}
 
 .chart-shell{height:520px;min-height:280px;border:1px solid var(--line);border-radius:14px;background:#090c17;position:relative;overflow:hidden;display:flex;flex-direction:column}.chart-shell.compact{height:300px}.chart-shell.large{height:680px}.chart-shell.fullscreen{height:100vh!important;width:100vw;position:fixed;inset:0;z-index:9999;border-radius:0;background:#070812}.chart-toolbar{height:46px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border-bottom:1px solid var(--line);background:#0c1020;flex:none;z-index:4}.chart-tools{display:flex;align-items:center;gap:5px;flex-wrap:wrap}.chart-tool{padding:6px 9px;border:1px solid var(--line);border-radius:8px;background:#111528;color:var(--muted);font-size:12px}.chart-tool:hover{color:#fff;border-color:#5f638a}.chart-tool.on{color:#fff;background:#28204a;border-color:#7356b0}.chart-body{position:relative;flex:1;min-height:0}.tv-chart{position:absolute;inset:0}.fallback-chart{position:absolute;inset:0;width:100%;height:100%;display:none}.chart-shell.fallback .fallback-chart{display:block}.chart-resize{height:7px;position:absolute;left:0;right:0;bottom:0;cursor:ns-resize;background:transparent;z-index:5}.chart-resize:hover{background:#7356b0}.chart-badge{font-size:11px;color:var(--muted);white-space:nowrap}.chart-menu{position:absolute;right:8px;top:50px;z-index:8;display:none;min-width:190px;padding:8px;border:1px solid var(--line);border-radius:12px;background:#101427;box-shadow:0 12px 32px #000a}.chart-menu.open{display:block}.chart-menu button{display:block;width:100%;text-align:left;margin:2px 0;padding:8px;border-radius:8px;background:transparent;color:var(--text)}.chart-menu button:hover{background:#202542}.chart-shell.fullscreen .chart-resize{display:none}@media(max-width:600px){.chart-toolbar{height:auto;min-height:46px}.chart-shell{height:420px}.chart-shell.large{height:620px}.chart-tool{padding:6px 7px}.chart-badge{display:none}}
+
+/* PARTHAVI premium terminal skin */
+:root{--gold:#f5c451;--gold2:#fff0a5;--green:#25e58a;--red:#ff4d64;--amber:#ffc247;--glass:#0d1120cc;--glass2:#171b2fe8;--shadow:0 22px 60px rgba(0,0,0,.38)}
+body{background:radial-gradient(900px 500px at 5% -10%,rgba(180,140,255,.18),transparent 60%),radial-gradient(800px 520px at 95% 0%,rgba(245,196,81,.10),transparent 55%),linear-gradient(180deg,#070912 0%,#090b14 45%,#070912 100%)}
+body:before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.12;background-image:linear-gradient(rgba(255,255,255,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.05) 1px,transparent 1px);background-size:44px 44px;mask-image:linear-gradient(to bottom,black,transparent 78%)}
+.wrap{max-width:1540px;padding:16px 18px}.premium-top{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:14px 16px;margin-bottom:12px;background:linear-gradient(135deg,rgba(20,24,43,.96),rgba(9,12,22,.88));border:1px solid rgba(255,255,255,.08);border-radius:20px;box-shadow:var(--shadow);backdrop-filter:blur(18px)}
+.brand-premium{display:flex;align-items:center;gap:14px;min-width:0}.brand-mark{width:60px;height:60px;border-radius:18px;display:grid;place-items:center;background:linear-gradient(145deg,#2a213b,#0c101e);border:1px solid rgba(245,196,81,.55);box-shadow:inset 0 0 0 1px rgba(255,255,255,.05),0 12px 32px rgba(0,0,0,.35)}
+.brand-mark svg{width:44px;height:44px}.brand-name{font-weight:950;letter-spacing:.10em;font-size:24px;line-height:1;color:#fff}.brand-name .gold{color:var(--gold)}.brand-sub{margin-top:6px;color:#a7accb;font-size:11px;letter-spacing:.18em;text-transform:uppercase}.brand-by{margin-top:5px;color:#7f86a8;font-size:11px}.brand-by b{color:#d8dcef}
+.top-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}.live-chip{padding:9px 12px;border-radius:999px;border:1px solid rgba(37,229,138,.28);background:rgba(37,229,138,.08);color:#baffdd;font-size:12px;font-weight:700}.top-mini{padding:9px 11px;border-radius:10px;border:1px solid var(--line);background:#0d1120;color:#cbd0e9;font-size:12px}.nav-strip{display:flex;gap:8px;overflow:auto;padding:4px 2px 12px}.nav-item{white-space:nowrap;padding:9px 14px;border-radius:10px;border:1px solid rgba(255,255,255,.07);background:rgba(17,21,40,.72);color:#8f96b8;font-weight:700}.nav-item.active{color:#fff;border-color:rgba(245,196,81,.38);background:linear-gradient(180deg,rgba(120,81,189,.25),rgba(36,30,61,.68));box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}.market-strip{display:grid;grid-template-columns:repeat(5,1fr);gap:9px;margin-bottom:14px}.market-chip{padding:10px 12px;border-radius:13px;background:linear-gradient(180deg,rgba(18,22,40,.92),rgba(11,14,25,.92));border:1px solid rgba(255,255,255,.07)}.market-chip .mk{font-size:10px;color:#7d84a6;text-transform:uppercase;letter-spacing:.12em}.market-chip .mv{margin-top:3px;font-size:14px;font-weight:800}.market-chip .ms{margin-top:2px;font-size:10px;color:#71789a}.premium-panel{background:linear-gradient(180deg,rgba(17,20,39,.94),rgba(11,14,26,.94));border:1px solid rgba(255,255,255,.08);box-shadow:var(--shadow);backdrop-filter:blur(16px)}.section-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.section-tag{padding:6px 9px;border-radius:8px;background:rgba(245,196,81,.09);border:1px solid rgba(245,196,81,.24);color:#ffdd77;font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}.signal-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border-radius:12px;margin-bottom:12px;background:linear-gradient(90deg,rgba(31,35,58,.8),rgba(16,20,35,.72));border:1px solid rgba(255,255,255,.06)}.signal-title{font-size:12px;font-weight:800}.signal-note{font-size:10px;color:#7f86a8}.mini{background:linear-gradient(180deg,#111529,#0b0f1e);box-shadow:inset 0 1px 0 rgba(255,255,255,.025)}.btn{background:linear-gradient(135deg,#8a5be8,#6241af);box-shadow:0 8px 20px rgba(117,73,201,.25)}.btn.secondary{background:linear-gradient(180deg,#222845,#181d32)}.btn.danger{background:linear-gradient(135deg,#a52b40,#6e1727)}
+@media(max-width:900px){.market-strip{grid-template-columns:repeat(2,1fr)}.premium-top{align-items:flex-start;flex-direction:column}.top-actions{justify-content:flex-start}}
+@media(max-width:600px){.market-strip{grid-template-columns:1fr 1fr}.brand-name{font-size:20px}.brand-mark{width:54px;height:54px}}
 </style><script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
 <div class="wrap">
-<div class="top"><div class="brand"><div class="logo">PB</div><div><h1>PARTHAVI TRADE DESK PRO</h1><p>Live market intelligence • controlled execution</p></div></div><div class="pill" id="health">● Checking backend…</div></div>
-<div class="panel" style="margin-bottom:14px">
+<div class="premium-top">
+  <div class="brand-premium">
+    <div class="brand-mark" aria-label="Parthavi logo">
+      <svg viewBox="0 0 64 64" aria-hidden="true">
+        <defs><linearGradient id="g" x1="0" x2="1"><stop stop-color="#fff1a2"/><stop offset=".48" stop-color="#f5c451"/><stop offset="1" stop-color="#c88918"/></linearGradient></defs>
+        <path d="M11 48V12h19c10 0 17 5 17 14s-7 14-17 14H19" fill="none" stroke="url(#g)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M33 45l8-9 6 5 8-13" fill="none" stroke="#25e58a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M52 26h5v5" fill="none" stroke="#25e58a" stroke-width="3" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div>
+      <div class="brand-name"><span class="gold">PARTHAVI</span> <span>TRADE DESK</span></div>
+      <div class="brand-sub">Pro Market Intelligence • Options • Execution</div>
+      <div class="brand-by">Designed & powered by <b>PARTHAVI BELDAR</b></div>
+    </div>
+  </div>
+  <div class="top-actions">
+    <div class="live-chip" id="health">● Checking backend…</div>
+    <div class="top-mini">NSE / BSE</div>
+    <div class="top-mini">OPTIONS FOCUS</div>
+  </div>
+</div>
+<div class="nav-strip">
+  <div class="nav-item active">Dashboard</div><div class="nav-item">Charts</div><div class="nav-item">Option Chain</div><div class="nav-item">Positions</div><div class="nav-item">Orders</div><div class="nav-item">Risk Center</div>
+</div>
+<div class="market-strip">
+  <div class="market-chip"><div class="mk">NIFTY 50</div><div class="mv">—</div><div class="ms">Live feed pending</div></div>
+  <div class="market-chip"><div class="mk">BANK NIFTY</div><div class="mv">—</div><div class="ms">Live feed pending</div></div>
+  <div class="market-chip"><div class="mk">INDIA VIX</div><div class="mv">—</div><div class="ms">Risk gauge</div></div>
+  <div class="market-chip"><div class="mk">GIFT NIFTY</div><div class="mv">—</div><div class="ms">Global cue</div></div>
+  <div class="market-chip"><div class="mk">USD / INR</div><div class="mv">—</div><div class="ms">Macro cue</div></div>
+</div>
+<div class="panel premium-panel" style="margin-bottom:14px">
 <div class="controls">
 <select id="ex"><option>NSE</option><option>BSE</option></select>
 <select id="seg"><option>INDEX OPTIONS</option><option>STOCK OPTIONS</option><option>FUTURES</option><option>EQUITY</option></select>
@@ -34,7 +76,7 @@
 
 <div class="grid">
 <div>
-<div class="panel"><div class="row"><h2>Market Chart</h2><span class="badge" id="tf">15M</span></div>
+<div class="panel premium-panel"><div class="section-head"><h2>Market Chart</h2><span class="section-tag">ADVANCED TERMINAL</span></div><div class="row" style="margin-bottom:8px"><span class="muted">Live chart workspace • multi-timeframe analysis</span><span class="badge" id="tf">15M</span></div>
 <div class="chart-shell" id="chartShell">
   <div class="chart-toolbar">
     <div class="chart-tools">
@@ -60,7 +102,7 @@
   </div>
   <div class="chart-resize" id="chartResize" title="Drag to resize chart"></div>
 </div></div>
-<div class="panel" style="margin-top:14px"><h2>Automatic Decision Engine</h2><div class="cardgrid">
+<div class="panel premium-panel" style="margin-top:14px"><div class="section-head"><h2>Automatic Decision Engine</h2><span class="section-tag">1H → 15M → 5M</span></div><div class="signal-banner"><div><div class="signal-title">Signal engine is protected</div><div class="signal-note">Bullish / bearish / no-trade state changes are surfaced here.</div></div><span class="badge">RISK-FIRST</span></div><div class="cardgrid">
 <div class="mini"><div class="k">Prediction</div><div class="v" id="pred">NEUTRAL</div></div>
 <div class="mini"><div class="k">Confirmation</div><div class="v warn" id="conf">LOCKED</div></div>
 <div class="mini"><div class="k">Model confidence</div><div class="v" id="confidence">—</div></div>
@@ -69,11 +111,11 @@
 <p class="muted">*Historical/backtest metric only when enough verified samples exist; never a guarantee of future profit.</p>
 </div>
 
-<div class="panel" style="margin-top:14px"><h2>Indicators & Risk</h2><table class="table"><tbody id="inds"></tbody></table></div>
+<div class="panel premium-panel" style="margin-top:14px"><div class="section-head"><h2>Indicators & Risk</h2><span class="section-tag">AUTO SCAN</span></div><table class="table"><tbody id="inds"></tbody></table></div>
 </div>
 
 <div>
-<div class="panel"><h2>Angel One Account</h2>
+<div class="panel premium-panel"><div class="section-head"><h2>Angel One Account</h2><span class="section-tag">BROKER CONSOLE</span></div>
 <div class="status">
 <input id="totp" inputmode="numeric" maxlength="6" placeholder="Angel One TOTP (6 digits)" style="flex:1;min-width:180px">
 <button class="btn secondary" onclick="brokerConnect()">Connect Angel One</button>
@@ -82,9 +124,9 @@
 <div class="cardgrid">
 <div class="mini"><div class="k">Available cash</div><div class="v" id="cash">—</div></div><div class="mini"><div class="k">Net</div><div class="v" id="net">—</div></div><div class="mini"><div class="k">Used margin</div><div class="v" id="margin">—</div></div><div class="mini"><div class="k">Today P&L</div><div class="v" id="pnl">—</div></div>
 </div></div>
-<div class="panel" style="margin-top:14px"><h2>Final Trade Blueprint</h2><div class="row"><span>Direction</span><b id="dir">NO TRADE</b></div><div class="row"><span>Entry</span><b id="entry">—</b></div><div class="row"><span>Stop Loss</span><b id="sl">—</b></div><div class="row"><span>T1 / T2</span><b id="tg">—</b></div><div class="row"><span>R:R</span><b id="rr">—</b></div><button class="btn danger" style="width:100%;margin-top:12px" onclick="orderBlocked()">BUY / SELL — SAFETY LOCK</button></div>
-<div class="panel" style="margin-top:14px"><h2>Positions</h2><div id="pos" class="muted">No verified live positions.</div></div>
-<div class="panel" style="margin-top:14px"><h2>Alerts</h2><div class="alerts" id="alerts"></div></div>
+<div class="panel premium-panel" style="margin-top:14px"><div class="section-head"><h2>Final Trade Blueprint</h2><span class="section-tag">CONTROLLED EXECUTION</span></div><div class="row"><span>Direction</span><b id="dir">NO TRADE</b></div><div class="row"><span>Entry</span><b id="entry">—</b></div><div class="row"><span>Stop Loss</span><b id="sl">—</b></div><div class="row"><span>T1 / T2</span><b id="tg">—</b></div><div class="row"><span>R:R</span><b id="rr">—</b></div><button class="btn danger" style="width:100%;margin-top:12px" onclick="orderBlocked()">BUY / SELL — SAFETY LOCK</button></div>
+<div class="panel premium-panel" style="margin-top:14px"><div class="section-head"><h2>Positions</h2><span class="section-tag">LIVE BOOK</span></div><div id="pos" class="muted">No verified live positions.</div></div>
+<div class="panel premium-panel" style="margin-top:14px"><div class="section-head"><h2>Alerts</h2><span class="section-tag">NOTIFICATIONS</span></div><div class="alerts" id="alerts"></div></div>
 </div>
 </div>
 <div class="footer">PARTHAVI TRADE DESK PRO • NSE/BSE • Risk-first execution • Live values appear only after verified backend/broker connection.</div>
