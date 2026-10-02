@@ -419,7 +419,7 @@ async function fetchNews(){
       if(!r.ok)return [];
       const xml=await r.text(),items=[...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)];
       return items.slice(0,5).map(m=>{
-        const b=m[1],title=xmlDecode((b.match(/<title>([\\s\\S]*?)<\\/title>/)||[])[1]),link=xmlDecode((b.match(/<link>([\\s\\S]*?)<\\/link>/)||[])[1]),pub=xmlDecode((b.match(/<pubDate>([\\s\\S]*?)<\\/pubDate>/)||[])[1]);
+        const b=m[1],title=xmlDecode((b.match(/<title>([\s\S]*?)<\/title>/)||[])[1]),link=xmlDecode((b.match(/<link>([\s\S]*?)<\/link>/)||[])[1]),pub=xmlDecode((b.match(/<pubDate>([\s\S]*?)<\/pubDate>/)||[])[1]);
         return {title,link,publishedAt:pub||null};
       }).filter(x=>x.title);
     }catch(e){return []}
