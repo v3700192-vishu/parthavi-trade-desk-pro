@@ -21,8 +21,12 @@ const subscribedSockets=new Set();
 let analysisCache={key:"",at:0,data:null};
 let intelligenceCache={at:0,data:null};
 let optionCache={key:"",at:0,data:null};
+let runtimeStaticIpMatch=false;
+let runtimeStaticIpLastChecked=0;
+const connectAttempts=new Map();
 
 app.disable("x-powered-by");
+app.set("trust proxy",1);
 app.use(express.json({limit:"64kb"}));
 app.use((req,res,next)=>{
   res.setHeader("X-Content-Type-Options","nosniff");
@@ -36,20 +40,48 @@ app.use((req,res,next)=>{
 function brokerConfigured(){
   return !!(process.env.ANGELONE_API_KEY&&process.env.ANGELONE_CLIENT_CODE&&process.env.ANGELONE_PIN);
 }
+function istClock(){
+  const d=new Date(Date.now()+330*60000);
+  const day=d.getUTCDay(),mins=d.getUTCHours()*60+d.getUTCMinutes();
+  return {day,mins,weekday:day>=1&&day<=5};
+}
+function marketWindow(){
+  const x=istClock();
+  return {open:x.weekday&&x.mins>=555&&x.mins<=930,weekday:x.weekday,session:"09:15-15:30 IST"};
+}
+async function refreshRuntimeStaticIp(force=false){
+  if(!force&&runtimeStaticIpLastChecked&&Date.now()-runtimeStaticIpLastChecked<60000)return runtimeStaticIpMatch;
+  runtimeStaticIpLastChecked=Date.now();
+  try{
+    const r=await fetch("https://api.ipify.org?format=json",{signal:AbortSignal.timeout(4000)});
+    const ip=r.ok?(await r.json()).ip:null;
+    const registered=String(process.env.ANGELONE_REGISTERED_STATIC_IPS||"").split(",").map(x=>x.trim()).filter(Boolean);
+    runtimeStaticIpMatch=!!ip&&registered.includes(ip);
+  }catch(e){runtimeStaticIpMatch=false;}
+  return runtimeStaticIpMatch;
+}
 function gates(){
   return {
     orderExecutionEnabled:process.env.ORDER_EXECUTION_ENABLED==="true",
-    staticIpVerified:process.env.STATIC_IP_VERIFIED==="true",
+    staticIpVerified:process.env.STATIC_IP_VERIFIED==="true"&&runtimeStaticIpMatch,
     protectiveSlVerified:process.env.PROTECTIVE_SL_VERIFIED==="true",
     killSwitch:process.env.TRADING_KILL_SWITCH!=="false"
   };
 }
 function orderGate(){
-  const g=gates();
+  const g=gates(),m=marketWindow();
   return {
-    unlocked:g.orderExecutionEnabled&&g.staticIpVerified&&g.protectiveSlVerified&&!g.killSwitch,
+    unlocked:g.orderExecutionEnabled&&g.staticIpVerified&&g.protectiveSlVerified&&!g.killSwitch&&m.open,
+    marketOpen:m.open,
+    marketSession:m.session,
     ...g
   };
+}
+function connectRateLimit(req,res,next){
+  const key=req.ip||"unknown",now=Date.now(),win=5*60000,max=8;
+  const arr=(connectAttempts.get(key)||[]).filter(t=>now-t<win);
+  if(arr.length>=max)return res.status(429).json({connected:false,error:"Too many broker login attempts. Try again later."});
+  arr.push(now);connectAttempts.set(key,arr);next();
 }
 function localIp(){
   for(const list of Object.values(os.networkInterfaces())){
@@ -256,26 +288,29 @@ function frameSignal(c){
   const score=bull-bear;
   return {state:score>=4?"BULLISH":score<=-4?"BEARISH":"NEUTRAL",score,indicators:x};
 }
-function decision(frames){
+function decision(frames,livePrice=null){
   const states=frames.map(x=>x.state),bull=states.filter(x=>x==="BULLISH").length,bear=states.filter(x=>x==="BEARISH").length;
-  const last=frames[2],price=last?.price||null,a=last?.indicators?.ATR||0;
+  const last=frames[2],price=Number(livePrice)||last?.price||null,a=last?.indicators?.ATR||0;
   const confirmed=bull===3||bear===3;
   let direction="NO TRADE",confidence=50;
-  if(bull===3){direction="CALL";confidence=78+Math.min(10,last.score*2);}
-  else if(bear===3){direction="PUT";confidence=78+Math.min(10,Math.abs(last.score)*2);}
-  else confidence=50+Math.min(20,Math.abs((last?.score||0))*3);
+  if(bull===3){direction="CALL";confidence=78+Math.min(10,Math.max(0,last.score*2));}
+  else if(bear===3){direction="PUT";confidence=78+Math.min(10,Math.max(0,Math.abs(last.score)*2));}
+  else confidence=50+Math.min(20,Math.abs(last?.score||0)*3);
   const buffer=a?Math.max(a*0.7,price*0.002):price?price*0.002:null;
   const entry=price,sl=entry!=null&&buffer!=null?(direction==="CALL"?entry-buffer:direction==="PUT"?entry+buffer:null):null;
   const risk=entry!=null&&sl!=null?Math.abs(entry-sl):null;
   const t1=risk!=null?(direction==="CALL"?entry+risk*1.5:direction==="PUT"?entry-risk*1.5:null):null;
   const t2=risk!=null?(direction==="CALL"?entry+risk*2.5:direction==="PUT"?entry-risk*2.5:null):null;
-  return {direction,confirmation:confirmed?"CONFIRMED":"WAIT",confidence:confirmed?Math.min(confidence,94):confidence,entry,sl,t1,t2,rr:risk?2.5:"—",states,reason:confirmed?"All three timeframes align.":"1H/15M/5M are not aligned enough for a trade."};
+  const t3=risk!=null?(direction==="CALL"?entry+risk*3.5:direction==="PUT"?entry-risk*3.5:null):null;
+  const rr=risk?3.5:"—";
+  const align=states.join(" / ");
+  return {direction,confirmation:confirmed?"CONFIRMED":"WAIT",confidence:confirmed?Math.min(confidence,94):confidence,entry,sl,t1,t2,t3,rr,states,reason:confirmed?"1H / 15M / 5M aligned: "+align+".":"1H / 15M / 5M are not aligned enough: "+align+"."};
 }
 
 /* ---------- API ---------- */
 app.get("/api/health",(req,res)=>res.json({ok:true,service:"parthavi-trade-desk-pro",liveBrokerConfigured:brokerConfigured(),brokerSession:!!session?.jwtToken,gates:orderGate(),serverTime:new Date().toISOString()}));
 
-app.post("/api/broker/connect",async(req,res)=>{
+app.post("/api/broker/connect",connectRateLimit,async(req,res)=>{
   try{
     if(req.body?.totp&&!process.env.ANGELONE_TOTP_SECRET)process.env.ANGELONE_TOTP_CODE=String(req.body.totp).replace(/\\D/g,"").slice(0,6);
     session=null;const s=await ensureSession();analysisCache={key:"",at:0,data:null};optionCache={key:"",at:0,data:null};
@@ -315,12 +350,13 @@ app.get("/api/analysis",async(req,res)=>{
     if(analysisCache.key===key&&Date.now()-analysisCache.at<20000)return res.json(analysisCache.data);
     const data=await loadInstruments(),idx=findToken(data,"nse_cm",underlying)||findToken(data,"nse_cm",underlying+"-EQ");
     if(!idx)throw new Error("INDEX_TOKEN_NOT_FOUND_"+underlying);
-    const c1=await candlesFor("NSE",idx.token,"1H",30);
+    const c1=await candlesFor("NSE",idx.token,"1H",60);
     const c2=await candlesFor("NSE",idx.token,"15M",10);
     const c3=await candlesFor("NSE",idx.token,"5M",5);
     const q=(await quoteBatch("NSE",[idx.token],"LTP"))[0]||{};
     const frames=[c1,c2,c3].map((c,i)=>{const f=frameSignal(c);return {...f,timeframe:["1H","15M","5M"][i],price:c[c.length-1]?.close||null};});
-    const d=decision(frames);const out={live:true,underlying,token:String(idx.token),price:Number(q.ltp||frames[2].price||0),...d,frames};
+    const livePrice=Number(q.ltp||frames[2].price||0);
+     const d=decision(frames,livePrice);const out={live:true,underlying,token:String(idx.token),price:livePrice,...d,frames};
     analysisCache={key,at:Date.now(),data:out};res.json(out);
   }catch(e){res.status(503).json({live:false,prediction:"NEUTRAL",confirmation:"NO TRADE",direction:"NO TRADE",confidence:null,backtestHitRate:null,reason:e.message||"Live analysis unavailable"});}
 });
@@ -351,13 +387,47 @@ app.get("/api/options/chain",async(req,res)=>{
   }catch(e){res.status(503).json({live:false,error:e.message||"Option chain unavailable",chain:[]});}
 });
 
+const PUBLIC_SOURCES=[
+  {symbol:"S&P 500",ticker:"^GSPC",group:"US"},
+  {symbol:"NASDAQ",ticker:"^IXIC",group:"US"},
+  {symbol:"NIKKEI",ticker:"^N225",group:"ASIA"},
+  {symbol:"USD/INR",ticker:"INR=X",group:"FX"},
+  {symbol:"DXY",ticker:"DX-Y.NYB",group:"RATES"},
+  {symbol:"US 10Y",ticker:"^TNX",group:"RATES"},
+  {symbol:"BRENT",ticker:"BZ=F",group:"COMMODITY"},
+  {symbol:"GOLD",ticker:"GC=F",group:"COMMODITY"}
+];
+function xmlDecode(s){
+  return String(s||"").replace(/<!\\[CDATA\\[|\\]\\]>/g,"").replace(/<[^>]+>/g,"").replace(/&amp;/g,"&").replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&lt;/g,"<").replace(/&gt;/g,">").trim();
+}
+async function fetchNews(){
+  const queries=[
+    "Nifty India stock market when:1d",
+    "India RBI rupee markets when:1d",
+    "US Fed Treasury yields markets when:1d",
+    "Brent crude gold Asia markets when:1d"
+  ];
+  const rows=(await Promise.all(queries.map(async q=>{
+    try{
+      const u="https://news.google.com/rss/search?q="+encodeURIComponent(q)+"&hl=en-IN&gl=IN&ceid=IN:en";
+      const r=await fetch(u,{headers:{"User-Agent":"PARTHAVI-TRADE-DESK/2.0"},signal:AbortSignal.timeout(5000)});
+      if(!r.ok)return [];
+      const xml=await r.text(),items=[...xml.matchAll(/<item>([\\s\\S]*?)<\\/item>/g)];
+      return items.slice(0,5).map(m=>{
+        const b=m[1],title=xmlDecode((b.match(/<title>([\\s\\S]*?)<\\/title>/)||[])[1]),link=xmlDecode((b.match(/<link>([\\s\\S]*?)<\\/link>/)||[])[1]),pub=xmlDecode((b.match(/<pubDate>([\\s\\S]*?)<\\/pubDate>/)||[])[1]);
+        return {title,link,publishedAt:pub||null};
+      }).filter(x=>x.title);
+    }catch(e){return []}
+  }))).flat();
+  const seen=new Set();return rows.filter(x=>{const k=x.title.toLowerCase();if(seen.has(k))return false;seen.add(k);return true;}).slice(0,12);
+}
 app.get("/api/intelligence",async(req,res)=>{
-  if(intelligenceCache.at&&Date.now()-intelligenceCache.at<30000)return res.json(intelligenceCache.data);
+  if(intelligenceCache.at&&Date.now()-intelligenceCache.at<20000)return res.json(intelligenceCache.data);
   const items=[
     ["NIFTY 50","NSE index","Angel One live when connected"],
     ["BANK NIFTY","NSE index","Angel One live when connected"],
     ["INDIA VIX","NSE index","Angel One live when connected"],
-    ["GIFT NIFTY","Global indicator","External source not hard-coded"],
+    ["GIFT NIFTY","Global indicator","External quote not guaranteed"],
     ["S&P 500","US market","Public market snapshot"],
     ["NASDAQ","US market","Public market snapshot"],
     ["NIKKEI","Asia market","Public market snapshot"],
@@ -367,15 +437,38 @@ app.get("/api/intelligence",async(req,res)=>{
     ["BRENT","Crude","Public market snapshot"],
     ["GOLD","Commodity","Public market snapshot"]
   ];
-  const publicQuotes=["^GSPC","^IXIC","^N225","INR=X","DX-Y.NYB","^TNX","BZ=F","GC=F"];
   const snaps=[];
-  for(const symbol of publicQuotes){
+  if(session?.jwtToken){
     try{
-      const r=await fetch("https://query1.finance.yahoo.com/v8/finance/chart/"+encodeURIComponent(symbol)+"?range=1d&interval=1m",{headers:{"User-Agent":"PARTHAVI-TRADE-DESK/2.0"},signal:AbortSignal.timeout(3500)});
-      if(r.ok){const j=await r.json(),m=j?.chart?.result?.[0]?.meta;snaps.push({symbol,price:Number(m?.regularMarketPrice||0),previous:Number(m?.previousClose||0),changePct:m?.previousClose?100*(m.regularMarketPrice-m.previousClose)/m.previousClose:null});}
+      const data=await loadInstruments();
+      const refs=[
+        ["NIFTY",findToken(data,"nse_cm","NIFTY")],
+        ["BANK NIFTY",findToken(data,"nse_cm","BANKNIFTY")],
+        ["INDIA VIX",data.find(x=>String(x.exch_seg||"").toLowerCase()==="nse_cm"&&/INDIA\\s*VIX|INDIAVIX|VIX/.test(String(x.symbol||"").toUpperCase()+" "+String(x.name||"").toUpperCase()))]
+      ];
+      const valid=refs.filter(x=>x[1]);if(valid.length){
+        const qs=await quoteBatch("NSE",valid.map(x=>x[1].token),"FULL");
+        const by=new Map(qs.map(x=>[String(x.symbolToken||x.symboltoken),x]));
+        for(const [label,c] of valid){
+          const q=by.get(String(c.token))||{};
+          const price=Number(q.ltp||0),prev=Number(q.close||q.previousClose||0);
+          snaps.push({symbol:label,price,previous:prev,changePct:prev?100*(price-prev)/prev:null,source:"Angel One"});
+        }
+      }
     }catch(e){}
   }
-  const out={updatedAt:new Date().toISOString(),items,snapshots:snaps,news:[{title:"India-impacting news feed is broker-independent and guarded against stale data.",source:"PARTHAVI engine"}]};intelligenceCache={at:Date.now(),data:out};res.json(out);
+  const publicSnaps=await Promise.all(PUBLIC_SOURCES.map(async s=>{
+    try{
+      const r=await fetch("https://query1.finance.yahoo.com/v8/finance/chart/"+encodeURIComponent(s.ticker)+"?range=1d&interval=1m",{headers:{"User-Agent":"PARTHAVI-TRADE-DESK/2.0"},signal:AbortSignal.timeout(3500)});
+      if(!r.ok)return null;
+      const j=await r.json(),m=j?.chart?.result?.[0]?.meta;if(!m)return null;
+      const price=Number(m.regularMarketPrice||0),prev=Number(m.previousClose||0);
+      return {symbol:s.symbol,price,previous:prev,changePct:prev?100*(price-prev)/prev:null,source:"Public market data"};
+    }catch(e){return null}
+  }));
+  const news=await fetchNews();
+  const out={updatedAt:new Date().toISOString(),items,snapshots:snaps.concat(publicSnaps.filter(Boolean)),news,marketWindow:marketWindow()};
+  intelligenceCache={at:Date.now(),data:out};res.json(out);
 });
 
 app.get("/api/network/status",async(req,res)=>{
@@ -383,16 +476,24 @@ app.get("/api/network/status",async(req,res)=>{
   const registered=String(process.env.ANGELONE_REGISTERED_STATIC_IPS||"").split(",").map(x=>x.trim()).filter(Boolean);
   res.json({observedOutboundIp:observed,configuredPublicIp:process.env.ANGELONE_PUBLIC_IP||null,registeredStaticIps:registered,match:observed?registered.includes(observed):false,staticIpVerified:process.env.STATIC_IP_VERIFIED==="true",ordersRequireRegisteredStaticIp:true});
 });
-app.get("/api/market/status",async(req,res)=>res.json({exchange:String(req.query.exchange||"NSE").toUpperCase(),now:new Date().toISOString(),serverOpenWindow:"09:15-15:30 IST on exchange trading days",canTrade:orderGate().unlocked,reason:orderGate().unlocked?"Order gate configured; final user confirmation still required.":"Order gate locked."}));
+app.get("/api/market/status",async(req,res)=>{
+  const m=marketWindow(),g=orderGate();
+  await refreshRuntimeStaticIp();
+  res.json({exchange:String(req.query.exchange||"NSE").toUpperCase(),now:new Date().toISOString(),serverOpenWindow:m.session,marketOpen:m.open,weekday:m.weekday,canTrade:g.unlocked,reason:g.unlocked?"Order gate configured; final user confirmation still required.":"Order gate locked."});
+});
 
 /* Order APIs intentionally require all production gates; env defaults keep real-money execution OFF. */
 app.post("/api/orders/place",async(req,res)=>{
+  await refreshRuntimeStaticIp(true);
   const gate=orderGate();
   if(!gate.unlocked)return res.status(423).json({placed:false,locked:true,gate,reason:"Production order gate is locked."});
   try{await ensureSession();const payload=req.body||{};if(!payload.variety||!payload.tradingsymbol||!payload.symboltoken||!payload.transactiontype||!payload.exchange||!payload.ordertype||!payload.producttype||!payload.duration||!payload.quantity)return res.status(400).json({placed:false,error:"Missing required order fields"});const d=await angelRequest("POST","/rest/secure/angelbroking/order/v1/placeOrder",payload);res.json({placed:true,data:d.data});}catch(e){res.status(503).json({placed:false,...safeError(e)});}
 });
-app.post("/api/orders/modify",async(req,res)=>{if(!orderGate().unlocked)return res.status(423).json({modified:false,locked:true,gate:orderGate()});try{await ensureSession();res.json({modified:true,data:(await angelRequest("POST","/rest/secure/angelbroking/order/v1/modifyOrder",req.body||{})).data});}catch(e){res.status(503).json({modified:false,...safeError(e)});}});
-app.post("/api/orders/cancel",async(req,res)=>{if(!orderGate().unlocked)return res.status(423).json({cancelled:false,locked:true,gate:orderGate()});try{await ensureSession();res.json({cancelled:true,data:(await angelRequest("POST","/rest/secure/angelbroking/order/v1/cancelOrder",req.body||{})).data});}catch(e){res.status(503).json({cancelled:false,...safeError(e)});}});
+app.post("/api/orders/modify",async(req,res)=>{await refreshRuntimeStaticIp(true);if(!orderGate().unlocked)return res.status(423).json({modified:false,locked:true,gate:orderGate()});try{await ensureSession();res.json({modified:true,data:(await angelRequest("POST","/rest/secure/angelbroking/order/v1/modifyOrder",req.body||{})).data});}catch(e){res.status(503).json({modified:false,...safeError(e)});}});
+app.post("/api/orders/cancel",async(req,res)=>{await refreshRuntimeStaticIp(true);if(!orderGate().unlocked)return res.status(423).json({cancelled:false,locked:true,gate:orderGate()});try{await ensureSession();res.json({cancelled:true,data:(await angelRequest("POST","/rest/secure/angelbroking/order/v1/cancelOrder",req.body||{})).data});}catch(e){res.status(503).json({cancelled:false,...safeError(e)});}});
+
+setInterval(()=>{refreshRuntimeStaticIp(true).catch(()=>{})},60000);
+refreshRuntimeStaticIp(true).catch(()=>{});
 
 /* ---------- SmartStream ---------- */
 function parsePacket(buf){
