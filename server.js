@@ -362,7 +362,7 @@ app.get("/api/analysis",async(req,res)=>{
 });
 
 function expiryMs(s){
-  const m=String(s||"").toUpperCase().match(/^(\\d{2})(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)(\\d{4})$/);if(!m)return Number.MAX_SAFE_INTEGER;
+  const m=String(s||"").toUpperCase().match(/^([0-9]{2})(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)([0-9]{4})$/);if(!m)return Number.MAX_SAFE_INTEGER;
   const mm={JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11};return Date.UTC(Number(m[3]),mm[m[2]],Number(m[1]));
 }
 app.get("/api/options/chain",async(req,res)=>{
@@ -370,7 +370,7 @@ app.get("/api/options/chain",async(req,res)=>{
     const underlying=String(req.query.underlying||"NIFTY").toUpperCase(),width=Math.min(7,Math.max(2,Number(req.query.width||5)));
     const key=underlying+"|"+width;
     if(optionCache.key===key&&Date.now()-optionCache.at<15000)return res.json(optionCache.data);
-    const data=await loadInstruments(),nfo=data.filter(x=>String(x.exch_seg||"").toLowerCase()==="nse_fo"&&String(x.name||"").toUpperCase()===underlying&&/\\b(CE|PE)$/.test(String(x.symbol||"")));
+    const data=await loadInstruments(),nfo=data.filter(x=>String(x.exch_seg||"").toLowerCase()==="nse_fo"&&String(x.name||"").toUpperCase()===underlying&&/\b(CE|PE)$/.test(String(x.symbol||"")));
     if(!nfo.length)throw new Error("OPTION_CHAIN_NOT_FOUND_"+underlying);
     const expiries=[...new Set(nfo.map(x=>String(x.expiry||"").toUpperCase()).filter(Boolean))].sort((a,b)=>expiryMs(a)-expiryMs(b));
     const expiry=expiries[0];const rows=nfo.filter(x=>String(x.expiry||"").toUpperCase()===expiry);
@@ -383,7 +383,12 @@ app.get("/api/options/chain",async(req,res)=>{
     const quotes=await quoteBatch("NFO",contracts.map(x=>x.token),"FULL");
     const byToken=new Map(quotes.map(x=>[String(x.symbolToken||x.symboltoken),x]));
     const chain=contracts.map(x=>{const q=byToken.get(String(x.token))||{};return {token:String(x.token),symbol:x.symbol,strike:Number(x.strike||0)/100,type:String(x.symbol||"").slice(-2),expiry:x.expiry,lotSize:Number(x.lotsize||0),ltp:Number(q.ltp||0),openInterest:Number(q.opnInterest||q.openInterest||0),oiChange:Number(q.oiChange||0),volume:Number(q.tradeVolume||q.volume||0),changePct:Number(q.percentChange||0)};}).sort((a,b)=>a.strike-b.strike||a.type.localeCompare(b.type));
-    const out={live:true,underlying,spot,expiry,atm:nearest,chain};optionCache={key,at:Date.now(),data:out};res.json(out);
+    const totalCE=chain.filter(x=>x.type==="CE").reduce((s,x)=>s+(x.openInterest||0),0),totalPE=chain.filter(x=>x.type==="PE").reduce((s,x)=>s+(x.openInterest||0),0),pcrOI=totalCE?totalPE/totalCE:null;
+    const candidateDirection=pcrOI!=null?(pcrOI<0.9?"CALL":pcrOI>1.1?"PUT":"NO TRADE"):"NO TRADE";
+    const candidateRow=candidateDirection==="CALL"?chain.filter(x=>x.type==="CE"&&x.strike>nearest).sort((a,b)=>a.strike-b.strike)[0]:candidateDirection==="PUT"?chain.filter(x=>x.type==="PE"&&x.strike<nearest).sort((a,b)=>b.strike-a.strike)[0]:null;
+    const premium=Number(candidateRow?.ltp||0),premiumRisk=premium>0?Math.max(premium*0.25,0.5):null;
+    const indicativeCandidate=premium>0?{direction:candidateDirection,token:candidateRow.token,symbol:candidateRow.symbol,strike:candidateRow.strike,ltp:premium,sl:Math.max(0,premium-(premiumRisk||0)),t1:premium+(premiumRisk||0)*1.5,t2:premium+(premiumRisk||0)*2.5,t3:premium+(premiumRisk||0)*3.5,note:"Indicative PCR/OI candidate; confirm with 1H/15M/5M before any order."}:null;
+    const out={live:true,underlying,spot,expiry,atm:nearest,chain,totalCE,totalPE,pcrOI,indicativeCandidate};optionCache={key,at:Date.now(),data:out};res.json(out);
   }catch(e){res.status(503).json({live:false,error:e.message||"Option chain unavailable",chain:[]});}
 });
 
@@ -398,7 +403,7 @@ const PUBLIC_SOURCES=[
   {symbol:"GOLD",ticker:"GC=F",group:"COMMODITY"}
 ];
 function xmlDecode(s){
-  return String(s||"").replace(/<!\\[CDATA\\[|\\]\\]>/g,"").replace(/<[^>]+>/g,"").replace(/&amp;/g,"&").replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&lt;/g,"<").replace(/&gt;/g,">").trim();
+  return String(s||"").replace(/<!\[CDATA\[|\]\]>/g,"").replace(/<[^>]+>/g,"").replace(/&amp;/g,"&").replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&lt;/g,"<").replace(/&gt;/g,">").trim();
 }
 async function fetchNews(){
   const queries=[
@@ -412,7 +417,7 @@ async function fetchNews(){
       const u="https://news.google.com/rss/search?q="+encodeURIComponent(q)+"&hl=en-IN&gl=IN&ceid=IN:en";
       const r=await fetch(u,{headers:{"User-Agent":"PARTHAVI-TRADE-DESK/2.0"},signal:AbortSignal.timeout(5000)});
       if(!r.ok)return [];
-      const xml=await r.text(),items=[...xml.matchAll(/<item>([\\s\\S]*?)<\\/item>/g)];
+      const xml=await r.text(),items=[...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)];
       return items.slice(0,5).map(m=>{
         const b=m[1],title=xmlDecode((b.match(/<title>([\\s\\S]*?)<\\/title>/)||[])[1]),link=xmlDecode((b.match(/<link>([\\s\\S]*?)<\\/link>/)||[])[1]),pub=xmlDecode((b.match(/<pubDate>([\\s\\S]*?)<\\/pubDate>/)||[])[1]);
         return {title,link,publishedAt:pub||null};
@@ -477,8 +482,9 @@ app.get("/api/network/status",async(req,res)=>{
   res.json({observedOutboundIp:observed,configuredPublicIp:process.env.ANGELONE_PUBLIC_IP||null,registeredStaticIps:registered,match:observed?registered.includes(observed):false,staticIpVerified:process.env.STATIC_IP_VERIFIED==="true",ordersRequireRegisteredStaticIp:true});
 });
 app.get("/api/market/status",async(req,res)=>{
-  const m=marketWindow(),g=orderGate();
+  const m=marketWindow();
   await refreshRuntimeStaticIp();
+  const g=orderGate();
   res.json({exchange:String(req.query.exchange||"NSE").toUpperCase(),now:new Date().toISOString(),serverOpenWindow:m.session,marketOpen:m.open,weekday:m.weekday,canTrade:g.unlocked,reason:g.unlocked?"Order gate configured; final user confirmation still required.":"Order gate locked."});
 });
 
