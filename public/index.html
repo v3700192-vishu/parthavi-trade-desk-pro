@@ -215,7 +215,7 @@ async function loadWorld(){
 async function loadMarketPulse(){
   var d=await req("/api/intelligence");if(!d||!d.snapshots)return;var m={};d.snapshots.forEach(function(x){m[x.symbol]=x});
   [["NIFTY 50","nifty","niftyc"],["BANK NIFTY","bank","bankc"],["INDIA VIX","vix","vixc"],["USD/INR","usdinr","usdinrc"],["GIFT NIFTY","gift","giftc"]].forEach(function(z){
-    var x=m[z[0]];$z=$(z[1]);var ch=$(z[2]);if(x){$z.textContent=fmt(x.price);ch.textContent=x.changePct==null?"—":x.changePct.toFixed(2)+"%";ch.className="chg "+(x.changePct>0?"good":x.changePct<0?"bad":"amber")}else{$z.textContent="—";ch.textContent="—"}
+    var x=m[z[0]],v=$(z[1]),ch=$(z[2]);if(x){v.textContent=fmt(x.price);ch.textContent=x.changePct==null?"—":x.changePct.toFixed(2)+"%";ch.className="chg "+(x.changePct>0?"good":x.changePct<0?"bad":"amber")}else{v.textContent="—";ch.textContent="—"}
   });
 }
 async function loadPositions(){var d=await req("/api/positions");$("accountList").innerHTML=d&&d.positions&&d.positions.length?d.positions.map(function(x){return'<div class="row"><span>'+String(x.tradingsymbol||x.symbol||"")+' × '+String(x.netqty||x.quantity||"")+'</span><b>₹'+fmt(Number(x.pnl||0))+'</b></div>'}).join(""):'<div class="muted">No verified live positions.</div>'}
