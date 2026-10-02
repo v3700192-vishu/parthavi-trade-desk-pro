@@ -135,7 +135,7 @@ async function ensureSession(){
   session={jwtToken:d.data.jwtToken,refreshToken:d.data.refreshToken,feedToken:d.data.feedToken,clientCode:process.env.ANGELONE_CLIENT_CODE,connectedAt:new Date().toISOString()};
   return session;
 }
-function intervalName(tf){return ({1M:"ONE_MINUTE",3M:"THREE_MINUTE",5M:"FIVE_MINUTE",10M:"TEN_MINUTE",15M:"FIFTEEN_MINUTE",30M:"THIRTY_MINUTE",1H:"ONE_HOUR",1D:"ONE_DAY"})[tf]||"FIFTEEN_MINUTE";}
+function intervalName(tf){return ({"1M":"ONE_MINUTE","3M":"THREE_MINUTE","5M":"FIVE_MINUTE","10M":"TEN_MINUTE","15M":"FIFTEEN_MINUTE","30M":"THIRTY_MINUTE","1H":"ONE_HOUR","1D":"ONE_DAY"})[tf]||"FIFTEEN_MINUTE";}
 function istStamp(date){
   const d=new Date(date.getTime()+330*60000),p=n=>String(n).padStart(2,"0");
   return d.getUTCFullYear()+"-"+p(d.getUTCMonth()+1)+"-"+p(d.getUTCDate())+" "+p(d.getUTCHours())+":"+p(d.getUTCMinutes());
