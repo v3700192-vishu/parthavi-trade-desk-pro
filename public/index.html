@@ -148,7 +148,7 @@ async function brokerConnect(){
   try{
     const r=await fetch('/api/broker/connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({totp})});
     const d=await r.json();
-    if(d.connected){addAlert('Angel One connected','Broker session established for '+d.clientCode+'.','good');$('totp').value='';refreshAll()}
+    if(d.connected){addAlert('Angel One connected','Broker session established for '+d.clientCode+'.','good');$('totp').value='';refreshAll();setTimeout(loadLiveChart,500)}
     else addAlert('Angel One connection failed',d.error||'Broker connection failed.','warn');
   }catch(e){addAlert('Angel One connection failed','Backend connection error.','warn')}
 }
@@ -157,9 +157,10 @@ async function brokerLogout(){
 }
 async function refreshAll(){
  const h=await get('/api/health'); if(h){$('health').textContent='● '+(h.ok?'Backend online':'Backend locked');$('health').className='pill '+(h.ok?'':'dangertext')} else {$('health').textContent='● Backend unreachable'}
- const a=await get('/api/account'); if(a&&a.connected){$('cash').textContent='₹'+a.cash.toLocaleString('en-IN');$('net').textContent='₹'+a.net.toLocaleString('en-IN');$('margin').textContent='₹'+a.usedMargin.toLocaleString('en-IN');$('pnl').textContent='₹'+a.dayPnl.toLocaleString('en-IN');$('gate').textContent='Broker session verified. Order gate still requires risk checks + final user confirmation.';$('gate').className='gate ok'}
- const c=await get('/api/analysis?underlying='+encodeURIComponent($('under').value)+'&tf='+active); if(c){$('pred').textContent=c.prediction||'NEUTRAL';$('pred').className='v '+(c.prediction==='BULLISH'?'bull':c.prediction==='BEARISH'?'bear':'warn');$('conf').textContent=c.confirmation||'WATCH';$('confidence').textContent=c.confidence!=null?c.confidence+'%':'—';$('hit').textContent=c.backtestHitRate!=null?c.backtestHitRate+'%':'—';$('dir').textContent=c.direction||'NO TRADE';$('entry').textContent=c.entry??'—';$('sl').textContent=c.sl??'—';$('tg').textContent=(c.t1??'—')+' / '+(c.t2??'—');$('rr').textContent=c.rr??'—';$('chartState').textContent=c.live?'LIVE FEED':'NO LIVE FEED';}
- const p=await get('/api/positions'); if(p&&Array.isArray(p.positions)&&p.positions.length){$('pos').innerHTML=p.positions.map(x=>'<div class="row" style="padding:8px 0;border-bottom:1px solid var(--line)"><span>'+x.symbol+' × '+x.qty+'</span><b class="'+(x.pnl>=0?'goodtext':'dangertext')+'">₹'+x.pnl+'</b></div>').join('')} 
+ const a=await get('/api/account'); if(a&&a.connected){$('cash').textContent='₹'+a.cash.toLocaleString('en-IN');$('net').textContent='₹'+a.net.toLocaleString('en-IN');$('margin').textContent='₹'+a.usedMargin.toLocaleString('en-IN');$('pnl').textContent='₹'+a.dayPnl.toLocaleString('en-IN');$('gate').textContent='Broker session verified. Order gate still requires risk checks + final user confirmation.';$('gate').className='gate ok';}
+ const c=await get('/api/analysis?underlying='+encodeURIComponent($('under').value)+'&tf='+active); if(c){$('pred').textContent=c.prediction||'NEUTRAL';$('pred').className='v '+(c.prediction==='BULLISH'?'bull':c.prediction==='BEARISH'?'bear':'warn');$('conf').textContent=c.confirmation||'WATCH';$('confidence').textContent=c.confidence!=null?c.confidence+'%':'—';$('hit').textContent=c.backtestHitRate!=null?c.backtestHitRate+'%':'—';$('dir').textContent=c.direction||'NO TRADE';$('entry').textContent=c.entry??'—';$('sl').textContent=c.sl??'—';$('tg').textContent=(c.t1??'—')+' / '+(c.t2??'—');$('rr').textContent=c.rr??'—';}
+ const p=await get('/api/positions'); if(p&&Array.isArray(p.positions)&&p.positions.length){$('pos').innerHTML=p.positions.map(x=>'<div class="row" style="padding:8px 0;border-bottom:1px solid var(--line)"><span>'+x.symbol+' × '+x.qty+'</span><b class="'+(x.pnl>=0?'goodtext':'dangertext')+'">₹'+x.pnl+'</b></div>').join('')}
+ if(h?.brokerSession) loadLiveChart();
 }
 function analyse(){contract();addAlert('Contract analysis requested','System will only confirm after verified live data, multi-timeframe confirmation, volume/OI and risk gates.','warn');refreshAll();}
 function orderBlocked(){addAlert('Order action protected','Live BUY/SELL is locked until broker session, market status, risk gate and final user confirmation all pass.','warn');}
@@ -207,6 +208,36 @@ function initInteractiveChart(){
   $('chartState').textContent='DEMO FEED • broker not connected';
   tvChart.timeScale().fitContent();
 }
+async function loadLiveChart(){
+  if(!tvChart || !candleSeries || !window.LightweightCharts) return;
+  const isConnected=(await get('/api/health'))?.brokerSession;
+  if(!isConnected){$('chartState').textContent='NO LIVE FEED';return}
+  try{
+    const ex=$('ex').value==='NSE' && $('seg').value!=='EQUITY' ? 'NFO' : $('ex').value;
+    const seg=ex==='NFO'?'nse_fo':(ex==='BFO'?'bse_fo':ex==='NSE'?'nse_cm':'bse_cm');
+    const q=$('under').value.toUpperCase().trim();
+    const optionType=$('seg').value.includes('OPTIONS')?$('otype').value:'';
+    const strike=$('seg').value.includes('OPTIONS')?$styleSafeNumber('strike'):null;
+    const params=new URLSearchParams({exchange:ex,segment:seg,q,limit:'50'});
+    if(optionType)params.set('optionType',optionType);
+    if(strike!=null)params.set('strike',String(strike));
+    const found=await get('/api/instruments/search?'+params.toString());
+    let candidate=found?.contracts?.[0];
+    if(!candidate){$('chartState').textContent='CONTRACT NOT FOUND';return}
+    const tfMap={1:'1M',5:'5M',15:'15M',30:'30M',60:'1H',240:'4H',1440:'1D'};
+    const c=await get('/api/candles?exchange='+encodeURIComponent(ex)+'&symboltoken='+encodeURIComponent(candidate.token)+'&tf='+encodeURIComponent(active)+'&days='+((active==='1M')?10:5));
+    if(!c?.candles?.length){$('chartState').textContent='LIVE FEED EMPTY';return}
+    const candles=c.candles.map(x=>({time:x.time,open:x.open,high:x.high,low:x.low,close:x.close}));
+    candleSeries.setData(candles);
+    if(lineSeries)lineSeries.setData(candles.map(k=>({time:k.time,value:k.close})));
+    if(volumeSeries)volumeSeries.setData(c.candles.map(k=>({time:k.time,value:k.volume||0})));
+    $('chartState').textContent='LIVE • '+candidate.symbol;
+    $('contract').textContent=ex+' • '+candidate.symbol+' • '+candidate.token;
+    tvChart.timeScale().fitContent();
+  }catch(e){$('chartState').textContent='LIVE FEED ERROR'}
+}
+function $styleSafeNumber(id){const n=Number($(id)?.value);return Number.isFinite(n)?n:null}
+
 function setChartType(type){chartType=type;if(!candleSeries||!lineSeries)return;const candleVisible=type==='candle';candleSeries.applyOptions({visible:candleVisible});lineSeries.applyOptions({visible:!candleVisible});document.querySelectorAll('.chart-tool').forEach(b=>{if(b.textContent==='Candles')b.classList.toggle('on',type==='candle');if(b.textContent==='Line')b.classList.toggle('on',type==='line')});}
 function fitChart(){if(tvChart)tvChart.timeScale().fitContent();else drawFallback();}
 function zoomChart(dir){
