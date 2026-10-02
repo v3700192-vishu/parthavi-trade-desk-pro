@@ -52,7 +52,7 @@
 
 <script>
 const $=id=>document.getElementById(id), items=['EMA 20/50/200','RSI','MACD','ADX','VWAP','ATR','Volume','Price Action','1H Trend','15M Setup','5M Trigger','OI / PCR','News Bias','Global Risk','Event Risk','Data Health'];$('indicators').innerHTML=items.map(x=>'<div class="metric"><small>'+x+'</small><b class="wait">WAIT</b></div>').join('');
-function connect(){log('Angel One','Connection request requires secure backend configuration. No credentials are stored in this page.');}
+async function connect(){const base=(prompt('Enter your secure backend HTTPS URL')||'').trim().replace(/\/$/,'');if(!base){log('Backend','No backend URL entered.');return}localStorage.setItem('ptd_backend_url',base);try{const r=await fetch(base+'/api/health',{cache:'no-store'});const j=await r.json();log('Backend',j.ok?'Reachable':'Unavailable')}catch(e){log('Backend','Unable to reach backend.')}}
 function disconnect(){log('Angel One','Disconnected.');}
 function testFeed(){log('Live feed','Test requires the secure Node backend to be online.');$('angelTest').textContent='TEST BLOCKED';}
 function loadExp(){log('Expiry','Requires connected instrument master.');}
