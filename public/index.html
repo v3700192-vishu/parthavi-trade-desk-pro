@@ -202,7 +202,7 @@ document.addEventListener('fullscreenchange',resizeChart);
   const h=$('chartResize'); if(!h)return;
   h.addEventListener('pointerdown',e=>{chartResizeStartY=e.clientY;chartResizeStartH=$('chartShell').getBoundingClientRect().height;h.setPointerCapture?.(e.pointerId)});
   h.addEventListener('pointermove',e=>{if(!h.hasPointerCapture?.(e.pointerId))return;const next=Math.max(280,Math.min(window.innerHeight-40,chartResizeStartH+(e.clientY-chartResizeStartY)));$('chartShell').style.height=next+'px';resizeChart()});
-  h.addEventListener('pointerup',()=>{h.releasePointerCapture?.(event?.pointerId||0);localStorage.setItem('ptdChartCustomHeight',$('chartShell').style.height)});
+  h.addEventListener('pointerup',e=>{h.releasePointerCapture?.(e.pointerId);localStorage.setItem('ptdChartCustomHeight',$('chartShell').style.height)});
 })();
 window.addEventListener('resize',resizeChart);
 function init(){
