@@ -1,21 +1,12 @@
 # PARTHAVI TRADE DESK PRO
 
-Production-oriented trading dashboard for NSE/BSE analysis with a risk-first architecture.
+Live-trading frontend and Node/Angel One SmartAPI backend project.
 
-## Current status
-- Web dashboard and protected execution UX are included.
-- Angel One credentials are server-side only.
-- Live broker/account/order execution remains disabled until server secrets, registered static IP, exchange-session checks and safety gates are verified.
-- The UI never claims guaranteed profit. Any profit-chance field is historical/backtest based only.
+GitHub Pages publishes the frontend from `pages/`. The live broker backend must run on a server/VPS with HTTPS and the broker's required static public IPv4.
 
-## Run
-npm install
-npm start
+The repository contains the secure environment template and the production deployment checklist. Broker credentials must never be committed to this public repository.
 
-Open http://localhost:3000
+Current frontend deployment:
+https://v3700192-vishu.github.io/parthavi-trade-desk-pro/
 
-## Environment
-Copy .env.example to .env and configure secrets on the server only.
-
-## Deployment
-See DEPLOYMENT.md.
+Current GitHub Pages workflow is configured to publish the `pages/` directory on pushes to `main`.
