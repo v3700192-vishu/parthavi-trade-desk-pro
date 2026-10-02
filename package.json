@@ -1,1 +1,9 @@
-{"name":"parthavi-trade-desk-pro","version":"1.0.0","scripts":{"start":"node server.js"}}
+{
+  "name":"parthavi-trade-desk-pro",
+  "version":"2.0.0",
+  "private":true,
+  "type":"module",
+  "scripts":{"start":"node server.js"},
+  "engines":{"node":">=22"},
+  "dependencies":{"dotenv":"^17.0.0","express":"^5.1.0","ws":"^8.18.3"}
+}
