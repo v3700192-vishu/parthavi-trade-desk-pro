@@ -1,17 +1,77 @@
 import express from "express";
 import path from "path";
 import {fileURLToPath} from "url";
-const __filename=fileURLToPath(import.meta.url), __dirname=path.dirname(__filename);
-const app=express(); const PORT=process.env.PORT||3000;
-app.disable("x-powered-by"); app.use(express.json({limit:"32kb"}));
-app.use((req,res,next)=>{res.setHeader("X-Content-Type-Options","nosniff");res.setHeader("X-Frame-Options","DENY");res.setHeader("Referrer-Policy","no-referrer");next()});
-app.get("/api/health",(req,res)=>res.json({ok:true,service:"parthavi-trade-desk-pro",liveBrokerConfigured:Boolean(process.env.ANGELONE_API_KEY&&process.env.ANGELONE_CLIENT_CODE&&process.env.ANGELONE_PIN)}));
-app.get("/api/market/status",(req,res)=>res.json({exchange:req.query.exchange||"NSE",status:"VERIFYING",canTrade:false,reason:"Live exchange-session adapter must be verified server-side."}));
-app.get("/api/account",(req,res)=>res.json({connected:false,cash:0,net:0,usedMargin:0,dayPnl:0,reason:"Angel One credentials are not configured on this server."}));
-app.get("/api/positions",(req,res)=>res.json({positions:[],connected:false}));
-app.get("/api/orders",(req,res)=>res.json({orders:[],connected:false}));
-app.get("/api/contracts",(req,res)=>res.json({contracts:[],connected:false}));
-app.get("/api/analysis",(req,res)=>res.json({live:false,prediction:"NEUTRAL",confirmation:"NO TRADE",confidence:null,backtestHitRate:null,direction:"NO TRADE",reason:"Verified live candles/options/news/global data not connected."}));
-app.use(express.static(path.join(__dirname,"public"),{extensions:["html"]}));
-app.get("*",(req,res)=>res.sendFile(path.join(__dirname,"public","index.html")));
-app.listen(PORT,()=>console.log("PARTHAVI TRADE DESK PRO on "+PORT));
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const app = express();
+const PORT = Number(process.env.PORT || 3000);
+
+app.disable("x-powered-by");
+app.use(express.json({ limit: "32kb" }));
+
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  next();
+});
+
+app.get("/api/health", (req, res) =>
+  res.json({
+    ok: true,
+    service: "parthavi-trade-desk-pro",
+    liveBrokerConfigured: Boolean(
+      process.env.ANGELONE_API_KEY &&
+      process.env.ANGELONE_CLIENT_CODE &&
+      process.env.ANGELONE_PIN
+    ),
+  })
+);
+
+app.get("/api/market/status", (req, res) =>
+  res.json({
+    exchange: req.query.exchange || "NSE",
+    status: "VERIFYING",
+    canTrade: false,
+    reason: "Live exchange-session adapter must be verified server-side.",
+  })
+);
+
+app.get("/api/account", (req, res) =>
+  res.json({
+    connected: false,
+    cash: 0,
+    net: 0,
+    usedMargin: 0,
+    dayPnl: 0,
+    reason: "Angel One credentials are not configured on this server.",
+  })
+);
+
+app.get("/api/positions", (req, res) => res.json({ positions: [], connected: false }));
+app.get("/api/orders", (req, res) => res.json({ orders: [], connected: false }));
+app.get("/api/contracts", (req, res) => res.json({ contracts: [], connected: false }));
+
+app.get("/api/analysis", (req, res) =>
+  res.json({
+    live: false,
+    prediction: "NEUTRAL",
+    confirmation: "NO TRADE",
+    confidence: null,
+    backtestHitRate: null,
+    direction: "NO TRADE",
+    reason: "Verified live candles/options/news/global data not connected.",
+  })
+);
+
+app.use(express.static(path.join(__dirname, "public"), { extensions: ["html"] }));
+
+// Express 5 / path-to-regexp requires a named wildcard parameter.
+app.get("/*splat", (req, res) =>
+  res.sendFile(path.join(__dirname, "public", "index.html"))
+);
+
+app.listen(PORT, () =>
+  console.log("PARTHAVI TRADE DESK PRO on " + PORT)
+);
