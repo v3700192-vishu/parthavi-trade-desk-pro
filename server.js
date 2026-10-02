@@ -159,6 +159,15 @@ function instrumentMatches(item,q,segment){
   return hay.includes(needle);
 }
 
+function parseExpiry(value){
+  const v=String(value||"").toUpperCase().trim();
+  const m=v.match(/^(\\d{2})([A-Z]{3})(\\d{4})$/);
+  if(!m) return Number.MAX_SAFE_INTEGER;
+  const months={JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11};
+  if(months[m[2]]===undefined) return Number.MAX_SAFE_INTEGER;
+  return Date.UTC(Number(m[3]),months[m[2]],Number(m[1]));
+}
+
 function safeError(e){
   return {connected:false,error:e?.message || "Broker request failed",errorCode:e?.code || null};
 }
@@ -261,8 +270,8 @@ app.get("/api/instruments/search",async(req,res)=>{
     if(strike!=null && Number.isFinite(strike)) rows=rows.filter(x=>Math.abs(Number(x.strike||0)/100-strike)<0.0001 || Math.abs(Number(x.strike||0)-strike)<0.0001);
     if(expiry && expiry!=="NEAREST") rows=rows.filter(x=>String(x.expiry||"").toUpperCase()===expiry);
     rows.sort((a,b)=>{
-      const ea=String(a.expiry||""); const eb=String(b.expiry||"");
-      return ea.localeCompare(eb) || String(a.symbol||"").localeCompare(String(b.symbol||""));
+      const ea=parseExpiry(a.expiry), eb=parseExpiry(b.expiry);
+      return ea-eb || String(a.symbol||"").localeCompare(String(b.symbol||""));
     });
     const out=rows.slice(0,limit).map(x=>({token:String(x.token),symbol:x.symbol,name:x.name,expiry:x.expiry||"",strike:x.strike,lotsize:x.lotsize,exch_seg:x.exch_seg,optiontype:x.symbol?.slice(-2)||""}));
     res.json({connected:!!session?.jwtToken,source:"Angel One instrument master",count:out.length,contracts:out});
