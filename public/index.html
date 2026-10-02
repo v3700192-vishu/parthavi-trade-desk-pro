@@ -24,6 +24,7 @@
 <div class="mkt"><div class="k">BANK NIFTY</div><div class="v" id="bank">—</div><div class="chg" id="bankc">—</div></div>
 <div class="mkt"><div class="k">INDIA VIX</div><div class="v" id="vix">—</div><div class="chg" id="vixc">—</div></div>
 <div class="mkt"><div class="k">USD/INR</div><div class="v" id="usdinr">—</div><div class="chg" id="usdinrc">—</div></div>
+<div class="mkt"><div class="k">GIFT NIFTY</div><div class="v" id="gift">—</div><div class="chg" id="giftc">—</div></div>
 <div class="mkt"><div class="k">SYSTEM</div><div class="v" id="sys">READY</div><div class="chg" id="sysc">—</div></div>
 </div></div>
 
@@ -66,6 +67,7 @@
 <div class="card"><div class="k">Confidence</div><div class="signal" id="confidence">—</div></div>
 <div class="card"><div class="k">Entry</div><div class="signal" id="entry">—</div></div>
 </div>
+<div class="row" style="margin-top:8px"><span>T3</span><b id="t3">—</b></div>
 <div class="two" style="margin-top:10px">
 <div class="panel" style="padding:10px;background:#0a0d1a"><div class="row"><span>Stop Loss</span><b id="sl">—</b></div><div class="row"><span>T1</span><b id="t1">—</b></div><div class="row"><span>T2</span><b id="t2">—</b></div><div class="row"><span>R:R</span><b id="rr">—</b></div></div>
 <div class="panel" style="padding:10px;background:#0a0d1a"><div class="k">1H / 15M / 5M</div><div class="row"><span>Trend</span><b id="f1">—</b></div><div class="row"><span>Setup</span><b id="f2">—</b></div><div class="row"><span>Trigger</span><b id="f3">—</b></div></div>
@@ -84,6 +86,7 @@
 <div class="head"><h2>Options Chain</h2><span class="tag">OI • VOLUME • LTP</span></div>
 <div class="controls"><select id="underlying" class="input"><option>NIFTY</option><option>BANKNIFTY</option></select><button class="btn" onclick="loadChain()">Refresh Chain</button></div>
 <div class="scroll" style="margin-top:10px"><table class="table"><thead><tr><th>Strike</th><th>CE LTP</th><th>CE OI</th><th>PE OI</th><th>PE LTP</th></tr></thead><tbody id="chain"></tbody></table></div>
+<div id="optionSignal" class="lock" style="margin-top:10px">PCR/OI candidate: waiting for live option chain.</div>
 </div>
 <div class="panel" style="margin-top:14px">
 <div class="head"><h2>World Intelligence</h2><span class="tag">INDIA IMPACT</span></div>
@@ -107,10 +110,11 @@
 
 <script>
 const $=function(id){return document.getElementById(id)};
-const TF=["1M","5M","15M","30M","1H","1D"];let activeTF="15M",chart=null,candle=null,line=null,volume=null,liveSocket=null,lastCandle=null,lastCandidate=null,priceRef=null;
+const TF=["1M","5M","15M","30M","1H","1D"];let activeTF="15M",chart=null,candle=null,line=null,volume=null,liveSocket=null,lastCandle=null,lastCandidate=null,priceRef=null,autoTried=false;
 function req(u,o){return fetch(u,o||{}).then(function(r){return r.json().catch(function(){return null})}).catch(function(){return null})}
 function fmt(n){return Number.isFinite(Number(n))?Number(n).toLocaleString("en-IN",{maximumFractionDigits:2}):"—"}
 function cls(v){return v==="BULLISH"||v==="CALL"?"good":v==="BEARISH"||v==="PUT"?"bad":"amber"}
+function esc(v){return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;")}
 function setTfs(){ $("tfs").innerHTML=TF.map(function(x){return '<button class="tab '+(x===activeTF?'on':'')+'" onclick="setTF(\\''+x+'\\')">'+x+'</button>'}).join("")}
 function setTF(x){activeTF=x;setTfs();buildChart();loadLive()}
 function buildChart(){
@@ -160,16 +164,28 @@ async function connect(){var t=$("totp").value.replace(/\\D/g,"");if(t.length!==
 async function autoconnect(){var r=await req("/api/broker/autoconnect",{method:"POST"});if(r&&r.connected){$("broker").textContent="● BROKER LIVE";$("broker").className="pill live";refreshAll()}else $("prod").textContent=(r&&r.error)||"Auto-connect unavailable; enter TOTP."}
 async function logout(){await req("/api/broker/logout",{method:"POST"});$("broker").textContent="● BROKER OFF";$("broker").className="pill warn";refreshAll()}
 async function refreshAll(){
-  var h=await req("/api/health");if(h){$("backend").textContent=h.ok?"● BACKEND OK":"● BACKEND";$("backend").className="pill ok";$("gate").textContent=h.gates.unlocked?"● EXECUTION GATE READY":"● EXECUTION LOCK";$("gate").className=h.gates.unlocked?"pill live":"pill warn";if(h.brokerSession){$("broker").textContent="● BROKER LIVE";$("broker").className="pill live"}}
-  var a=await req("/api/account");if(a&&a.connected){$("cash").textContent="₹"+fmt(a.cash);$("net").textContent="₹"+fmt(a.net);$("margin").textContent="₹"+fmt(a.usedMargin);$("pnl").textContent="₹"+fmt(a.dayPnl)}
-  if(h&&h.brokerSession){loadLive();loadAnalysis();loadChain();loadPositions()}
+  var h=await req("/api/health");
+  if(h&&h.ok){
+    $("backend").textContent="● BACKEND OK";$("backend").className="pill ok";
+    $("gate").textContent=h.gates.unlocked?"● EXECUTION READY":"● EXECUTION LOCK";$("gate").className=h.gates.unlocked?"pill live":"pill warn";
+    $("sys").textContent=h.brokerSession?"LIVE":"READY";$("sysc").textContent=h.gates.marketOpen?"MARKET OPEN":"MARKET CLOSED";
+    if(h.brokerSession){$("broker").textContent="● BROKER LIVE";$("broker").className="pill live"}
+    else if(!autoTried){
+      autoTried=true;
+      var ac=await req("/api/broker/autoconnect",{method:"POST"});
+      if(ac&&ac.connected)h=await req("/api/health");
+    }
+  }
+  var a=h&&h.brokerSession?await req("/api/account"):null;
+  if(a&&a.connected){$("cash").textContent="₹"+fmt(a.cash);$("net").textContent="₹"+fmt(a.net);$("margin").textContent="₹"+fmt(a.usedMargin);$("pnl").textContent="₹"+fmt(a.dayPnl)}
+  if(h&&h.brokerSession){$("broker").textContent="● BROKER LIVE";$("broker").className="pill live";loadLive();loadAnalysis();loadChain();loadPositions()}
   loadWorld();loadMarketPulse()
 }
 async function loadAnalysis(){
   var u=$("underlying").value,d=await req("/api/analysis?underlying="+u);if(!d)return;
   $("direction").textContent=d.direction||"NO TRADE";$("direction").className="signal "+cls(d.direction);
   $("confirmation").textContent=d.confirmation||"WAIT";$("confirmation").className="signal "+(d.confirmation==="CONFIRMED"?"good":"amber");
-  $("confidence").textContent=d.confidence!=null?d.confidence+"%":"—";$("entry").textContent=fmt(d.entry);$("sl").textContent=fmt(d.sl);$("t1").textContent=fmt(d.t1);$("t2").textContent=fmt(d.t2);$("rr").textContent=d.rr||"—";$("reason").textContent=d.reason||"—";
+  $("confidence").textContent=d.confidence!=null?d.confidence+"%":"—";$("entry").textContent=fmt(d.entry||d.price);$("sl").textContent=fmt(d.sl);$("t1").textContent=fmt(d.t1);$("t2").textContent=fmt(d.t2);$("t3").textContent=fmt(d.t3);$("rr").textContent=d.rr||"—";$("reason").textContent=d.reason||"—";
   if(d.frames){$("f1").textContent=d.frames[0].state;$("f2").textContent=d.frames[1].state;$("f3").textContent=d.frames[2].state;renderIndicators(d.frames[2].indicators)}
 }
 function renderIndicators(x){
@@ -179,15 +195,28 @@ function renderIndicators(x){
 }
 async function loadChain(){
   var u=$("underlying").value,d=await req("/api/options/chain?underlying="+u+"&width=4"),rows=d&&d.chain?d.chain:[];var by={};rows.forEach(function(x){by[x.strike]=by[x.strike]||{};by[x.strike][x.type]=x});
-  $("chain").innerHTML=Object.keys(by).sort(function(a,b){return Number(a)-Number(b)}).map(function(s){var c=by[s].CE||{},p=by[s].PE||{};return"<tr><td>"+fmt(Number(s))+(Number(s)===Number(d.atm)?" <b class='amber'>ATM</b>":"")+"</td><td>"+fmt(c.ltp)+"</td><td>"+fmt(c.openInterest)+"</td><td>"+fmt(p.openInterest)+"</td><td>"+fmt(p.ltp)+"</td></tr>"}).join("")||"<tr><td colspan='5' class='muted'>Connect broker to load live option chain.</td></tr>"
+  $("chain").innerHTML=Object.keys(by).sort(function(a,b){return Number(a)-Number(b)}).map(function(s){var c=by[s].CE||{},p=by[s].PE||{};return"<tr><td>"+fmt(Number(s))+(Number(s)===Number(d.atm)?" <b class='amber'>ATM</b>":"")+"</td><td>"+fmt(c.ltp)+"</td><td>"+fmt(c.openInterest)+"</td><td>"+fmt(p.openInterest)+"</td><td>"+fmt(p.ltp)+"</td></tr>"}).join("")||"<tr><td colspan='5' class='muted'>Connect broker to load live option chain.</td></tr>";
+  var q=d&&d.pcrOI!=null?Number(d.pcrOI).toFixed(2):"—",cand=d&&d.indicativeCandidate;
+  if(cand){
+    var cc=cls(cand.direction);
+    $("optionSignal").innerHTML="<b>PCR(OI): "+q+" • "+esc(cand.direction)+" candidate</b><br>"+esc(cand.symbol)+" @ ₹"+fmt(cand.ltp)+" • SL ₹"+fmt(cand.sl)+" • T1 ₹"+fmt(cand.t1)+" • T2 ₹"+fmt(cand.t2)+" • T3 ₹"+fmt(cand.t3);
+    $("optionSignal").className="lock "+cc;
+  }else{
+    $("optionSignal").textContent="PCR(OI): "+q+" • NO TRADE candidate. Confirm 1H → 15M → 5M.";
+    $("optionSignal").className="lock amber";
+  }
 }
 async function loadWorld(){
   var d=await req("/api/intelligence");if(!d){$("world").innerHTML='<div class="muted">No intelligence feed.</div>';return}
-  $("world").innerHTML=(d.snapshots||[]).map(function(x){var c=x.changePct>0?"good":x.changePct<0?"bad":"amber";return'<div class="row"><span>'+x.symbol+'</span><b class="'+c+'">'+fmt(x.price)+' ('+(x.changePct==null?"—":x.changePct.toFixed(2)+"%")+")</b></div>"}).join("")+'<div style="margin-top:8px;font-size:11px" class="muted">Updated '+new Date(d.updatedAt).toLocaleTimeString()+'</div>'
+  var html=(d.snapshots||[]).map(function(x){var c=x.changePct>0?"good":x.changePct<0?"bad":"amber";return'<div class="row"><span>'+esc(x.symbol)+'</span><b class="'+c+'">'+fmt(x.price)+' ('+(x.changePct==null?"—":x.changePct.toFixed(2)+"%")+")</b></div>"}).join("");
+  var news=(d.news||[]).slice(0,8).map(function(n){return'<div class="row" style="align-items:flex-start"><span style="max-width:80%">'+esc(n.title)+'</span><span class="muted" style="font-size:10px">'+esc(n.publishedAt||"")+'</span></div>'}).join("");
+  $("world").innerHTML=html+'<div class="k" style="margin:10px 0 6px">India-impact news</div>'+news+'<div style="margin-top:8px;font-size:11px" class="muted">Updated '+new Date(d.updatedAt).toLocaleTimeString()+'</div>'
 }
 async function loadMarketPulse(){
   var d=await req("/api/intelligence");if(!d||!d.snapshots)return;var m={};d.snapshots.forEach(function(x){m[x.symbol]=x});
-  [["INR=X","usdinr","usdinrc"]].forEach(function(z){if(m[z[0]]){$(z[1]).textContent=fmt(m[z[0]].price);$(z[2]).textContent=m[z[0]].changePct==null?"—":m[z[0]].changePct.toFixed(2)+"%"}})
+  [["NIFTY 50","nifty","niftyc"],["BANK NIFTY","bank","bankc"],["INDIA VIX","vix","vixc"],["USD/INR","usdinr","usdinrc"],["GIFT NIFTY","gift","giftc"]].forEach(function(z){
+    var x=m[z[0]];$z=$(z[1]);var ch=$(z[2]);if(x){$z.textContent=fmt(x.price);ch.textContent=x.changePct==null?"—":x.changePct.toFixed(2)+"%";ch.className="chg "+(x.changePct>0?"good":x.changePct<0?"bad":"amber")}else{$z.textContent="—";ch.textContent="—"}
+  });
 }
 async function loadPositions(){var d=await req("/api/positions");$("accountList").innerHTML=d&&d.positions&&d.positions.length?d.positions.map(function(x){return'<div class="row"><span>'+String(x.tradingsymbol||x.symbol||"")+' × '+String(x.netqty||x.quantity||"")+'</span><b>₹'+fmt(Number(x.pnl||0))+'</b></div>'}).join(""):'<div class="muted">No verified live positions.</div>'}
 async function loadOrders(){var d=await req("/api/orders");$("accountList").innerHTML=d&&d.orders?d.orders.map(function(x){return'<div class="row"><span>'+String(x.tradingsymbol||"")+'</span><b>'+String(x.status||x.orderstatus||"")+'</b></div>'}).join(""):'<div class="muted">No orders.</div>'}
