@@ -9,9 +9,12 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const ANGEL_ROOT = "https://apiconnect.angelone.in";
+const ANGEL_WS = "wss://smartapisocket.angelone.in/smart-stream";
 
 let session = null;
 let instrumentCache = { loadedAt: 0, data: [] };
+const liveClients = new Set();
+const angelStreams = new Map();
 const INSTRUMENT_URL = "https://margincalculator.angelone.in/OpenAPI_File/files/OpenAPIScripMaster.json";
 
 app.disable("x-powered-by");
@@ -159,6 +162,49 @@ function instrumentMatches(item,q,segment){
   return hay.includes(needle);
 }
 
+
+function parseSmartStreamPacket(buf){
+  const b = Buffer.isBuffer(buf) ? buf : Buffer.from(buf);
+  if(b.length < 51) return null;
+  const mode = b.readUInt8(0);
+  const exchangeType = b.readUInt8(1);
+  const token = b.subarray(2,27).toString("utf8").replace(/\0/g,"");
+  const sequence = Number(b.readBigInt64LE(27));
+  const exchangeTimestamp = Number(b.readBigInt64LE(35));
+  const out = {mode,exchangeType,token,sequence,exchangeTimestamp};
+  if(mode === 1){
+    out.ltp = b.readInt32LE(43) / 100;
+    return out;
+  }
+  if(b.length < 123) return out;
+  out.ltp = Number(b.readBigInt64LE(43)) / 100;
+  out.lastTradedQuantity = Number(b.readBigInt64LE(51));
+  out.avgTradedPrice = Number(b.readBigInt64LE(59)) / 100;
+  out.volume = Number(b.readBigInt64LE(67));
+  out.totalBuyQuantity = b.readDoubleLE(75);
+  out.totalSellQuantity = b.readDoubleLE(83);
+  out.open = Number(b.readBigInt64LE(91)) / 100;
+  out.high = Number(b.readBigInt64LE(99)) / 100;
+  out.low = Number(b.readBigInt64LE(107)) / 100;
+  out.close = Number(b.readBigInt64LE(115)) / 100;
+  if(mode === 3 && b.length >= 379){
+    out.lastTradedTimestamp = Number(b.readBigInt64LE(123));
+    out.openInterest = Number(b.readBigInt64LE(131));
+    out.openInterestChange = b.readDoubleLE(139);
+  }
+  return out;
+}
+
+function sendJson(ws,payload){
+  if(ws.readyState === 1){
+    try{ ws.send(JSON.stringify(payload)); }catch(e){}
+  }
+}
+
+function streamKey(tokens,mode){
+  return JSON.stringify({mode:Number(mode||1),tokens:(tokens||[]).slice().sort((a,b)=>String(a.exchangeType).localeCompare(String(b.exchangeType)))});
+}
+
 function parseExpiry(value){
   const v=String(value||"").toUpperCase().trim();
   const m=v.match(/^(\\d{2})([A-Z]{3})(\\d{4})$/);
@@ -254,6 +300,54 @@ app.post("/api/quote",async(req,res)=>{
 });
 
 
+
+async function connectAngelStream(mode,tokens){
+  const key=streamKey(tokens,mode);
+  if(angelStreams.has(key)) return angelStreams.get(key);
+  if(!session?.jwtToken || !session?.feedToken || !session?.clientCode) throw new Error("ANGELONE_SESSION_REQUIRED");
+  const WebSocket = (await import("ws")).default;
+  const url=ANGEL_WS+"?clientCode="+encodeURIComponent(session.clientCode)+"&feedToken="+encodeURIComponent(session.feedToken)+"&apiKey="+encodeURIComponent(process.env.ANGELONE_API_KEY||"");
+  const state={key,ws:null,heartbeat:null,mode:Number(mode||1),tokens,closed:false};
+  const connect=()=>{
+    if(state.closed)return;
+    state.ws=new WebSocket(url,{handshakeTimeout:10000});
+    state.ws.on("open",()=>{
+      const payload={correlationID:"PTD01",action:1,params:{mode:state.mode,tokenList:state.tokens}};
+      try{state.ws.send(JSON.stringify(payload))}catch(e){}
+      clearInterval(state.heartbeat);
+      state.heartbeat=setInterval(()=>{try{if(state.ws.readyState===1)state.ws.ping()}catch(e){}},30000);
+      sendJsonToSubscribers({type:"connected",mode:state.mode,tokens:state.tokens});
+    });
+    state.ws.on("message",data=>{
+      try{
+        if(Buffer.isBuffer(data)){
+          const tick=parseSmartStreamPacket(data);
+          if(tick) sendJsonToSubscribers({type:"tick",data:tick});
+        }else{
+          sendJsonToSubscribers({type:"message",data:String(data)});
+        }
+      }catch(e){ sendJsonToSubscribers({type:"stream_error",message:e.message});}
+    });
+    state.ws.on("error",e=>sendJsonToSubscribers({type:"stream_error",message:e.message}));
+    state.ws.on("close",()=>{
+      clearInterval(state.heartbeat);
+      if(!state.closed){
+        sendJsonToSubscribers({type:"disconnected"});
+        setTimeout(connect,2000);
+      }
+    });
+  };
+  state.subscribers=new Set();
+  state.connect=connect;
+  angelStreams.set(key,state);
+  connect();
+  return state;
+}
+
+function sendJsonToSubscribers(payload){
+  for(const ws of liveClients) sendJson(ws,payload);
+}
+
 app.get("/api/instruments/search",async(req,res)=>{
   try{
     const data=await loadInstruments();
@@ -301,6 +395,14 @@ app.get("/api/market/status",(req,res)=>res.json({
   reason:"Exchange session/order gates must be verified server-side."
 }));
 
+
+app.get("/api/live/health",(req,res)=>res.json({
+  brokerSession:!!session?.jwtToken,
+  activeStreams:angelStreams.size,
+  connectedClients:liveClients.size,
+  streamProvider:"Angel One SmartStream 2.0"
+}));
+
 app.get("/api/network/status",async(req,res)=>{
   const configured=String(process.env.ANGELONE_PUBLIC_IP||"").trim();
   let observed=null;
@@ -332,4 +434,25 @@ app.get("/api/analysis",(req,res)=>res.json({
 app.use(express.static(path.join(__dirname,"public"),{extensions:["html"]}));
 app.get("/*splat",(req,res)=>res.sendFile(path.join(__dirname,"public","index.html")));
 
-app.listen(PORT,()=>console.log("PARTHAVI TRADE DESK PRO on "+PORT));
+import { createServer } from "http";
+import { WebSocketServer } from "ws";
+const server=createServer(app);
+const wss=new WebSocketServer({server,path:"/api/live/stream"});
+
+wss.on("connection",(ws)=>{
+  liveClients.add(ws);
+  sendJson(ws,{type:"ready",brokerSession:!!session?.jwtToken});
+  ws.on("message",async(raw)=>{
+    try{
+      const msg=JSON.parse(String(raw));
+      if(msg.action!=="subscribe" || !Array.isArray(msg.tokenList) || !msg.tokenList.length) return;
+      const mode=Math.max(1,Math.min(3,Number(msg.mode||3)));
+      const state=await connectAngelStream(mode,msg.tokenList);
+      state.subscribers.add(ws);
+      sendJson(ws,{type:"subscribed",mode,tokens:msg.tokenList});
+    }catch(e){sendJson(ws,{type:"stream_error",message:e.message||"Subscribe failed"});}
+  });
+  ws.on("close",()=>liveClients.delete(ws));
+});
+
+server.listen(PORT,()=>console.log("PARTHAVI TRADE DESK PRO on "+PORT));
