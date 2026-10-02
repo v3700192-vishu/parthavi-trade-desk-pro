@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PARTHAVI TRADE DESK PRO</title>
+<style>
+:root{--bg:#050711;--card:#0c1120;--card2:#10172a;--line:#24324b;--txt:#f5f7ff;--muted:#8e9bb1;--white:#fff;--red:#ff5f80;--amber:#ffcf67;--green:#25e6a6;--cyan:#64e6ff;--violet:#a98bff;--gold:#ffd86d}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(850px 500px at 85% -5%,#28184c55,transparent 60%),radial-gradient(700px 450px at 0 10%,#005d7940,transparent 60%),linear-gradient(180deg,#050711,#07101e 50%,#050711);color:var(--txt);font:14px Inter,system-ui,Segoe UI,Arial,sans-serif}
+.wrap{max-width:1500px;margin:auto;padding:12px 14px 80px}.top{position:sticky;top:8px;z-index:20;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 13px;background:#080c16df;border:1px solid var(--line);border-radius:22px;backdrop-filter:blur(18px)}
+.brand{display:flex;align-items:center;gap:11px}.logo{width:56px;height:56px;border-radius:16px;background:linear-gradient(135deg,#ffd86d,#9b75ff);display:grid;place-items:center;color:#101321;font-weight:1000}.brand h1{font-size:17px;margin:0;letter-spacing:.9px}.brand p{margin:3px 0 0;color:var(--muted);font-size:9px;letter-spacing:.7px}.pill{padding:8px 11px;border:1px solid var(--line);border-radius:999px;color:var(--muted);background:#0a1020}.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--red);margin-right:5px}
+.grid{display:grid;grid-template-columns:1.65fr .8fr;gap:12px;margin-top:12px}.stack{display:grid;gap:12px}.card{background:linear-gradient(180deg,#0d1423f5,#080d18f7);border:1px solid var(--line);border-radius:20px;padding:14px;box-shadow:0 20px 50px #0007}.head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px}.head h2{font-size:15px;margin:0}.sub{font-size:9px;color:var(--muted)}
+.controls{display:grid;grid-template-columns:repeat(6,1fr);gap:7px}.controls input,.controls select,.btn{background:#09101d;color:var(--txt);border:1px solid var(--line);border-radius:10px;padding:9px}.btn{font-weight:850;cursor:pointer}.btn.primary{background:linear-gradient(135deg,#1b3454,#2e1b54);border-color:#566f96}.btn.buy{color:var(--green)}.btn.sell{color:var(--red)}.btn.warn{color:var(--amber)}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:9px}.kpi{background:#080e19;border:1px solid var(--line);border-radius:13px;padding:10px}.kpi small{color:var(--muted);font-size:8px}.kpi b{display:block;font-size:20px;margin-top:4px}.bull{color:var(--white)!important;text-shadow:0 0 12px #fff2}.bear{color:var(--red)!important;text-shadow:0 0 12px #ff5f8040}.wait{color:var(--amber)!important}
+.chart{height:470px;border:1px solid var(--line);border-radius:16px;background:#040912;position:relative;overflow:hidden}.chart canvas{width:100%;height:100%}.chartbar{position:absolute;left:8px;right:8px;top:8px;display:flex;justify-content:space-between;pointer-events:none}.tabs{display:flex;gap:5px;pointer-events:auto}.tab{background:#07101c;color:var(--muted);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:8px;cursor:pointer}.tab.on{color:#fff;background:#1c2440;border-color:#6475a0}.badge{padding:5px 8px;border-radius:999px;font-size:8px;font-weight:900;border:1px solid var(--line);background:#07101c}
+.rows{display:grid;gap:6px}.row{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:9px 10px;background:#080e19;border:1px solid var(--line);border-radius:11px;font-size:10px}.row span{color:var(--muted)}
+.matrix{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}.metric{padding:9px;background:#080e19;border:1px solid var(--line);border-radius:11px}.metric small{font-size:7px;color:var(--muted)}.metric b{display:block;margin-top:4px;font-size:12px}
+.option{overflow:auto}.option table{width:100%;min-width:700px;border-collapse:separate;border-spacing:0 5px;font-size:9px}.option th{color:var(--muted);font-size:7px;padding:5px}.option td{padding:8px 6px;background:#080e19;border-top:1px solid var(--line);border-bottom:1px solid var(--line);text-align:right}.option td:first-child{text-align:left;border-left:1px solid var(--line);border-radius:8px 0 0 8px}.option td:last-child{border-right:1px solid var(--line);border-radius:0 8px 8px 0}
+.news{display:grid;gap:6px}.news div{background:#080e19;border:1px solid var(--line);border-radius:10px;padding:9px}.news b{display:block;font-size:10px}.news span{display:block;color:var(--muted);font-size:8px;margin-top:3px;line-height:1.4}
+.gates{display:grid;grid-template-columns:1fr 1fr;gap:6px}.gate{padding:9px;background:#080e19;border:1px solid var(--line);border-radius:10px;font-size:9px;display:flex;justify-content:space-between}.ok{color:var(--green)}.blocked{color:var(--red)}.warnText{color:var(--amber)}
+.footer{text-align:center;color:var(--muted);font-size:8px;margin:16px}
+@media(max-width:980px){.grid{grid-template-columns:1fr}.controls{grid-template-columns:repeat(3,1fr)}.matrix{grid-template-columns:repeat(3,1fr)}}@media(max-width:620px){.wrap{padding:8px}.controls{grid-template-columns:1fr 1fr}.kpis{grid-template-columns:1fr 1fr}.matrix{grid-template-columns:1fr 1fr}.chart{height:360px}.brand p{display:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="top">
+ <div class="brand"><div class="logo">PB</div><div><h1>PARTHAVI TRADE DESK PRO</h1><p>ADVANCED MARKET INTELLIGENCE • RISK-FIRST EXECUTION</p></div></div>
+ <div class="pill" id="online"><span class="dot"></span>LIVE BACKEND: NOT CONNECTED</div>
+</header>
+
+<section class="card">
+ <div class="head"><h2>Contract Finder</h2><span class="sub">NSE + BSE • Index / Stock / Futures / Options</span></div>
+ <div class="controls">
+  <select id="ex"><option>NSE</option><option>BSE</option></select>
+  <select id="seg"><option>INDEX OPTIONS</option><option>STOCK OPTIONS</option><option>FUTURES</option><option>EQUITY</option></select>
+  <input id="under" value="NIFTY" placeholder="Underlying">
+  <select id="exp"><option>Nearest Expiry</option></select>
+  <select id="otype"><option>CE</option><option>PE</option></select>
+  <input id="strike" value="23500" placeholder="Strike">
+ </div>
+ <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:9px">
+  <button class="btn primary" onclick="analyse()">Analyse Contract</button>
+  <button class="btn" onclick="notifyMe()">🔔 Enable Alerts</button>
+  <button class="btn" onclick="refresh()">↻ Refresh</button>
+  <span class="badge" id="contract">NSE • NIFTY • 23500 CE</span>
+ </div>
+</section>
+
+<div class="grid">
+<main class="stack">
+ <section class="card">
+  <div class="head"><h2>Market Command Center</h2><span class="badge" id="chartFeed">NO LIVE FEED</span></div>
+  <div class="chart"><canvas id="cv"></canvas><div class="chartbar"><div class="tabs" id="tabs"></div><span class="badge">Price Action + Indicators</span></div></div>
+  <div class="kpis">
+   <div class="kpi"><small>PREDICTION</small><b id="pred" class="wait">NEUTRAL</b></div>
+   <div class="kpi"><small>CONFIRMATION</small><b id="confirm" class="wait">LOCKED</b></div>
+   <div class="kpi"><small>MODEL CONFIDENCE</small><b id="confidence">—</b></div>
+   <div class="kpi"><small>HISTORICAL HIT RATE*</small><b id="hit">—</b></div>
+  </div>
+ </section>
+
+ <section class="card">
+  <div class="head"><h2>Technical Fusion</h2><span class="sub">1H Trend → 15M Setup → 5M Trigger</span></div>
+  <div class="matrix" id="tech"></div>
+ </section>
+
+ <section class="card">
+  <div class="head"><h2>Option Chain Pulse</h2><span class="sub">OI • ΔOI • Volume • IV • Bid/Ask</span></div>
+  <div class="option"><table><thead><tr><th>CE OI</th><th>CE ΔOI</th><th>CE LTP</th><th>STRIKE</th><th>PE LTP</th><th>PE ΔOI</th><th>PE OI</th></tr></thead><tbody id="chain"></tbody></table></div>
+ </section>
+
+ <section class="card">
+  <div class="head"><h2>News & Global Risk</h2><span class="sub">freshness + source-quality gate</span></div>
+  <div class="news" id="news"><div><b>Waiting for verified live news feed</b><span>No simulated headlines are shown.</span></div></div>
+ </section>
+</main>
+
+<aside class="stack">
+ <section class="card">
+  <div class="head"><h2>Final Decision</h2><span class="badge" id="decision">NO TRADE</span></div>
+  <div class="rows">
+   <div class="row"><span>Direction</span><b id="dir" class="wait">NO TRADE</b></div>
+   <div class="row"><span>Entry</span><b id="entry">—</b></div>
+   <div class="row"><span>Stop Loss</span><b id="sl">—</b></div>
+   <div class="row"><span>T1 / T2</span><b id="tgt">—</b></div>
+   <div class="row"><span>R:R</span><b id="rr">—</b></div>
+  </div>
+  <div style="margin-top:9px;display:grid;grid-template-columns:1fr 1fr;gap:7px"><button class="btn buy" onclick="trade('BUY')">BUY • LOCKED</button><button class="btn sell" onclick="trade('SELL')">SELL • LOCKED</button></div>
+  <p class="sub" style="margin:8px 0 0">Live orders remain protected by broker-session, market-session, risk and explicit-confirmation gates.</p>
+ </section>
+
+ <section class="card"><div class="head"><h2>Angel One Account</h2><span class="badge" id="acct">LOCKED</span></div><div class="kpis" style="grid-template-columns:1fr 1fr"><div class="kpi"><small>AVAILABLE CASH</small><b id="cash">—</b></div><div class="kpi"><small>DAY P&amp;L</small><b id="pnl">—</b></div><div class="kpi"><small>USED MARGIN</small><b id="margin">—</b></div><div class="kpi"><small>NET</small><b id="net">—</b></div></div></section>
+
+ <section class="card"><div class="head"><h2>Go-Live Safety Gates</h2><span class="badge" id="ready">LOCKED</span></div>
+ <div class="gates">
+  <div class="gate"><span>Market Session</span><b class="blocked">WAIT</b></div><div class="gate"><span>Angel Session</span><b class="blocked">WAIT</b></div>
+  <div class="gate"><span>Static IP</span><b class="blocked">WAIT</b></div><div class="gate"><span>Kill Switch</span><b class="ok">ON</b></div>
+  <div class="gate"><span>Risk Gate</span><b class="blocked">WAIT</b></div><div class="gate"><span>Live Execution</span><b class="blocked">LOCKED</b></div>
+ </div></section>
+
+ <section class="card"><div class="head"><h2>Alerts</h2><span class="sub">Breakout • Breakdown • VWAP • RSI • Order status</span></div><div id="alerts" class="rows"><div class="row"><span>System</span><b class="wait">Protected mode active</b></div></div></section>
+</aside>
+</div>
+<div class="footer">*Historical/backtest metric only; never a guarantee of future profit. PARTHAVI TRADE DESK PRO • Online frontend • Live broker backend requires a separate secure server.</div>
+</div>
+<script>
+const $=id=>document.getElementById(id), tfs=['1M','5M','15M','30M','1H','4H','1D'];let tf='15M';
+$('tabs').innerHTML=tfs.map(x=>'<button class="tab '+(x===tf?'on':'')+'" onclick="setTF(\''+x+'\')">'+x+'</button>').join('');
+function setTF(x){tf=x;document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on',b.textContent===x));draw()}
+['ex','seg','under','exp','otype','strike'].forEach(id=>$(id).addEventListener('input',syncContract));
+function syncContract(){$('contract').textContent=$('ex').value+' • '+$('under').value.toUpperCase()+' • '+$('strike').value+' '+$('otype').value}
+function addAlert(a,b='warn'){const d=document.createElement('div');d.className='row';d.innerHTML='<span>'+a+'</span><b class="'+b+'">'+new Date().toLocaleTimeString()+'</b>';$('alerts').prepend(d)}
+function analyse(){syncContract();addAlert('Analysis request queued','wait');refresh()}
+function trade(side){addAlert(side+' protected by live execution gate','warn')}
+async function notifyMe(){if('Notification' in window){const p=await Notification.requestPermission();addAlert(p==='granted'?'Browser alerts enabled':'Browser alerts not enabled',p==='granted'?'ok':'warn')}}
+async function refresh(){try{const r=await fetch('/api/health');if(r.ok){$('online').innerHTML='<span class="dot" style="background:var(--green)"></span>LIVE BACKEND: REACHABLE';$('chartFeed').textContent='BACKEND ONLINE'}}catch(e){}}
+function draw(){const c=$('cv'),x=c.getContext('2d'),d=devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*d;c.height=h*d;x.scale(d,d);x.fillStyle='#040912';x.fillRect(0,0,w,h);x.strokeStyle='#172238';for(let i=0;i<8;i++){let y=35+i*(h-55)/7;x.beginPath();x.moveTo(0,y);x.lineTo(w,y);x.stroke()}for(let i=0;i<70;i++){let xx=20+i*(w-40)/69;x.beginPath();x.moveTo(xx,0);x.lineTo(xx,h);x.stroke()}let p=h*.58;for(let i=0;i<60;i++){let xx=24+i*(w-48)/59,delta=Math.sin(i/3.2)*6+(Math.random()-.5)*8,o=p,cl=p-delta,hi=Math.min(o,cl)-Math.random()*12,lo=Math.max(o,cl)+Math.random()*12;x.strokeStyle=cl<o?'#fff':'#ff5f80';x.beginPath();x.moveTo(xx,hi);x.lineTo(xx,lo);x.stroke();x.fillStyle=cl<o?'#fff':'#ff5f80';x.fillRect(xx-3,Math.min(o,cl),6,Math.max(2,Math.abs(cl-o)));p=cl}}
+const tech=[['EMA 20/50/200','WAIT'],['RSI','WAIT'],['MACD','WAIT'],['ADX','WAIT'],['VWAP','WAIT'],['ATR','WAIT'],['Volume','WAIT'],['Price Action','WAIT'],['1H Trend','WAIT'],['15M Setup','WAIT'],['5M Trigger','WAIT'],['OI Confirmation','WAIT']];
+$('tech').innerHTML=tech.map(x=>'<div class="metric"><small>'+x[0]+'</small><b class="wait">'+x[1]+'</b></div>').join('');
+[23400,23500,23600,23700].forEach(s=>$('chain').insertAdjacentHTML('beforeend','<tr><td>—</td><td>—</td><td>—</td><td>'+s+'</td><td>—</td><td>—</td><td>—</td></tr>'));
+draw();window.addEventListener('resize',draw);refresh();
+</script>
+</body></html>
