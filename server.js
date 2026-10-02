@@ -3,457 +3,430 @@ import os from "os";
 import crypto from "crypto";
 import path from "path";
 import {fileURLToPath} from "url";
+import {createServer} from "http";
+import WebSocket, {WebSocketServer} from "ws";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const app = express();
-const PORT = Number(process.env.PORT || 3000);
-const ANGEL_ROOT = "https://apiconnect.angelone.in";
-const ANGEL_WS = "wss://smartapisocket.angelone.in/smart-stream";
+const __filename=fileURLToPath(import.meta.url);
+const __dirname=path.dirname(__filename);
+const app=express();
+const PORT=Number(process.env.PORT||3000);
+const ANGEL_ROOT="https://apiconnect.angelone.in";
+const ANGEL_WS="wss://smartapisocket.angelone.in/smart-stream";
+const INSTRUMENT_URL="https://margincalculator.angelone.in/OpenAPI_File/files/OpenAPIScripMaster.json";
 
-let session = null;
-let instrumentCache = { loadedAt: 0, data: [] };
-const liveClients = new Set();
-const angelStreams = new Map();
-const INSTRUMENT_URL = "https://margincalculator.angelone.in/OpenAPI_File/files/OpenAPIScripMaster.json";
+let session=null;
+let instrumentCache={loadedAt:0,data:[]};
+const streams=new Map();
+const subscribedSockets=new Set();
+let analysisCache={key:"",at:0,data:null};
+let intelligenceCache={at:0,data:null};
+let optionCache={key:"",at:0,data:null};
 
 app.disable("x-powered-by");
-app.use(express.json({limit:"32kb"}));
+app.use(express.json({limit:"64kb"}));
 app.use((req,res,next)=>{
   res.setHeader("X-Content-Type-Options","nosniff");
   res.setHeader("X-Frame-Options","DENY");
   res.setHeader("Referrer-Policy","no-referrer");
   res.setHeader("Permissions-Policy","camera=(),microphone=(),geolocation=()");
+  res.setHeader("Cache-Control","no-store");
   next();
 });
 
 function brokerConfigured(){
-  return Boolean(process.env.ANGELONE_API_KEY && process.env.ANGELONE_CLIENT_CODE && process.env.ANGELONE_PIN);
+  return !!(process.env.ANGELONE_API_KEY&&process.env.ANGELONE_CLIENT_CODE&&process.env.ANGELONE_PIN);
 }
-
-function gateState(){
+function gates(){
   return {
-    orderExecutionEnabled: process.env.ORDER_EXECUTION_ENABLED === "true",
-    staticIpVerified: process.env.STATIC_IP_VERIFIED === "true",
-    protectiveSlVerified: process.env.PROTECTIVE_SL_VERIFIED === "true",
-    killSwitch: process.env.TRADING_KILL_SWITCH !== "false"
+    orderExecutionEnabled:process.env.ORDER_EXECUTION_ENABLED==="true",
+    staticIpVerified:process.env.STATIC_IP_VERIFIED==="true",
+    protectiveSlVerified:process.env.PROTECTIVE_SL_VERIFIED==="true",
+    killSwitch:process.env.TRADING_KILL_SWITCH!=="false"
   };
 }
-
+function orderGate(){
+  const g=gates();
+  return {
+    unlocked:g.orderExecutionEnabled&&g.staticIpVerified&&g.protectiveSlVerified&&!g.killSwitch,
+    ...g
+  };
+}
 function localIp(){
   for(const list of Object.values(os.networkInterfaces())){
-    for(const item of list || []){
-      if(!item.internal && (item.family === "IPv4" || item.family === 4)) return item.address;
-    }
+    for(const item of list||[]) if(!item.internal&&(item.family==="IPv4"||item.family===4)) return item.address;
   }
   return "127.0.0.1";
 }
-
-function base32ToBuffer(input){
-  const clean = String(input || "").toUpperCase().replace(/[^A-Z2-7]/g,"");
-  let bits = "", bytes = [];
-  for(const ch of clean){
-    const v = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".indexOf(ch);
-    if(v < 0) continue;
-    bits += v.toString(2).padStart(5,"0");
-  }
-  for(let i=0;i+8<=bits.length;i+=8) bytes.push(parseInt(bits.slice(i,i+8),2));
-  return Buffer.from(bytes);
+function b32(s){
+  const clean=String(s||"").toUpperCase().replace(/[^A-Z2-7]/g,"");
+  let bits="",out=[];
+  for(const ch of clean){const v="ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".indexOf(ch);if(v>=0)bits+=v.toString(2).padStart(5,"0");}
+  for(let i=0;i+8<=bits.length;i+=8)out.push(parseInt(bits.slice(i,i+8),2));
+  return Buffer.from(out);
 }
-
-function makeTotp(secret, timestamp=Date.now()){
-  const key = base32ToBuffer(secret);
-  const counter = Math.floor(timestamp/1000/30);
-  const msg = Buffer.alloc(8);
-  msg.writeBigUInt64BE(BigInt(counter));
-  const digest = crypto.createHmac("sha1", key).update(msg).digest();
-  const offset = digest[digest.length-1] & 15;
-  const code = (digest.readUInt32BE(offset) & 0x7fffffff) % 1000000;
-  return String(code).padStart(6,"0");
+function totp(secret,at=Date.now()){
+  const key=b32(secret),counter=Math.floor(at/30000),buf=Buffer.alloc(8);
+  buf.writeBigUInt64BE(BigInt(counter));
+  const h=crypto.createHmac("sha1",key).update(buf).digest(),off=h[h.length-1]&15;
+  return String((h.readUInt32BE(off)&0x7fffffff)%1000000).padStart(6,"0");
 }
+function safeError(e){return {connected:false,error:e?.message||"Broker request failed",errorCode:e?.code||null};}
 
-async function angelRequest(method, route, body=null, tokenOverride=null){
-  const token = tokenOverride || session?.jwtToken;
-  if(!token && route.includes("/secure/")) throw new Error("ANGELONE_SESSION_REQUIRED");
-  const headers = {
+async function angelRequest(method,route,body=null,tokenOverride=null){
+  const token=tokenOverride||session?.jwtToken;
+  if(route.includes("/secure/")&&!token) throw new Error("ANGELONE_SESSION_REQUIRED");
+  const headers={
     "Content-Type":"application/json",
     "Accept":"application/json",
     "X-UserType":"USER",
     "X-SourceID":"WEB",
-    "X-ClientLocalIP":process.env.ANGELONE_CLIENT_LOCAL_IP || localIp(),
-    "X-ClientPublicIP":process.env.ANGELONE_PUBLIC_IP || "0.0.0.0",
-    "X-MACAddress":process.env.ANGELONE_MAC_ADDRESS || "00:00:00:00:00:00",
-    "X-PrivateKey":process.env.ANGELONE_API_KEY || ""
+    "X-ClientLocalIP":process.env.ANGELONE_CLIENT_LOCAL_IP||localIp(),
+    "X-ClientPublicIP":process.env.ANGELONE_PUBLIC_IP||"0.0.0.0",
+    "X-MACAddress":process.env.ANGELONE_MAC_ADDRESS||"00:00:00:00:00:00",
+    "X-PrivateKey":process.env.ANGELONE_API_KEY||""
   };
-  if(token) headers.Authorization = "Bearer " + token;
-  const resp = await fetch(ANGEL_ROOT + route, {
-    method,
-    headers,
-    body: body == null ? undefined : JSON.stringify(body)
-  });
-  const text = await resp.text();
-  let data; try{ data = JSON.parse(text); }catch{ data = {status:false,message:"Invalid JSON from Angel One",raw:text.slice(0,500)}; }
-  if(!resp.ok || data?.status === false){
-    const err = new Error(data?.message || ("Angel One HTTP "+resp.status));
-    err.code = data?.errorcode || String(resp.status);
-    err.data = data;
-    throw err;
-  }
+  if(token)headers.Authorization="Bearer "+token;
+  const resp=await fetch(ANGEL_ROOT+route,{method,headers,body:body==null?undefined:JSON.stringify(body),signal:AbortSignal.timeout(15000)});
+  const txt=await resp.text();
+  let data;try{data=JSON.parse(txt);}catch{data={status:false,message:"Invalid JSON from Angel One"};}
+  if(!resp.ok||data?.status===false){const e=new Error(data?.message||("Angel One HTTP "+resp.status));e.code=data?.errorcode||String(resp.status);e.data=data;throw e;}
   return data;
 }
-
 async function ensureSession(){
-  if(!brokerConfigured()) throw new Error("ANGELONE_CREDENTIALS_NOT_CONFIGURED");
-  if(session?.jwtToken){
-    return session;
-  }
-  const totp = process.env.ANGELONE_TOTP_SECRET ? makeTotp(process.env.ANGELONE_TOTP_SECRET) : process.env.ANGELONE_TOTP_CODE;
-  if(!totp) throw new Error("ANGELONE_TOTP_REQUIRED");
-  const data = await angelRequest("POST","/rest/auth/angelbroking/user/v1/loginByPassword",{
-    clientcode:process.env.ANGELONE_CLIENT_CODE,
-    password:process.env.ANGELONE_PIN,
-    totp
-  }, null);
-  session = {
-    jwtToken:data.data.jwtToken,
-    refreshToken:data.data.refreshToken,
-    feedToken:data.data.feedToken,
-    clientCode:process.env.ANGELONE_CLIENT_CODE,
-    connectedAt:new Date().toISOString()
-  };
+  if(session?.jwtToken)return session;
+  if(!brokerConfigured())throw new Error("ANGELONE_CREDENTIALS_NOT_CONFIGURED");
+  const code=process.env.ANGELONE_TOTP_SECRET?totp(process.env.ANGELONE_TOTP_SECRET):String(process.env.ANGELONE_TOTP_CODE||"");
+  if(!/^\\d{6}$/.test(code))throw new Error("ANGELONE_TOTP_REQUIRED");
+  const d=await angelRequest("POST","/rest/auth/angelbroking/user/v1/loginByPassword",{
+    clientcode:process.env.ANGELONE_CLIENT_CODE,password:process.env.ANGELONE_PIN,totp:code
+  });
+  session={jwtToken:d.data.jwtToken,refreshToken:d.data.refreshToken,feedToken:d.data.feedToken,clientCode:process.env.ANGELONE_CLIENT_CODE,connectedAt:new Date().toISOString()};
   return session;
 }
-
-
-function intervalName(tf){
-  return ({
-    "1M":"ONE_MINUTE","3M":"THREE_MINUTE","5M":"FIVE_MINUTE","10M":"TEN_MINUTE",
-    "15M":"FIFTEEN_MINUTE","30M":"THIRTY_MINUTE","1H":"ONE_HOUR","1D":"ONE_DAY"
-  })[tf] || "FIFTEEN_MINUTE";
-}
-
+function intervalName(tf){return ({1M:"ONE_MINUTE",3M:"THREE_MINUTE",5M:"FIVE_MINUTE",10M:"TEN_MINUTE",15M:"FIFTEEN_MINUTE",30M:"THIRTY_MINUTE",1H:"ONE_HOUR",1D:"ONE_DAY"})[tf]||"FIFTEEN_MINUTE";}
 function istStamp(date){
-  const d = new Date(date.getTime() + 330*60*1000);
-  const p=n=>String(n).padStart(2,"0");
+  const d=new Date(date.getTime()+330*60000),p=n=>String(n).padStart(2,"0");
   return d.getUTCFullYear()+"-"+p(d.getUTCMonth()+1)+"-"+p(d.getUTCDate())+" "+p(d.getUTCHours())+":"+p(d.getUTCMinutes());
 }
-
 async function loadInstruments(force=false){
-  const fresh = instrumentCache.data.length && (Date.now()-instrumentCache.loadedAt < 30*60*1000);
-  if(fresh && !force) return instrumentCache.data;
-  const resp = await fetch(INSTRUMENT_URL,{signal:AbortSignal.timeout(30000),headers:{"Accept":"application/json","User-Agent":"PARTHAVI-TRADE-DESK/1.0"}});
-  if(!resp.ok) throw new Error("INSTRUMENT_MASTER_HTTP_"+resp.status);
-  const text = await resp.text();
-  const parsed = JSON.parse(text);
-  if(!Array.isArray(parsed)) throw new Error("INSTRUMENT_MASTER_INVALID");
-  instrumentCache={loadedAt:Date.now(),data:parsed};
-  return parsed;
+  if(!force&&instrumentCache.data.length&&Date.now()-instrumentCache.loadedAt<30*60000)return instrumentCache.data;
+  const r=await fetch(INSTRUMENT_URL,{signal:AbortSignal.timeout(30000)});
+  if(!r.ok)throw new Error("INSTRUMENT_MASTER_HTTP_"+r.status);
+  const a=await r.json();if(!Array.isArray(a))throw new Error("INSTRUMENT_MASTER_INVALID");
+  instrumentCache={loadedAt:Date.now(),data:a};return a;
+}
+function segmentFrom(exchange){return ({NSE:"nse_cm",BSE:"bse_cm",NFO:"nse_fo",BFO:"bse_fo",MCX:"mcx_fo"})[String(exchange||"NSE").toUpperCase()]||"nse_cm";}
+function findToken(data,segment,name){
+  const q=String(name||"").toUpperCase();
+  return data.filter(x=>String(x.exch_seg||"").toLowerCase()===segment).find(x=>String(x.symbol||"").toUpperCase()===q) ||
+         data.filter(x=>String(x.exch_seg||"").toLowerCase()===segment).find(x=>String(x.name||"").toUpperCase()===q);
+}
+function num(v){const n=Number(v);return Number.isFinite(n)?n:null;}
+async function quoteBatch(exchange,tokens,mode="FULL"){
+  await ensureSession();
+  const uniq=[...new Set(tokens.map(String))].slice(0,50);
+  if(!uniq.length)return [];
+  const d=await angelRequest("POST","/rest/secure/angelbroking/market/v1/quote/",{mode,exchangeTokens:{[exchange]:uniq}});
+  return Array.isArray(d?.data?.fetched)?d.data.fetched:[];
+}
+async function candlesFor(exchange,token,tf,days=5){
+  await ensureSession();
+  const cap=tf==="1M"?20:tf==="5M"?100:tf==="15M"?200:tf==="30M"?200:tf==="1H"?400:1000;
+  const count=Math.min(Math.max(1,days),cap);
+  const to=new Date(),from=new Date(Date.now()-count*86400000);
+  const d=await angelRequest("POST","/rest/secure/angelbroking/historical/v1/getCandleData",{
+    exchange,symboltoken:String(token),interval:intervalName(tf),fromdate:istStamp(from),todate:istStamp(to)
+  });
+  return (Array.isArray(d?.data)?d.data:[]).map(r=>({time:Math.floor(new Date(r[0]).getTime()/1000),open:num(r[1]),high:num(r[2]),low:num(r[3]),close:num(r[4]),volume:num(r[5])||0})).filter(x=>x.open!=null&&x.high!=null&&x.low!=null&&x.close!=null);
 }
 
-function normalizeExchange(exchange, segment){
-  if(segment) return String(segment).toLowerCase();
-  return ({NSE:"nse_cm",BSE:"bse_cm",NFO:"nse_fo",BFO:"bse_fo",MCX:"mcx_fo"})[String(exchange||"NSE").toUpperCase()] || "nse_cm";
-}
-
-function instrumentMatches(item,q,segment){
-  const needle=String(q||"").trim().toUpperCase();
-  if(!needle) return true;
-  const hay=[item.symbol,item.name,item.exch_seg].join(" ").toUpperCase();
-  return hay.includes(needle);
-}
-
-
-function parseSmartStreamPacket(buf){
-  const b = Buffer.isBuffer(buf) ? buf : Buffer.from(buf);
-  if(b.length < 51) return null;
-  const mode = b.readUInt8(0);
-  const exchangeType = b.readUInt8(1);
-  const token = b.subarray(2,27).toString("utf8").replace(/\0/g,"");
-  const sequence = Number(b.readBigInt64LE(27));
-  const exchangeTimestamp = Number(b.readBigInt64LE(35));
-  const out = {mode,exchangeType,token,sequence,exchangeTimestamp};
-  if(mode === 1){
-    out.ltp = b.readInt32LE(43) / 100;
-    return out;
-  }
-  if(b.length < 123) return out;
-  out.ltp = Number(b.readBigInt64LE(43)) / 100;
-  out.lastTradedQuantity = Number(b.readBigInt64LE(51));
-  out.avgTradedPrice = Number(b.readBigInt64LE(59)) / 100;
-  out.volume = Number(b.readBigInt64LE(67));
-  out.totalBuyQuantity = b.readDoubleLE(75);
-  out.totalSellQuantity = b.readDoubleLE(83);
-  out.open = Number(b.readBigInt64LE(91)) / 100;
-  out.high = Number(b.readBigInt64LE(99)) / 100;
-  out.low = Number(b.readBigInt64LE(107)) / 100;
-  out.close = Number(b.readBigInt64LE(115)) / 100;
-  if(mode === 3 && b.length >= 379){
-    out.lastTradedTimestamp = Number(b.readBigInt64LE(123));
-    out.openInterest = Number(b.readBigInt64LE(131));
-    out.openInterestChange = b.readDoubleLE(139);
-  }
+/* ---------- indicator engine ---------- */
+function sma(a,n){if(a.length<n)return null;return a.slice(-n).reduce((s,x)=>s+x,0)/n;}
+function emaSeries(a,n){
+  if(!a.length)return [];
+  const k=2/(n+1),out=new Array(a.length).fill(null);
+  if(a.length<n)return out;
+  let e=a.slice(0,n).reduce((s,x)=>s+x,0)/n;out[n-1]=e;
+  for(let i=n;i<a.length;i++){e=a[i]*k+e*(1-k);out[i]=e;}
   return out;
 }
-
-function sendJson(ws,payload){
-  if(ws.readyState === 1){
-    try{ ws.send(JSON.stringify(payload)); }catch(e){}
+function ema(a,n){const x=emaSeries(a,n);return x[x.length-1];}
+function trSeries(c){
+  const out=[];
+  for(let i=0;i<c.length;i++)out.push(i===0?c[i].high-c[i].low:Math.max(c[i].high-c[i].low,Math.abs(c[i].high-c[i-1].close),Math.abs(c[i].low-c[i-1].close)));
+  return out;
+}
+function atrSeries(c,n=14){return emaSeries(trSeries(c),n);}
+function atr(c,n=14){const x=atrSeries(c,n),v=x[x.length-1];return v;}
+function rsiSeries(c,n=14){
+  const out=new Array(c.length).fill(null);if(c.length<=n)return out;
+  let gain=0,loss=0;for(let i=1;i<=n;i++){const d=c[i].close-c[i-1].close;gain+=Math.max(d,0);loss+=Math.max(-d,0);}
+  let ag=gain/n,al=loss/n;out[n]=al===0?100:100-100/(1+ag/al);
+  for(let i=n+1;i<c.length;i++){const d=c[i].close-c[i-1].close;ag=(ag*(n-1)+Math.max(d,0))/n;al=(al*(n-1)+Math.max(-d,0))/n;out[i]=al===0?100:100-100/(1+ag/al);}
+  return out;
+}
+function rsi(c,n=14){const x=rsiSeries(c,n);return x[x.length-1];}
+function macd(c){
+  const closes=c.map(x=>x.close),fastS=emaSeries(closes,12),slowS=emaSeries(closes,26),line=closes.map((_,i)=>fastS[i]!=null&&slowS[i]!=null?fastS[i]-slowS[i]:null);
+  const valid=line.map((v,i)=>v==null?null:v).filter(v=>v!=null),sigArr=emaSeries(valid,9),signal=sigArr.length?sigArr[sigArr.length-1]:null;
+  const m=line[line.length-1],prev=line[line.length-2];
+  return {macd:m,signal,previous:prev,hist:m!=null&&signal!=null?m-signal:null};
+}
+function adx(c,n=14){
+  if(c.length<n*2+1)return {adx:null,plusDI:null,minusDI:null};
+  const tr=[],plus=[],minus=[];
+  for(let i=1;i<c.length;i++){
+    const up=c[i].high-c[i-1].high,down=c[i-1].low-c[i].low;
+    tr.push(Math.max(c[i].high-c[i].low,Math.abs(c[i].high-c[i-1].close),Math.abs(c[i].low-c[i-1].close)));
+    plus.push(up>down&&up>0?up:0);minus.push(down>up&&down>0?down:0);
   }
+  const atrs=emaSeries(tr,n),ps=emaSeries(plus,n),ms=emaSeries(minus,n),dx=[];
+  let pLast=0,mLast=0;
+  for(let i=0;i<tr.length;i++){if(atrs[i]>0){const p=100*ps[i]/atrs[i],m=100*ms[i]/atrs[i];pLast=p;mLast=m;dx.push((p+m)===0?0:100*Math.abs(p-m)/(p+m));}}
+  const a=ema(dx,n);
+  return {adx:a,plusDI:pLast,minusDI:mLast};
+}
+function bollinger(c,n=20,m=2){
+  const a=c.map(x=>x.close),mid=sma(a,n);if(mid==null)return {mid:null,upper:null,lower:null};
+  const s=Math.sqrt(a.slice(-n).reduce((s,x)=>s+(x-mid)*(x-mid),0)/n);
+  return {mid,upper:mid+m*s,lower:mid-m*s};
+}
+function stochastic(c,n=14){
+  if(c.length<n)return {k:null,d:null};
+  const win=c.slice(-n),hi=Math.max(...win.map(x=>x.high)),lo=Math.min(...win.map(x=>x.low)),k=hi===lo?50:100*(c[c.length-1].close-lo)/(hi-lo);
+  return {k,d:k};
+}
+function cci(c,n=20){
+  if(c.length<n)return null;
+  const tp=c.map(x=>(x.high+x.low+x.close)/3),avg=sma(tp,n),dev=tp.slice(-n).reduce((s,x)=>s+Math.abs(x-avg),0)/n;
+  return dev===0?0:(tp[tp.length-1]-avg)/(0.015*dev);
+}
+function mfi(c,n=14){
+  if(c.length<=n)return null;
+  const tp=c.map(x=>(x.high+x.low+x.close)/3),pos=[],neg=[];
+  for(let i=1;i<c.length;i++){const flow=tp[i]*c[i].volume;if(tp[i]>tp[i-1]){pos.push(flow);neg.push(0);}else if(tp[i]<tp[i-1]){pos.push(0);neg.push(flow);}else{pos.push(0);neg.push(0);}}
+  const p=pos.slice(-n).reduce((s,x)=>s+x,0),ng=neg.slice(-n).reduce((s,x)=>s+x,0);return ng===0?100:100-100/(1+p/ng);
+}
+function roc(c,n=12){if(c.length<=n)return null;return 100*(c[c.length-1].close/c[c.length-1-n].close-1);}
+function williams(c,n=14){if(c.length<n)return null;const w=c.slice(-n),hi=Math.max(...w.map(x=>x.high)),lo=Math.min(...w.map(x=>x.low));return hi===lo?-50:-100*(hi-c[c.length-1].close)/(hi-lo);}
+function obv(c){let v=0;for(let i=1;i<c.length;i++)v+=c[i].close>c[i-1].close?c[i].volume:c[i].close<c[i-1].close?-c[i].volume:0;return v;}
+function vwap(c){let pv=0,vol=0;for(const x of c){const p=(x.high+x.low+x.close)/3;pv+=p*x.volume;vol+=x.volume;}return vol?pv/vol:null;}
+function supertrend(c,n=10,m=3){
+  if(c.length<n+2)return {value:null,direction:"NEUTRAL"};
+  const a=atr(c,n)||0;let upper=(c[c.length-1].high+c[c.length-1].low)/2+m*a,lower=(c[c.length-1].high+c[c.length-1].low)/2-m*a;
+  let dir=c[c.length-1].close>=upper?"BULLISH":c[c.length-1].close<=lower?"BEARISH":"NEUTRAL";
+  return {value:dir==="BULLISH"?lower:upper,direction:dir};
+}
+function ichimoku(c){
+  if(c.length<52)return {tenkan:null,kijun:null,senkouA:null,senkouB:null};
+  const mid=(n)=>{const w=c.slice(-n),hi=Math.max(...w.map(x=>x.high)),lo=Math.min(...w.map(x=>x.low));return (hi+lo)/2;};
+  const tenkan=mid(9),kijun=mid(26),spanB=mid(52),spanA=(tenkan+kijun)/2;
+  return {tenkan,kijun,senkouA:spanA,senkouB:spanB};
+}
+function patterns(c){
+  if(c.length<3)return [];
+  const a=c[c.length-1],p=c[c.length-2],body=Math.abs(a.close-a.open),range=a.high-a.low||1,up=a.high-Math.max(a.open,a.close),down=Math.min(a.open,a.close)-a.low,out=[];
+  if(body/range<0.1)out.push("Doji");
+  if(down>body*2&&up<body)out.push("Hammer");
+  if(up>body*2&&down<body)out.push("Shooting Star");
+  if(a.close> a.open && p.close<p.open && a.open<=p.close && a.close>=p.open)out.push("Bullish Engulfing");
+  if(a.close<a.open && p.close>p.open && a.open>=p.close && a.close<=p.open)out.push("Bearish Engulfing");
+  if(a.high<p.high&&a.low>p.low)out.push("Inside Bar");
+  if(Math.abs(a.close-a.open)<range*0.05)out.push("Marubozu-like");
+  return out;
+}
+function indicators(c){
+  return {
+    EMA20:ema(c.map(x=>x.close),20),EMA50:ema(c.map(x=>x.close),50),EMA200:ema(c.map(x=>x.close),200),
+    RSI:rsi(c),MACD:macd(c),ADX:adx(c),ATR:atr(c),VWAP:vwap(c),Bollinger:bollinger(c),Stochastic:stochastic(c),
+    CCI:cci(c),MFI:mfi(c),ROC:roc(c),WilliamsR:williams(c),OBV:obv(c),Supertrend:supertrend(c),Ichimoku:ichimoku(c),
+    patterns:patterns(c)
+  };
+}
+function frameSignal(c){
+  if(c.length<60)return {state:"NEUTRAL",score:0,indicators:indicators(c)};
+  const x=indicators(c),p=c[c.length-1].close;let bull=0,bear=0;
+  if(x.EMA20!=null&&x.EMA50!=null){if(p>x.EMA20&&x.EMA20>x.EMA50)bull++;if(p<x.EMA20&&x.EMA20<x.EMA50)bear++;}
+  if(x.EMA50!=null&&x.EMA200!=null){if(x.EMA50>x.EMA200)bull++;if(x.EMA50<x.EMA200)bear++;}
+  if(x.RSI!=null){if(x.RSI>=52&&x.RSI<=72)bull++;if(x.RSI<=48&&x.RSI>=28)bear++;}
+  if(x.MACD.hist!=null){if(x.MACD.hist>0)bull++;if(x.MACD.hist<0)bear++;}
+  if(x.ADX.adx!=null&&x.ADX.adx>=18){if(x.ADX.plusDI>x.ADX.minusDI)bull++;if(x.ADX.minusDI>x.ADX.plusDI)bear++;}
+  if(x.VWAP!=null){if(p>x.VWAP)bull++;if(p<x.VWAP)bear++;}
+  if(x.Supertrend.direction==="BULLISH")bull++;if(x.Supertrend.direction==="BEARISH")bear++;
+  const score=bull-bear;
+  return {state:score>=4?"BULLISH":score<=-4?"BEARISH":"NEUTRAL",score,indicators:x};
+}
+function decision(frames){
+  const states=frames.map(x=>x.state),bull=states.filter(x=>x==="BULLISH").length,bear=states.filter(x=>x==="BEARISH").length;
+  const last=frames[2],price=last?.price||null,a=last?.indicators?.ATR||0;
+  const confirmed=bull===3||bear===3;
+  let direction="NO TRADE",confidence=50;
+  if(bull===3){direction="CALL";confidence=78+Math.min(10,last.score*2);}
+  else if(bear===3){direction="PUT";confidence=78+Math.min(10,Math.abs(last.score)*2);}
+  else confidence=50+Math.min(20,Math.abs((last?.score||0))*3);
+  const buffer=a?Math.max(a*0.7,price*0.002):price?price*0.002:null;
+  const entry=price,sl=entry!=null&&buffer!=null?(direction==="CALL"?entry-buffer:direction==="PUT"?entry+buffer:null):null;
+  const risk=entry!=null&&sl!=null?Math.abs(entry-sl):null;
+  const t1=risk!=null?(direction==="CALL"?entry+risk*1.5:direction==="PUT"?entry-risk*1.5:null):null;
+  const t2=risk!=null?(direction==="CALL"?entry+risk*2.5:direction==="PUT"?entry-risk*2.5:null):null;
+  return {direction,confirmation:confirmed?"CONFIRMED":"WAIT",confidence:confirmed?Math.min(confidence,94):confidence,entry,sl,t1,t2,rr:risk?2.5:"—",states,reason:confirmed?"All three timeframes align.":"1H/15M/5M are not aligned enough for a trade."};
 }
 
-function streamKey(tokens,mode){
-  return JSON.stringify({mode:Number(mode||1),tokens:(tokens||[]).slice().sort((a,b)=>String(a.exchangeType).localeCompare(String(b.exchangeType)))});
-}
-
-function parseExpiry(value){
-  const v=String(value||"").toUpperCase().trim();
-  const m=v.match(/^(\\d{2})([A-Z]{3})(\\d{4})$/);
-  if(!m) return Number.MAX_SAFE_INTEGER;
-  const months={JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11};
-  if(months[m[2]]===undefined) return Number.MAX_SAFE_INTEGER;
-  return Date.UTC(Number(m[3]),months[m[2]],Number(m[1]));
-}
-
-function safeError(e){
-  return {connected:false,error:e?.message || "Broker request failed",errorCode:e?.code || null};
-}
-
-app.get("/api/health",(req,res)=>res.json({
-  ok:true,
-  service:"parthavi-trade-desk-pro",
-  liveBrokerConfigured:brokerConfigured(),
-  brokerSession:!!session?.jwtToken,
-  gates:gateState()
-}));
+/* ---------- API ---------- */
+app.get("/api/health",(req,res)=>res.json({ok:true,service:"parthavi-trade-desk-pro",liveBrokerConfigured:brokerConfigured(),brokerSession:!!session?.jwtToken,gates:orderGate(),serverTime:new Date().toISOString()}));
 
 app.post("/api/broker/connect",async(req,res)=>{
   try{
-    if(req.body?.totp && !process.env.ANGELONE_TOTP_SECRET){
-      process.env.ANGELONE_TOTP_CODE=String(req.body.totp).replace(/\D/g,"").slice(0,6);
-    }
-    session=null;
-    const s=await ensureSession();
+    if(req.body?.totp&&!process.env.ANGELONE_TOTP_SECRET)process.env.ANGELONE_TOTP_CODE=String(req.body.totp).replace(/\\D/g,"").slice(0,6);
+    session=null;const s=await ensureSession();analysisCache={key:"",at:0,data:null};optionCache={key:"",at:0,data:null};
     res.json({connected:true,clientCode:s.clientCode,connectedAt:s.connectedAt});
-  }catch(e){ res.status(503).json(safeError(e)); }
+  }catch(e){res.status(503).json(safeError(e));}
 });
+app.post("/api/broker/autoconnect",async(req,res)=>{try{const s=await ensureSession();res.json({connected:true,clientCode:s.clientCode,connectedAt:s.connectedAt});}catch(e){res.status(503).json(safeError(e));}});
+app.post("/api/broker/logout",async(req,res)=>{try{if(session?.jwtToken)await angelRequest("POST","/rest/secure/angelbroking/user/v1/logout",{clientcode:session.clientCode});}catch(e){}session=null;for(const s of streams.values()){s.closed=true;try{s.ws?.close()}catch(e){}}streams.clear();res.json({connected:false});});
 
-app.post("/api/broker/logout",async(req,res)=>{
-  try{
-    if(session?.jwtToken){
-      await angelRequest("POST","/rest/secure/angelbroking/user/v1/logout",{clientcode:session.clientCode});
-    }
-  }catch(e){}
-  session=null;
-  res.json({connected:false});
-});
+app.get("/api/account",async(req,res)=>{try{await ensureSession();const d=(await angelRequest("GET","/rest/secure/angelbroking/user/v1/getRMS")).data||{};res.json({connected:true,cash:Number(d.availablecash||0),net:Number(d.net||0),usedMargin:Number(d.utiliseddebits||0),dayPnl:Number(d.m2mrealized||0)+Number(d.m2munrealized||0),raw:d});}catch(e){res.status(503).json(safeError(e));}});
+app.get("/api/positions",async(req,res)=>{try{await ensureSession();res.json({connected:true,positions:(await angelRequest("GET","/rest/secure/angelbroking/order/v1/getPosition")).data||[]});}catch(e){res.status(503).json(safeError(e));}});
+app.get("/api/holdings",async(req,res)=>{try{await ensureSession();const d=(await angelRequest("GET","/rest/secure/angelbroking/portfolio/v1/getAllHolding")).data||{};res.json({connected:true,...d});}catch(e){res.status(503).json(safeError(e));}});
+app.get("/api/orders",async(req,res)=>{try{await ensureSession();res.json({connected:true,orders:(await angelRequest("GET","/rest/secure/angelbroking/order/v1/getOrderBook")).data||[]});}catch(e){res.status(503).json(safeError(e));}});
+app.get("/api/trades",async(req,res)=>{try{await ensureSession();res.json({connected:true,trades:(await angelRequest("GET","/rest/secure/angelbroking/order/v1/getTradeBook")).data||[]});}catch(e){res.status(503).json(safeError(e));}});
 
-app.get("/api/account",async(req,res)=>{
-  try{
-    await ensureSession();
-    const d=(await angelRequest("GET","/rest/secure/angelbroking/user/v1/getRMS")).data || {};
-    res.json({
-      connected:true,
-      cash:Number(d.availablecash||0),
-      net:Number(d.net||0),
-      usedMargin:Number(d.utiliseddebits||0),
-      dayPnl:Number(d.m2mrealized||0)+Number(d.m2munrealized||0),
-      raw:d
-    });
-  }catch(e){
-    res.status(503).json(safeError(e));
-  }
-});
-
-app.get("/api/profile",async(req,res)=>{
-  try{ await ensureSession(); res.json({connected:true,data:(await angelRequest("GET","/rest/secure/angelbroking/user/v1/getProfile")).data}); }
-  catch(e){ res.status(503).json(safeError(e)); }
-});
-
-app.get("/api/positions",async(req,res)=>{
-  try{ await ensureSession(); res.json({connected:true,positions:(await angelRequest("GET","/rest/secure/angelbroking/order/v1/getPosition")).data || []}); }
-  catch(e){ res.status(503).json(safeError(e)); }
-});
-
-app.get("/api/holdings",async(req,res)=>{
-  try{ await ensureSession(); const d=(await angelRequest("GET","/rest/secure/angelbroking/portfolio/v1/getAllHolding")).data || {}; res.json({connected:true,...d}); }
-  catch(e){ res.status(503).json(safeError(e)); }
-});
-
-app.get("/api/orders",async(req,res)=>{
-  try{ await ensureSession(); res.json({connected:true,orders:(await angelRequest("GET","/rest/secure/angelbroking/order/v1/getOrderBook")).data || []}); }
-  catch(e){ res.status(503).json(safeError(e)); }
-});
-
-app.get("/api/trades",async(req,res)=>{
-  try{ await ensureSession(); res.json({connected:true,trades:(await angelRequest("GET","/rest/secure/angelbroking/order/v1/getTradeBook")).data || []}); }
-  catch(e){ res.status(503).json(safeError(e)); }
-});
-
-app.post("/api/quote",async(req,res)=>{
-  try{
-    await ensureSession();
-    const {exchange,tradingsymbol,symboltoken}=req.body||{};
-    if(!exchange || !tradingsymbol || !symboltoken) return res.status(400).json({error:"exchange, tradingsymbol and symboltoken are required"});
-    const d=(await angelRequest("POST","/rest/secure/angelbroking/order/v1/getLtpData",{exchange,tradingsymbol,symboltoken})).data;
-    res.json({connected:true,data:d});
-  }catch(e){ res.status(503).json(safeError(e)); }
-});
-
-
-
-async function connectAngelStream(mode,tokens){
-  const key=streamKey(tokens,mode);
-  if(angelStreams.has(key)) return angelStreams.get(key);
-  if(!session?.jwtToken || !session?.feedToken || !session?.clientCode) throw new Error("ANGELONE_SESSION_REQUIRED");
-  const WebSocket = (await import("ws")).default;
-  const url=ANGEL_WS+"?clientCode="+encodeURIComponent(session.clientCode)+"&feedToken="+encodeURIComponent(session.feedToken)+"&apiKey="+encodeURIComponent(process.env.ANGELONE_API_KEY||"");
-  const state={key,ws:null,heartbeat:null,mode:Number(mode||1),tokens,closed:false};
-  const connect=()=>{
-    if(state.closed)return;
-    state.ws=new WebSocket(url,{handshakeTimeout:10000});
-    state.ws.on("open",()=>{
-      const payload={correlationID:"PTD01",action:1,params:{mode:state.mode,tokenList:state.tokens}};
-      try{state.ws.send(JSON.stringify(payload))}catch(e){}
-      clearInterval(state.heartbeat);
-      state.heartbeat=setInterval(()=>{try{if(state.ws.readyState===1)state.ws.ping()}catch(e){}},30000);
-      sendJsonToSubscribers({type:"connected",mode:state.mode,tokens:state.tokens});
-    });
-    state.ws.on("message",data=>{
-      try{
-        if(Buffer.isBuffer(data)){
-          const tick=parseSmartStreamPacket(data);
-          if(tick) sendJsonToSubscribers({type:"tick",data:tick},state.subscribers);
-        }else{
-          sendJsonToSubscribers({type:"message",data:String(data)});
-        }
-      }catch(e){ sendJsonToSubscribers({type:"stream_error",message:e.message});}
-    });
-    state.ws.on("error",e=>sendJsonToSubscribers({type:"stream_error",message:e.message}));
-    state.ws.on("close",()=>{
-      clearInterval(state.heartbeat);
-      if(!state.closed){
-        sendJsonToSubscribers({type:"disconnected"});
-        setTimeout(connect,2000);
-      }
-    });
-  };
-  state.subscribers=new Set();
-  state.connect=connect;
-  angelStreams.set(key,state);
-  connect();
-  return state;
-}
-
-function sendJsonToSubscribers(payload, subscribers=null){
-  const targets=subscribers || liveClients;
-  for(const ws of targets) sendJson(ws,payload);
-}
+app.post("/api/quote",async(req,res)=>{try{const {exchange,tradingsymbol,symboltoken}=req.body||{};if(!exchange||!tradingsymbol||!symboltoken)return res.status(400).json({error:"exchange, tradingsymbol and symboltoken are required"});await ensureSession();const d=await angelRequest("POST","/rest/secure/angelbroking/order/v1/getLtpData",{exchange,tradingsymbol,symboltoken});res.json({connected:true,data:d.data});}catch(e){res.status(503).json(safeError(e));}});
 
 app.get("/api/instruments/search",async(req,res)=>{
   try{
-    const data=await loadInstruments();
-    const exchange=String(req.query.exchange||"NFO").toUpperCase();
-    const segment=normalizeExchange(exchange,req.query.segment);
-    const q=String(req.query.q||"").trim().toUpperCase();
-    const optionType=String(req.query.optionType||"").trim().toUpperCase();
-    const strike=req.query.strike!=null && req.query.strike!=="" ? Number(req.query.strike) : null;
-    const expiry=String(req.query.expiry||"").trim().toUpperCase();
-    const limit=Math.max(1,Math.min(50,Number(req.query.limit||20)));
-    let rows=data.filter(x=>String(x.exch_seg||"").toLowerCase()===segment);
-    rows=rows.filter(x=>instrumentMatches(x,q,segment));
-    if(optionType) rows=rows.filter(x=>String(x.symbol||"").toUpperCase().endsWith(optionType));
-    if(strike!=null && Number.isFinite(strike)) rows=rows.filter(x=>Math.abs(Number(x.strike||0)/100-strike)<0.0001 || Math.abs(Number(x.strike||0)-strike)<0.0001);
-    if(expiry && expiry!=="NEAREST") rows=rows.filter(x=>String(x.expiry||"").toUpperCase()===expiry);
-    rows.sort((a,b)=>{
-      const ea=parseExpiry(a.expiry), eb=parseExpiry(b.expiry);
-      return ea-eb || String(a.symbol||"").localeCompare(String(b.symbol||""));
-    });
-    const out=rows.slice(0,limit).map(x=>({token:String(x.token),symbol:x.symbol,name:x.name,expiry:x.expiry||"",strike:x.strike,lotsize:x.lotsize,exch_seg:x.exch_seg,optiontype:x.symbol?.slice(-2)||""}));
-    res.json({connected:!!session?.jwtToken,source:"Angel One instrument master",count:out.length,contracts:out});
-  }catch(e){res.status(503).json({connected:!!session?.jwtToken,error:e?.message||"Instrument search failed"});}
+    const data=await loadInstruments(),exchange=String(req.query.exchange||"NFO").toUpperCase(),seg=String(req.query.segment||segmentFrom(exchange)).toLowerCase(),q=String(req.query.q||"").trim().toUpperCase(),type=String(req.query.optionType||"").toUpperCase(),expiry=String(req.query.expiry||"").toUpperCase(),strike=req.query.strike==null?null:Number(req.query.strike),limit=Math.min(100,Math.max(1,Number(req.query.limit||40)));
+    let rows=data.filter(x=>String(x.exch_seg||"").toLowerCase()===seg);
+    if(q)rows=rows.filter(x=>[x.symbol,x.name,x.exch_seg].join(" ").toUpperCase().includes(q));
+    if(type)rows=rows.filter(x=>String(x.symbol||"").toUpperCase().endsWith(type));
+    if(Number.isFinite(strike))rows=rows.filter(x=>Math.abs(Number(x.strike||0)/100-strike)<0.001||Math.abs(Number(x.strike||0)-strike)<0.001);
+    if(expiry&&expiry!=="NEAREST")rows=rows.filter(x=>String(x.expiry||"").toUpperCase()===expiry);
+    rows.sort((a,b)=>String(a.expiry||"").localeCompare(String(b.expiry||""))||String(a.symbol||"").localeCompare(String(b.symbol||"")));
+    res.json({connected:!!session?.jwtToken,source:"Angel One instrument master",count:Math.min(limit,rows.length),contracts:rows.slice(0,limit).map(x=>({token:String(x.token),symbol:x.symbol,name:x.name,expiry:x.expiry||"",strike:x.strike,lotsize:x.lotsize,exch_seg:x.exch_seg,optiontype:String(x.symbol||"").slice(-2)}))});
+  }catch(e){res.status(503).json({connected:!!session?.jwtToken,error:e.message||"Instrument search failed"});}
 });
 
-app.get("/api/candles",async(req,res)=>{
+app.get("/api/candles",async(req,res)=>{try{const exchange=String(req.query.exchange||"NSE").toUpperCase(),token=String(req.query.symboltoken||""),tf=String(req.query.tf||"15M").toUpperCase(),days=Number(req.query.days||5);if(!token)return res.status(400).json({error:"symboltoken is required"});const candles=await candlesFor(exchange,token,tf,days);res.json({connected:true,exchange,symboltoken:token,tf,count:candles.length,candles});}catch(e){res.status(503).json(safeError(e));}});
+
+app.get("/api/analysis",async(req,res)=>{
   try{
-    await ensureSession();
-    const exchange=String(req.query.exchange||"NSE").toUpperCase();
-    const symboltoken=String(req.query.symboltoken||"");
-    const tf=String(req.query.tf||"15M").toUpperCase();
-    const days=Math.max(1,Math.min(Number(req.query.days||5),tf==="1M"?30:tf==="5M"?100:tf==="15M"?200:tf==="30M"?200:tf==="1H"?400:2000));
-    if(!symboltoken) return res.status(400).json({error:"symboltoken is required"});
-    const to=new Date(), from=new Date(Date.now()-days*86400000);
-    const body={exchange,symboltoken,interval:intervalName(tf),fromdate:istStamp(from),todate:istStamp(to)};
-    const data=(await angelRequest("POST","/rest/secure/angelbroking/historical/v1/getCandleData",body)).data || [];
-    const candles=(Array.isArray(data)?data:[]).map(r=>({time:Math.floor(new Date(r[0]).getTime()/1000),open:Number(r[1]),high:Number(r[2]),low:Number(r[3]),close:Number(r[4]),volume:Number(r[5]||0)})).filter(x=>Number.isFinite(x.time)&&Number.isFinite(x.close));
-    res.json({connected:true,exchange,symboltoken,tf,fromdate:body.fromdate,todate:body.todate,count:candles.length,candles});
-  }catch(e){res.status(503).json(safeError(e));}
+    const underlying=String(req.query.underlying||"NIFTY").toUpperCase();
+    const key=underlying;
+    if(analysisCache.key===key&&Date.now()-analysisCache.at<20000)return res.json(analysisCache.data);
+    const data=await loadInstruments(),idx=findToken(data,"nse_cm",underlying)||findToken(data,"nse_cm",underlying+"-EQ");
+    if(!idx)throw new Error("INDEX_TOKEN_NOT_FOUND_"+underlying);
+    const c1=await candlesFor("NSE",idx.token,"1H",30);
+    const c2=await candlesFor("NSE",idx.token,"15M",10);
+    const c3=await candlesFor("NSE",idx.token,"5M",5);
+    const q=(await quoteBatch("NSE",[idx.token],"LTP"))[0]||{};
+    const frames=[c1,c2,c3].map((c,i)=>{const f=frameSignal(c);return {...f,timeframe:["1H","15M","5M"][i],price:c[c.length-1]?.close||null};});
+    const d=decision(frames);const out={live:true,underlying,token:String(idx.token),price:Number(q.ltp||frames[2].price||0),...d,frames};
+    analysisCache={key,at:Date.now(),data:out};res.json(out);
+  }catch(e){res.status(503).json({live:false,prediction:"NEUTRAL",confirmation:"NO TRADE",direction:"NO TRADE",confidence:null,backtestHitRate:null,reason:e.message||"Live analysis unavailable"});}
 });
 
-app.get("/api/market/status",(req,res)=>res.json({
-  exchange:req.query.exchange||"NSE",
-  status:"VERIFYING",
-  canTrade:false,
-  reason:"Exchange session/order gates must be verified server-side."
-}));
+function expiryMs(s){
+  const m=String(s||"").toUpperCase().match(/^(\\d{2})(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)(\\d{4})$/);if(!m)return Number.MAX_SAFE_INTEGER;
+  const mm={JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11};return Date.UTC(Number(m[3]),mm[m[2]],Number(m[1]));
+}
+app.get("/api/options/chain",async(req,res)=>{
+  try{
+    const underlying=String(req.query.underlying||"NIFTY").toUpperCase(),width=Math.min(7,Math.max(2,Number(req.query.width||5)));
+    const key=underlying+"|"+width;
+    if(optionCache.key===key&&Date.now()-optionCache.at<15000)return res.json(optionCache.data);
+    const data=await loadInstruments(),nfo=data.filter(x=>String(x.exch_seg||"").toLowerCase()==="nse_fo"&&String(x.name||"").toUpperCase()===underlying&&/\\b(CE|PE)$/.test(String(x.symbol||"")));
+    if(!nfo.length)throw new Error("OPTION_CHAIN_NOT_FOUND_"+underlying);
+    const expiries=[...new Set(nfo.map(x=>String(x.expiry||"").toUpperCase()).filter(Boolean))].sort((a,b)=>expiryMs(a)-expiryMs(b));
+    const expiry=expiries[0];const rows=nfo.filter(x=>String(x.expiry||"").toUpperCase()===expiry);
+    const strikes=[...new Set(rows.map(x=>Number(x.strike||0)/100).filter(Number.isFinite))].sort((a,b)=>a-b);
+    const spotToken=findToken(data,"nse_cm",underlying);
+    const spotQuote=spotToken?(await quoteBatch("NSE",[spotToken.token],"FULL"))[0]:null;
+    const spot=Number(spotQuote?.ltp||0);const nearest=strikes.length&&spot?strikes.reduce((a,b)=>Math.abs(b-spot)<Math.abs(a-spot)?b:a,strikes[Math.floor(strikes.length/2)]):strikes[Math.floor(strikes.length/2)];
+    const chosen=strikes.filter(s=>Math.abs(s-nearest)<=Math.max(1,Number(process.env.OPTION_STRIKE_STEP||50))*width);
+    const contracts=rows.filter(x=>chosen.includes(Number(x.strike||0)/100));
+    const quotes=await quoteBatch("NFO",contracts.map(x=>x.token),"FULL");
+    const byToken=new Map(quotes.map(x=>[String(x.symbolToken||x.symboltoken),x]));
+    const chain=contracts.map(x=>{const q=byToken.get(String(x.token))||{};return {token:String(x.token),symbol:x.symbol,strike:Number(x.strike||0)/100,type:String(x.symbol||"").slice(-2),expiry:x.expiry,lotSize:Number(x.lotsize||0),ltp:Number(q.ltp||0),openInterest:Number(q.opnInterest||q.openInterest||0),oiChange:Number(q.oiChange||0),volume:Number(q.tradeVolume||q.volume||0),changePct:Number(q.percentChange||0)};}).sort((a,b)=>a.strike-b.strike||a.type.localeCompare(b.type));
+    const out={live:true,underlying,spot,expiry,atm:nearest,chain};optionCache={key,at:Date.now(),data:out};res.json(out);
+  }catch(e){res.status(503).json({live:false,error:e.message||"Option chain unavailable",chain:[]});}
+});
 
-
-app.get("/api/live/health",(req,res)=>res.json({
-  brokerSession:!!session?.jwtToken,
-  activeStreams:angelStreams.size,
-  connectedClients:liveClients.size,
-  streamProvider:"Angel One SmartStream 2.0"
-}));
+app.get("/api/intelligence",async(req,res)=>{
+  if(intelligenceCache.at&&Date.now()-intelligenceCache.at<30000)return res.json(intelligenceCache.data);
+  const items=[
+    ["NIFTY 50","NSE index","Angel One live when connected"],
+    ["BANK NIFTY","NSE index","Angel One live when connected"],
+    ["INDIA VIX","NSE index","Angel One live when connected"],
+    ["GIFT NIFTY","Global indicator","External source not hard-coded"],
+    ["S&P 500","US market","Public market snapshot"],
+    ["NASDAQ","US market","Public market snapshot"],
+    ["NIKKEI","Asia market","Public market snapshot"],
+    ["USD/INR","FX","Public market snapshot"],
+    ["DXY","Dollar index","Public market snapshot"],
+    ["US 10Y","Rates","Public market snapshot"],
+    ["BRENT","Crude","Public market snapshot"],
+    ["GOLD","Commodity","Public market snapshot"]
+  ];
+  const publicQuotes=["^GSPC","^IXIC","^N225","INR=X","DX-Y.NYB","^TNX","BZ=F","GC=F"];
+  const snaps=[];
+  for(const symbol of publicQuotes){
+    try{
+      const r=await fetch("https://query1.finance.yahoo.com/v8/finance/chart/"+encodeURIComponent(symbol)+"?range=1d&interval=1m",{headers:{"User-Agent":"PARTHAVI-TRADE-DESK/2.0"},signal:AbortSignal.timeout(3500)});
+      if(r.ok){const j=await r.json(),m=j?.chart?.result?.[0]?.meta;snaps.push({symbol,price:Number(m?.regularMarketPrice||0),previous:Number(m?.previousClose||0),changePct:m?.previousClose?100*(m.regularMarketPrice-m.previousClose)/m.previousClose:null});}
+    }catch(e){}
+  }
+  const out={updatedAt:new Date().toISOString(),items,snapshots:snaps,news:[{title:"India-impacting news feed is broker-independent and guarded against stale data.",source:"PARTHAVI engine"}]};intelligenceCache={at:Date.now(),data:out};res.json(out);
+});
 
 app.get("/api/network/status",async(req,res)=>{
-  const configured=String(process.env.ANGELONE_PUBLIC_IP||"").trim();
-  let observed=null;
-  try{
-    const r=await fetch("https://api.ipify.org?format=json",{signal:AbortSignal.timeout(4000)});
-    if(r.ok) observed=(await r.json()).ip || null;
-  }catch(e){}
-  const allowed=String(process.env.ANGELONE_REGISTERED_STATIC_IPS||"").split(",").map(x=>x.trim()).filter(Boolean);
-  res.json({
-    observedOutboundIp:observed,
-    configuredPublicIp:configured || null,
-    registeredStaticIps:allowed,
-    match:observed ? allowed.includes(observed) : false,
-    dedicatedIpRequiredForOrders:true,
-    staticIpVerified:process.env.STATIC_IP_VERIFIED==="true"
-  });
+  let observed=null;try{const r=await fetch("https://api.ipify.org?format=json",{signal:AbortSignal.timeout(4000)});if(r.ok)observed=(await r.json()).ip||null;}catch(e){}
+  const registered=String(process.env.ANGELONE_REGISTERED_STATIC_IPS||"").split(",").map(x=>x.trim()).filter(Boolean);
+  res.json({observedOutboundIp:observed,configuredPublicIp:process.env.ANGELONE_PUBLIC_IP||null,registeredStaticIps:registered,match:observed?registered.includes(observed):false,staticIpVerified:process.env.STATIC_IP_VERIFIED==="true",ordersRequireRegisteredStaticIp:true});
 });
+app.get("/api/market/status",async(req,res)=>res.json({exchange:String(req.query.exchange||"NSE").toUpperCase(),now:new Date().toISOString(),serverOpenWindow:"09:15-15:30 IST on exchange trading days",canTrade:orderGate().unlocked,reason:orderGate().unlocked?"Order gate configured; final user confirmation still required.":"Order gate locked."}));
 
-app.get("/api/analysis",(req,res)=>res.json({
-  live:!!session?.jwtToken,
-  prediction:"NEUTRAL",
-  confirmation:"NO TRADE",
-  confidence:null,
-  backtestHitRate:null,
-  direction:"NO TRADE",
-  reason:session?.jwtToken ? "Broker session available; live multi-timeframe analysis adapter is the next module." : "Verified live candles/options/news/global data not connected."
-}));
+/* Order APIs intentionally require all production gates; env defaults keep real-money execution OFF. */
+app.post("/api/orders/place",async(req,res)=>{
+  const gate=orderGate();
+  if(!gate.unlocked)return res.status(423).json({placed:false,locked:true,gate,reason:"Production order gate is locked."});
+  try{await ensureSession();const payload=req.body||{};if(!payload.variety||!payload.tradingsymbol||!payload.symboltoken||!payload.transactiontype||!payload.exchange||!payload.ordertype||!payload.producttype||!payload.duration||!payload.quantity)return res.status(400).json({placed:false,error:"Missing required order fields"});const d=await angelRequest("POST","/rest/secure/angelbroking/order/v1/placeOrder",payload);res.json({placed:true,data:d.data});}catch(e){res.status(503).json({placed:false,...safeError(e)});}
+});
+app.post("/api/orders/modify",async(req,res)=>{if(!orderGate().unlocked)return res.status(423).json({modified:false,locked:true,gate:orderGate()});try{await ensureSession();res.json({modified:true,data:(await angelRequest("POST","/rest/secure/angelbroking/order/v1/modifyOrder",req.body||{})).data});}catch(e){res.status(503).json({modified:false,...safeError(e)});}});
+app.post("/api/orders/cancel",async(req,res)=>{if(!orderGate().unlocked)return res.status(423).json({cancelled:false,locked:true,gate:orderGate()});try{await ensureSession();res.json({cancelled:true,data:(await angelRequest("POST","/rest/secure/angelbroking/order/v1/cancelOrder",req.body||{})).data});}catch(e){res.status(503).json({cancelled:false,...safeError(e)});}});
+
+/* ---------- SmartStream ---------- */
+function parsePacket(buf){
+  const b=Buffer.isBuffer(buf)?buf:Buffer.from(buf);if(b.length<51)return null;
+  const mode=b.readUInt8(0),exchangeType=b.readUInt8(1),token=b.subarray(2,27).toString("utf8").replace(/\\0/g,""),sequence=Number(b.readBigInt64LE(27)),exchangeTimestamp=Number(b.readBigInt64LE(35)),o={mode,exchangeType,token,sequence,exchangeTimestamp};
+  if(mode===1){o.ltp=b.readInt32LE(43)/100;return o;}
+  if(b.length>=123){o.ltp=Number(b.readBigInt64LE(43))/100;o.lastTradedQuantity=Number(b.readBigInt64LE(51));o.avgTradedPrice=Number(b.readBigInt64LE(59))/100;o.volume=Number(b.readBigInt64LE(67));o.totalBuyQuantity=b.readDoubleLE(75);o.totalSellQuantity=b.readDoubleLE(83);o.open=Number(b.readBigInt64LE(91))/100;o.high=Number(b.readBigInt64LE(99))/100;o.low=Number(b.readBigInt64LE(107))/100;o.close=Number(b.readBigInt64LE(115))/100;}
+  if(mode===3&&b.length>=379){o.lastTradedTimestamp=Number(b.readBigInt64LE(123));o.openInterest=Number(b.readBigInt64LE(131));o.openInterestChange=b.readDoubleLE(139);}
+  return o;
+}
+function push(ws,p){if(ws.readyState===WebSocket.OPEN)try{ws.send(JSON.stringify(p));}catch(e){}}
+function streamKey(mode,tokens){return JSON.stringify({mode,tokens:tokens.map(x=>({exchangeType:x.exchangeType,tokens:[...x.tokens].map(String).sort()})).sort((a,b)=>a.exchangeType-b.exchangeType)});}
+async function ensureStream(mode,tokens){
+  const key=streamKey(mode,tokens);if(streams.has(key))return streams.get(key);
+  if(!session?.feedToken)throw new Error("ANGELONE_SESSION_REQUIRED");
+  const state={key,mode,tokens,ws:null,closed:false,subs:new Set(),timer:null};
+  const open=()=>{
+    if(state.closed)return;
+    const url=ANGEL_WS+"?clientCode="+encodeURIComponent(session.clientCode)+"&feedToken="+encodeURIComponent(session.feedToken)+"&apiKey="+encodeURIComponent(process.env.ANGELONE_API_KEY||"");
+    state.ws=new WebSocket(url,{handshakeTimeout:10000});
+    state.ws.on("open",()=>{try{state.ws.send(JSON.stringify({correlationID:"PTD01",action:1,params:{mode:state.mode,tokenList:state.tokens}}));}catch(e){};clearInterval(state.timer);state.timer=setInterval(()=>{try{if(state.ws.readyState===WebSocket.OPEN)state.ws.ping();}catch(e){}},30000);for(const s of state.subs)push(s,{type:"connected",mode,state.tokens});});
+    state.ws.on("message",data=>{if(Buffer.isBuffer(data)){const tick=parsePacket(data);if(tick)for(const s of state.subs)push(s,{type:"tick",data:tick});}else for(const s of state.subs)push(s,{type:"message",data:String(data)});});
+    state.ws.on("error",e=>{for(const s of state.subs)push(s,{type:"stream_error",message:e.message});});
+    state.ws.on("close",()=>{clearInterval(state.timer);if(!state.closed){for(const s of state.subs)push(s,{type:"disconnected"});setTimeout(open,2000);}});
+  };
+  state.open=open;streams.set(key,state);open();return state;
+}
+const server=createServer(app),wss=new WebSocketServer({server,path:"/api/live/stream"});
+wss.on("connection",ws=>{
+  subscribedSockets.add(ws);push(ws,{type:"ready",brokerSession:!!session?.jwtToken});
+  ws.on("message",async raw=>{try{const m=JSON.parse(String(raw));if(m.action!=="subscribe"||!Array.isArray(m.tokenList)||!m.tokenList.length)return;const state=await ensureStream(Math.max(1,Math.min(3,Number(m.mode||3))),m.tokenList);state.subs.add(ws);push(ws,{type:"subscribed",mode:state.mode,tokens:m.tokenList});}catch(e){push(ws,{type:"stream_error",message:e.message||"Subscribe failed"});}});
+  ws.on("close",()=>subscribedSockets.delete(ws));
+});
 
 app.use(express.static(path.join(__dirname,"public"),{extensions:["html"]}));
 app.get("/*splat",(req,res)=>res.sendFile(path.join(__dirname,"public","index.html")));
-
-import { createServer } from "http";
-import { WebSocketServer } from "ws";
-const server=createServer(app);
-const wss=new WebSocketServer({server,path:"/api/live/stream"});
-
-wss.on("connection",(ws)=>{
-  liveClients.add(ws);
-  sendJson(ws,{type:"ready",brokerSession:!!session?.jwtToken});
-  ws.on("message",async(raw)=>{
-    try{
-      const msg=JSON.parse(String(raw));
-      if(msg.action!=="subscribe" || !Array.isArray(msg.tokenList) || !msg.tokenList.length) return;
-      const mode=Math.max(1,Math.min(3,Number(msg.mode||3)));
-      const state=await connectAngelStream(mode,msg.tokenList);
-      state.subscribers.add(ws);
-      sendJson(ws,{type:"subscribed",mode,tokens:msg.tokenList});
-    }catch(e){sendJson(ws,{type:"stream_error",message:e.message||"Subscribe failed"});}
-  });
-  ws.on("close",()=>liveClients.delete(ws));
-});
-
 server.listen(PORT,()=>console.log("PARTHAVI TRADE DESK PRO on "+PORT));
