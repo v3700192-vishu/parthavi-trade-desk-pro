@@ -135,6 +135,7 @@ body:before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.12;ba
 const $=id=>document.getElementById(id);
 const tfs=['1M','5M','15M','30M','1H','4H','1D']; let active='15M';
 let tvChart=null, candleSeries=null, lineSeries=null, volumeSeries=null, chartType='candle', chartPriceLine=null;
+let liveSocket=null,liveToken=null,liveExchangeType=null,liveLastCandle=null;
 let chartResizeStartY=0, chartResizeStartH=520;
 
 $('tabs').innerHTML=tfs.map(x=>'<button class="tab '+(x===active?'on':'')+'" onclick="setTF(\''+x+'\')">'+x+'</button>').join('');
@@ -231,11 +232,47 @@ async function loadLiveChart(){
     candleSeries.setData(candles);
     if(lineSeries)lineSeries.setData(candles.map(k=>({time:k.time,value:k.close})));
     if(volumeSeries)volumeSeries.setData(c.candles.map(k=>({time:k.time,value:k.volume||0})));
-    $('chartState').textContent='LIVE • '+candidate.symbol;
+    $('chartState').textContent='LIVE HISTORY • '+candidate.symbol;
+    liveLastCandle=candles[candles.length-1]||null;
+    connectLiveStream(candidate,candidate.exch_seg);
     $('contract').textContent=ex+' • '+candidate.symbol+' • '+candidate.token;
     tvChart.timeScale().fitContent();
   }catch(e){$('chartState').textContent='LIVE FEED ERROR'}
 }
+
+function exchangeTypeFor(seg,ex){const m={nse_cm:1,nse_fo:2,bse_cm:3,bse_fo:4,mcx_fo:5};return m[String(seg||'').toLowerCase()]||({NSE:1,BSE:3}[ex]||1)}
+function bucketSeconds(tf){return ({'1M':60,'5M':300,'15M':900,'30M':1800,'1H':3600,'4H':14400,'1D':86400})[tf]||900}
+function connectLiveStream(candidate,seg){
+  if(liveSocket){try{liveSocket.close()}catch(e){}}
+  const proto=location.protocol==='https:'?'wss':'ws';
+  liveSocket=new WebSocket(proto+'://'+location.host+'/api/live/stream');
+  liveToken=String(candidate.token);liveExchangeType=exchangeTypeFor(seg,candidate.exch_seg);
+  liveSocket.onopen=()=>{liveSocket.send(JSON.stringify({action:'subscribe',mode:3,tokenList:[{exchangeType:liveExchangeType,tokens:[liveToken]}]}));$('chartState').textContent='STREAM CONNECTING';};
+  liveSocket.onmessage=e=>{
+    try{
+      const m=JSON.parse(e.data);
+      if(m.type==='tick' && m.data?.token===liveToken){applyLiveTick(m.data);}
+      else if(m.type==='connected')$('chartState').textContent='STREAM CONNECTED';
+      else if(m.type==='stream_error')$('chartState').textContent='STREAM ERROR';
+    }catch(err){}
+  };
+  liveSocket.onclose=()=>{$('chartState').textContent='STREAM DISCONNECTED'};
+}
+function applyLiveTick(tick){
+  if(!candleSeries)return;
+  const p=Number(tick.ltp); if(!Number.isFinite(p))return;
+  const ts=Math.floor(Number(tick.exchangeTimestamp||Date.now())/1000);
+  const step=bucketSeconds(active); const time=Math.floor(ts/step)*step;
+  if(!liveLastCandle || liveLastCandle.time!==time){
+    liveLastCandle={time,open:p,high:p,low:p,close:p};
+  }else{
+    liveLastCandle.close=p; liveLastCandle.high=Math.max(liveLastCandle.high,p); liveLastCandle.low=Math.min(liveLastCandle.low,p);
+  }
+  candleSeries.update(liveLastCandle);
+  if(lineSeries)lineSeries.update({time,value:p});
+  $('chartState').textContent='LIVE • '+(tick.openInterest!=null?'OI '+Number(tick.openInterest).toLocaleString('en-IN'):'LTP '+p.toFixed(2));
+}
+
 function $styleSafeNumber(id){const n=Number($(id)?.value);return Number.isFinite(n)?n:null}
 
 function setChartType(type){chartType=type;if(!candleSeries||!lineSeries)return;const candleVisible=type==='candle';candleSeries.applyOptions({visible:candleVisible});lineSeries.applyOptions({visible:!candleVisible});document.querySelectorAll('.chart-tool').forEach(b=>{if(b.textContent==='Candles')b.classList.toggle('on',type==='candle');if(b.textContent==='Line')b.classList.toggle('on',type==='line')});}
