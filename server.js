@@ -322,7 +322,7 @@ async function connectAngelStream(mode,tokens){
       try{
         if(Buffer.isBuffer(data)){
           const tick=parseSmartStreamPacket(data);
-          if(tick) sendJsonToSubscribers({type:"tick",data:tick});
+          if(tick) sendJsonToSubscribers({type:"tick",data:tick},state.subscribers);
         }else{
           sendJsonToSubscribers({type:"message",data:String(data)});
         }
@@ -344,8 +344,9 @@ async function connectAngelStream(mode,tokens){
   return state;
 }
 
-function sendJsonToSubscribers(payload){
-  for(const ws of liveClients) sendJson(ws,payload);
+function sendJsonToSubscribers(payload, subscribers=null){
+  const targets=subscribers || liveClients;
+  for(const ws of targets) sendJson(ws,payload);
 }
 
 app.get("/api/instruments/search",async(req,res)=>{
