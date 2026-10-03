@@ -128,7 +128,7 @@ async function ensureSession(){
   if(session?.jwtToken)return session;
   if(!brokerConfigured())throw new Error("ANGELONE_CREDENTIALS_NOT_CONFIGURED");
   const code=process.env.ANGELONE_TOTP_SECRET?totp(process.env.ANGELONE_TOTP_SECRET):String(process.env.ANGELONE_TOTP_CODE||"");
-  if(!/^\\d{6}$/.test(code))throw new Error("ANGELONE_TOTP_REQUIRED");
+  if(!/^\d{6}$/.test(code))throw new Error("ANGELONE_TOTP_REQUIRED");
   const d=await angelRequest("POST","/rest/auth/angelbroking/user/v1/loginByPassword",{
     clientcode:process.env.ANGELONE_CLIENT_CODE,password:process.env.ANGELONE_PIN,totp:code
   });
@@ -312,7 +312,7 @@ app.get("/api/health",(req,res)=>res.json({ok:true,service:"parthavi-trade-desk-
 
 app.post("/api/broker/connect",connectRateLimit,async(req,res)=>{
   try{
-    if(req.body?.totp&&!process.env.ANGELONE_TOTP_SECRET)process.env.ANGELONE_TOTP_CODE=String(req.body.totp).replace(/\\D/g,"").slice(0,6);
+    if(req.body?.totp&&!process.env.ANGELONE_TOTP_SECRET)process.env.ANGELONE_TOTP_CODE=String(req.body.totp).replace(/\D/g,"").slice(0,6);
     session=null;const s=await ensureSession();analysisCache={key:"",at:0,data:null};optionCache={key:"",at:0,data:null};
     res.json({connected:true,clientCode:s.clientCode,connectedAt:s.connectedAt});
   }catch(e){res.status(503).json(safeError(e));}
@@ -475,7 +475,7 @@ app.get("/api/intelligence",async(req,res)=>{
       const refs=[
         ["NIFTY",findToken(data,"nse_cm","NIFTY")],
         ["BANK NIFTY",findToken(data,"nse_cm","BANKNIFTY")],
-        ["INDIA VIX",data.find(x=>String(x.exch_seg||"").toLowerCase()==="nse_cm"&&/INDIA\\s*VIX|INDIAVIX|VIX/.test(String(x.symbol||"").toUpperCase()+" "+String(x.name||"").toUpperCase()))]
+        ["INDIA VIX",data.find(x=>String(x.exch_seg||"").toLowerCase()==="nse_cm"&&/INDIA\s*VIX|INDIAVIX|VIX/.test(String(x.symbol||"").toUpperCase()+" "+String(x.name||"").toUpperCase()))]
       ];
       const valid=refs.filter(x=>x[1]);if(valid.length){
         const qs=await quoteBatch("NSE",valid.map(x=>x[1].token),"FULL");
@@ -530,7 +530,7 @@ refreshRuntimeStaticIp(true).catch(()=>{});
 /* ---------- SmartStream ---------- */
 function parsePacket(buf){
   const b=Buffer.isBuffer(buf)?buf:Buffer.from(buf);if(b.length<51)return null;
-  const mode=b.readUInt8(0),exchangeType=b.readUInt8(1),token=b.subarray(2,27).toString("utf8").replace(/\\0/g,""),sequence=Number(b.readBigInt64LE(27)),exchangeTimestamp=Number(b.readBigInt64LE(35)),o={mode,exchangeType,token,sequence,exchangeTimestamp};
+  const mode=b.readUInt8(0),exchangeType=b.readUInt8(1),token=b.subarray(2,27).toString("utf8").replace(/\0/g,""),sequence=Number(b.readBigInt64LE(27)),exchangeTimestamp=Number(b.readBigInt64LE(35)),o={mode,exchangeType,token,sequence,exchangeTimestamp};
   if(mode===1){o.ltp=b.readInt32LE(43)/100;return o;}
   if(b.length>=123){o.ltp=Number(b.readBigInt64LE(43))/100;o.lastTradedQuantity=Number(b.readBigInt64LE(51));o.avgTradedPrice=Number(b.readBigInt64LE(59))/100;o.volume=Number(b.readBigInt64LE(67));o.totalBuyQuantity=b.readDoubleLE(75);o.totalSellQuantity=b.readDoubleLE(83);o.open=Number(b.readBigInt64LE(91))/100;o.high=Number(b.readBigInt64LE(99))/100;o.low=Number(b.readBigInt64LE(107))/100;o.close=Number(b.readBigInt64LE(115))/100;}
   if(mode===3&&b.length>=379){o.lastTradedTimestamp=Number(b.readBigInt64LE(123));o.openInterest=Number(b.readBigInt64LE(131));o.openInterestChange=b.readDoubleLE(139);}
