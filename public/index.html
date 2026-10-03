@@ -115,7 +115,10 @@ function req(u,o){return fetch(u,o||{}).then(function(r){return r.json().catch(f
 function fmt(n){return Number.isFinite(Number(n))?Number(n).toLocaleString("en-IN",{maximumFractionDigits:2}):"—"}
 function cls(v){return v==="BULLISH"||v==="CALL"?"good":v==="BEARISH"||v==="PUT"?"bad":"amber"}
 function esc(v){return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;")}
-function setTfs(){ $("tfs").innerHTML=TF.map(function(x){return '<button class="tab '+(x===activeTF?'on':'')+'" onclick="setTF(\\''+x+'\\')">'+x+'</button>'}).join("")}
+function setTfs(){
+  $("tfs").innerHTML=TF.map(function(x){return '<button class="tab '+(x===activeTF?'on':'')+'" data-tf="'+x+'">'+x+'</button>'}).join("");
+  $("tfs").querySelectorAll("[data-tf]").forEach(function(b){b.onclick=function(){setTF(b.getAttribute("data-tf"))}})
+}
 function setTF(x){activeTF=x;setTfs();buildChart();loadLive()}
 function buildChart(){
   var host=$("chart");if(chart)try{chart.remove()}catch(e){}
@@ -160,7 +163,7 @@ function zoom(dir){if(!chart)return;var r=chart.timeScale().getVisibleLogicalRan
 function priceLine(){if(!candle)return;if(priceRef)try{candle.removePriceLine(priceRef)}catch(e){};var p=lastCandle?lastCandle.close:0;priceRef=candle.createPriceLine({price:p,color:"#e9bd52",lineStyle:2,lineWidth:1,axisLabelVisible:true,title:"Reference"})}
 function toggleSize(s){$("chartbox").style.height=s==="large"?"720px":"560px";setTimeout(function(){chart.resize($("chart").clientWidth,$("chart").clientHeight)},40)}
 function fullscreen(){var x=$("chartbox");if(document.fullscreenElement)document.exitFullscreen();else x.requestFullscreen?.();setTimeout(function(){if(chart)chart.resize($("chart").clientWidth,$("chart").clientHeight)},100)}
-async function connect(){var t=$("totp").value.replace(/\\D/g,"");if(t.length!==6){$("prod").textContent="Enter current 6-digit TOTP.";return}var r=await req("/api/broker/connect",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({totp:t})});if(r&&r.connected){$("totp").value="";$("broker").textContent="● BROKER LIVE";$("broker").className="pill live";refreshAll()}else $("prod").textContent=(r&&r.error)||"Broker connection failed."}
+async function connect(){var t=$("totp").value.replace(/\D/g,"");if(t.length!==6){$("prod").textContent="Enter current 6-digit TOTP.";return}var r=await req("/api/broker/connect",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({totp:t})});if(r&&r.connected){$("totp").value="";$("broker").textContent="● BROKER LIVE";$("broker").className="pill live";refreshAll()}else $("prod").textContent=(r&&r.error)||"Broker connection failed."}
 async function autoconnect(){var r=await req("/api/broker/autoconnect",{method:"POST"});if(r&&r.connected){$("broker").textContent="● BROKER LIVE";$("broker").className="pill live";refreshAll()}else $("prod").textContent=(r&&r.error)||"Auto-connect unavailable; enter TOTP."}
 async function logout(){await req("/api/broker/logout",{method:"POST"});$("broker").textContent="● BROKER OFF";$("broker").className="pill warn";refreshAll()}
 async function refreshAll(){
