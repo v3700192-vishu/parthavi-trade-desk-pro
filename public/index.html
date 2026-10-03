@@ -2,289 +2,1078 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#050812">
 <title>PARTHAVI TRADE DESK PRO</title>
-<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
 <style>
-:root{--bg:#060812;--panel:#0d1020;--panel2:#11162a;--line:#232844;--text:#f3f5ff;--muted:#8f96b8;--gold:#e9bd52;--green:#fff;--red:#ff3f52;--amber:#ffbd48}
-*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top,#13172b,#060812 45%);color:var(--text);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}button,input,select{font:inherit}button{cursor:pointer}.wrap{max-width:1500px;margin:auto;padding:16px}.top{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:14px 16px;border:1px solid var(--line);border-radius:18px;background:rgba(11,14,28,.95);position:sticky;top:0;z-index:10}.brand{display:flex;gap:12px;align-items:center}.logo{width:40px;height:40px;border:1px solid var(--gold);border-radius:12px;display:grid;place-items:center;color:var(--gold);font-weight:900;letter-spacing:-1px}.title{font-weight:900;letter-spacing:.6px}.sub{font-size:12px;color:var(--muted)}.pills{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.pill,.badge,.tab,.tool,.btn{border:1px solid var(--line);background:var(--panel2);color:var(--text);border-radius:999px;padding:7px 11px;font-size:12px}.pill.ok{border-color:#64737b}.pill.live{border-color:#fff}.pill.warn{border-color:var(--amber);color:var(--amber)}.pill.bad{border-color:var(--red);color:var(--red)}.grid{display:grid;grid-template-columns:1.5fr .9fr;gap:14px;margin-top:14px}.panel{border:1px solid var(--line);border-radius:18px;background:rgba(13,16,32,.96);padding:14px;box-shadow:0 16px 40px rgba(0,0,0,.2)}.head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px}.head h2{font-size:15px;margin:0}.tag{font-size:10px;color:var(--gold);letter-spacing:1px}.market{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}.mkt{padding:11px;border:1px solid var(--line);border-radius:14px;background:#0a0d1a}.k{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}.v{font-size:17px;font-weight:800;margin-top:3px}.chg{font-size:11px;margin-top:2px}.good{color:var(--green)}.bad{color:var(--red)}.amber{color:var(--amber)}.controls{display:flex;flex-wrap:wrap;gap:7px}.tab.on,.tool.on{border-color:var(--gold);color:var(--gold)}.btn{border-radius:10px;padding:9px 12px}.btn.gold{border-color:var(--gold);color:#111;background:var(--gold)}.btn.danger{border-color:var(--red);color:var(--red)}.row{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px}.row:last-child{border-bottom:0}.muted{color:var(--muted)}.chartbox{height:560px;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#080b16}.charttools{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:9px}.chart{width:100%;height:100%}.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.card{border:1px solid var(--line);border-radius:14px;padding:11px;background:#0a0d1a}.signal{font-size:22px;font-weight:900;letter-spacing:1px}.table{width:100%;border-collapse:collapse;font-size:12px}.table th,.table td{text-align:left;padding:8px;border-bottom:1px solid var(--line)}.table th{color:var(--muted);font-weight:600}.scroll{max-height:350px;overflow:auto}.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}.search{display:grid;grid-template-columns:1.2fr .7fr .7fr .6fr auto;gap:7px}.input,select{width:100%;border:1px solid var(--line);background:#090c17;color:var(--text);border-radius:10px;padding:9px}.footer{text-align:center;color:var(--muted);font-size:11px;padding:18px 0}.lock{padding:10px;border:1px dashed var(--amber);border-radius:12px;color:var(--amber);background:#17130a;font-size:12px}.hide{display:none}.livebar{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:8px}.dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:var(--amber);margin-right:6px}.dot.live{background:#fff}.dot.red{background:var(--red)}@media(max-width:1100px){.grid{grid-template-columns:1fr}.market{grid-template-columns:repeat(2,1fr)}.cards{grid-template-columns:repeat(2,1fr)}}@media(max-width:680px){.wrap{padding:8px}.top{position:static;border-radius:14px}.market{grid-template-columns:1fr 1fr}.search{grid-template-columns:1fr 1fr}.chartbox{height:430px}.two{grid-template-columns:1fr}.pills{justify-content:flex-start}}
-</style>
+:root{
+ --bg:#040610;--card:#0a1020;--card2:#0d1528;--line:#202d45;--line2:#31425f;
+ --txt:#f7f9ff;--muted:#8b98ad;--cyan:#64e6ff;--violet:#a98bff;--pink:#ff67d4;
+ --gold:#ffd86d;--green:#21e6a1;--red:#ff5f80;--amber:#ffcf67;--shadow:0 24px 70px rgba(0,0,0,.35)
+}
+*{box-sizing:border-box}
+body{margin:0;background:
+ radial-gradient(900px 540px at 90% -10%,rgba(128,86,255,.19),transparent 58%),
+ radial-gradient(800px 500px at -10% 20%,rgba(0,205,235,.10),transparent 58%),
+ linear-gradient(180deg,#040610,#071020 50%,#040610);color:var(--txt);
+ font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}
+button,input,select{font:inherit} button{cursor:pointer}
+.app{max-width:1580px;margin:auto;padding:10px 12px 90px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 12px;
+ background:rgba(7,11,22,.82);border:1px solid var(--line);border-radius:24px;box-shadow:var(--shadow);
+ position:sticky;top:8px;z-index:30;backdrop-filter:blur(18px)}
+.brand{display:flex;align-items:center;gap:11px;min-width:0}
+.logo{width:60px;height:60px;border-radius:17px;overflow:hidden;border:1px solid rgba(255,216,109,.42)}
+.logo svg{display:block;width:100%;height:100%}
+.brand h1{font-size:16px;margin:0;font-weight:950;letter-spacing:.9px;white-space:nowrap}
+.brand p{margin:3px 0 0;color:var(--muted);font-size:9px;letter-spacing:.7px}
+.top-actions{display:flex;gap:7px;align-items:center}
+.pill{border:1px solid var(--line);background:#08101d;padding:8px 10px;border-radius:999px;color:var(--muted);font-size:9px}
+.pill b{color:var(--txt)} .dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px;background:var(--red)}
+.btn{border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-weight:850;background:#0b1526;color:#f2f5fc}
+.btn.primary{background:linear-gradient(135deg,rgba(100,230,255,.16),rgba(169,139,255,.16));border-color:#45607e}
+.btn.buy{background:rgba(33,230,161,.10);border-color:rgba(33,230,161,.34);color:var(--green)}
+.btn.sell{background:rgba(255,95,128,.10);border-color:rgba(255,95,128,.34);color:var(--red)}
+.ticker{display:flex;gap:8px;overflow:auto;padding:9px 1px 2px;scrollbar-width:none}.ticker::-webkit-scrollbar{display:none}
+.titem{min-width:150px;padding:9px 11px;border:1px solid var(--line);border-radius:14px;background:rgba(9,15,27,.78)}
+.titem small{display:block;color:var(--muted);font-size:8px;text-transform:uppercase;letter-spacing:.65px}
+.titem strong{display:block;font-size:13px;margin-top:3px}.up{color:var(--green)!important}.down{color:var(--red)!important}.wait{color:var(--amber)!important}
+/* Signal language: Bullish = white, Bearish = red, neutral/wait = amber. Text labels remain visible so color is never the only cue. */
+.bullish{color:#ffffff!important;text-shadow:0 0 12px rgba(255,255,255,.16)}
+.bearish{color:#ff5f80!important;text-shadow:0 0 12px rgba(255,95,128,.18)}
+.neutral{color:#ffcf67!important}
+.signal-pill{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:999px;padding:5px 8px;font-size:8px;font-weight:900;letter-spacing:.4px}
+.signal-pill.bullish{border-color:rgba(255,255,255,.28);background:rgba(255,255,255,.06)}
+.signal-pill.bearish{border-color:rgba(255,95,128,.34);background:rgba(255,95,128,.08)}
+.signal-pill.neutral{border-color:rgba(255,207,103,.34);background:rgba(255,207,103,.08)}
+.selector{display:flex;gap:7px;overflow:auto;padding:10px 0 2px}.chip{border:1px solid var(--line);background:#08101c;color:var(--muted);padding:8px 11px;border-radius:999px;font-size:9px;font-weight:800}
+.chip.active{color:#fff;border-color:#617390;background:#16243a}
+.hero-grid{display:grid;grid-template-columns:1.55fr .75fr;gap:12px;margin-top:11px}
+.card{background:linear-gradient(180deg,rgba(13,21,39,.95),rgba(7,12,23,.97));border:1px solid var(--line);border-radius:21px;padding:14px;box-shadow:var(--shadow)}
+.eyebrow{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--cyan);font-weight:900}
+.hero{position:relative;overflow:hidden}.hero:after{content:"";position:absolute;right:-100px;top:-90px;width:320px;height:320px;border-radius:50%;
+ background:radial-gradient(circle,rgba(255,103,212,.13),transparent 64%);pointer-events:none}
+.hero h2{font-size:37px;line-height:1;margin:8px 0 6px}.hero p{margin:0;color:var(--muted);font-size:11px;line-height:1.55;max-width:890px}
+.decision-grid{display:grid;grid-template-columns:1.1fr .7fr .7fr .9fr;gap:7px;margin-top:12px}
+.stat{border:1px solid var(--line);background:#060c18;border-radius:14px;padding:10px}
+.stat small{color:var(--muted);font-size:8px;text-transform:uppercase}.stat b{display:block;font-size:20px;margin-top:4px}
+.gate h3{margin:7px 0 3px;font-size:16px}.gate p{color:var(--muted);font-size:9px;line-height:1.5;margin:0}
+.check{display:flex;justify-content:space-between;align-items:center;gap:8px;border:1px solid var(--line);background:#070d18;padding:9px 10px;border-radius:11px;margin-top:7px;font-size:10px}
+.badge{padding:4px 7px;border-radius:999px;font-size:7px;font-weight:950;letter-spacing:.7px}.ok{color:var(--green);background:rgba(33,230,161,.10)}.warn{color:var(--amber);background:rgba(255,207,103,.10)}.danger{color:var(--red);background:rgba(255,95,128,.10)}.info{color:var(--cyan);background:rgba(100,230,255,.10)}
+.layout{display:grid;grid-template-columns:1.55fr .85fr;gap:12px;margin-top:12px}.stack{display:grid;gap:12px}
+.card-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px}
+.card-head h3{margin:0;font-size:15px}.card-head span{color:var(--muted);font-size:8px}
+.tfbar{display:flex;gap:5px;align-items:center;flex-wrap:wrap}.tf{border:1px solid var(--line);background:#08101c;color:var(--muted);padding:7px 9px;border-radius:9px;font-size:8px}.tf.active{color:#fff;background:#15233a;border-color:#5c708e}
+.chartbox{position:relative;height:465px;border:1px solid var(--line);border-radius:17px;overflow:hidden;background:#050a12}
+.chartbox canvas{width:100%;height:100%;display:block;touch-action:none}
+.charttools{position:absolute;left:8px;top:8px;display:flex;gap:5px;flex-wrap:wrap;z-index:2}
+.tool{background:rgba(4,8,15,.78);border:1px solid #2a3952;color:#ced7e6;border-radius:8px;padding:6px 7px;font-size:8px}
+.chartinfo{position:absolute;right:8px;top:8px;display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}.hud{background:rgba(4,8,15,.78);border:1px solid #2a3952;color:#b8c4d8;border-radius:8px;padding:6px 7px;font-size:8px}
+.watermark{position:absolute;left:9px;bottom:8px;color:#526079;font-size:7px;letter-spacing:.7px}
+.levels{display:grid;grid-template-columns:repeat(5,1fr);gap:7px}.level{border:1px solid var(--line);background:#070d18;border-radius:12px;padding:9px}.level small{color:var(--muted);font-size:7px}.level b{display:block;margin-top:3px;font-size:14px}
+.grid8{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}.metric{border:1px solid var(--line);background:#070d18;border-radius:12px;padding:10px;min-height:67px}.metric small{color:var(--muted);font-size:7px}.metric b{display:block;font-size:12px;margin-top:5px}
+.reason-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}.reason{display:flex;justify-content:space-between;align-items:center;gap:8px;border:1px solid var(--line);background:#070d18;padding:9px;border-radius:11px;font-size:9px}
+.fusion{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}.fusion .mini{border:1px solid var(--line);background:#070d18;border-radius:12px;padding:10px}.mini small{color:var(--muted);font-size:7px}.mini b{display:block;font-size:15px;margin-top:4px}
+.blueprint{display:grid;grid-template-columns:1fr 1fr;gap:7px}.field{border:1px solid var(--line);background:#070d18;border-radius:11px;padding:8px}.field label{display:block;color:var(--muted);font-size:7px;text-transform:uppercase;letter-spacing:.55px;margin-bottom:4px}.field input,.field select{width:100%;background:transparent;border:0;outline:0;color:var(--txt);font-size:12px}
+.exec{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:8px}
+.option-wrap{overflow:auto}.option-table{width:100%;min-width:620px;border-collapse:separate;border-spacing:0 5px;font-size:8px}.option-table th{color:var(--muted);text-transform:uppercase;padding:4px;text-align:right;font-size:7px}.option-table td{background:#070d18;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:8px 5px;text-align:right}.option-table td:first-child{border-left:1px solid var(--line);border-radius:9px 0 0 9px;text-align:left}.option-table td:last-child{border-right:1px solid var(--line);border-radius:0 9px 9px 0}
+.global{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}.global-item{border:1px solid var(--line);background:#070d18;border-radius:12px;padding:9px}.global-item small{color:var(--muted);font-size:7px}.global-item b{display:block;margin-top:4px;font-size:11px}.news{display:grid;gap:7px}.news-item{border:1px solid var(--line);background:#070d18;padding:9px;border-radius:11px}.news-item b{display:block;font-size:10px}.news-item span{display:block;color:var(--muted);font-size:8px;margin-top:4px;line-height:1.45}
+.riskgrid{display:grid;grid-template-columns:1fr 1fr;gap:7px}.riskout{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:7px}
+.eventlist{display:grid;grid-template-columns:1fr 1fr;gap:7px}.event{display:flex;justify-content:space-between;gap:7px;border:1px solid var(--line);background:#070d18;border-radius:11px;padding:9px;font-size:8px}.event b{font-size:9px}
+.tablewrap{overflow:auto}table.j{width:100%;min-width:700px;border-collapse:collapse;font-size:8px}table.j th,table.j td{padding:8px;border-bottom:1px solid var(--line);text-align:left}table.j th{color:var(--muted)}
+.note{color:var(--muted);font-size:8px;line-height:1.55;margin-top:7px}.footer{display:flex;justify-content:space-between;gap:10px;color:#62718a;font-size:7px;padding:10px 2px}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.68);display:none;place-items:center;z-index:100;padding:15px}.modal.show{display:grid}.modal-box{width:min(560px,100%);background:#0b1324;border:1px solid var(--line2);border-radius:18px;padding:16px}.modal-box h3{margin:0 0 6px;font-size:15px}.modal-box p{font-size:10px;color:var(--muted);line-height:1.55}.modal-actions{display:flex;justify-content:flex-end;gap:7px;margin-top:10px}.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(14px);opacity:0;pointer-events:none;background:#111c30;border:1px solid #3c4e6a;border-radius:11px;padding:9px 12px;font-size:9px;z-index:120;transition:.2s}.toast.show{opacity:1;transform:translateX(-50%)}
+.bottom{display:none}
+@media(max-width:1150px){.hero-grid,.layout{grid-template-columns:1fr}.rightcol{display:grid;grid-template-columns:1fr 1fr}.global{grid-template-columns:1fr 1fr}}
+@media(max-width:760px){
+ .app{padding:7px 7px 78px}.top{position:static;border-radius:19px}.brand h1{font-size:13px}.brand p{font-size:7px}.top-actions .pill{display:none}
+ .hero h2{font-size:29px}.decision-grid{grid-template-columns:1fr 1fr}.decision-grid .stat:first-child{grid-column:1/-1}
+ .rightcol{display:block}.chartbox{height:350px}.levels{grid-template-columns:1fr 1fr}.levels .level:last-child{grid-column:1/-1}
+ .grid8{grid-template-columns:1fr 1fr}.fusion{grid-template-columns:1fr}.reason-grid,.blueprint,.riskgrid,.eventlist{grid-template-columns:1fr}
+ .exec{grid-template-columns:1fr 1fr}.footer{display:block}.footer span{display:block;margin-top:3px}
+ .bottom{display:grid;position:fixed;left:0;right:0;bottom:0;grid-template-columns:repeat(5,1fr);gap:4px;padding:6px 7px calc(6px + env(safe-area-inset-bottom));background:rgba(4,7,15,.94);border-top:1px solid var(--line);z-index:40;backdrop-filter:blur(18px)}
+ .bottom a{color:#8e9bb2;text-decoration:none;text-align:center;font-size:7px;padding:6px 2px;border-radius:9px}.bottom a.active{color:#fff;background:#0e182a}
+}
 
+.finder-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.finder-grid label{font-size:11px;color:#91a0b8;font-weight:700;display:grid;gap:5px}.finder-grid input,.finder-grid select{width:100%;box-sizing:border-box;background:#0b1020;color:#f4f7ff;border:1px solid #26334d;border-radius:10px;padding:11px;font:inherit}.finder-grid .btn{align-self:end;min-height:42px}.finder-note{margin-top:10px;color:#7f8da6;font-size:11px;line-height:1.5}.contract-result{margin-top:10px}.contract-table{width:100%;border-collapse:collapse;font-size:11px}.contract-table th,.contract-table td{padding:9px 7px;border-bottom:1px solid #202b40;text-align:right}.contract-table th:first-child,.contract-table td:first-child{text-align:left}@media(max-width:760px){.finder-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.finder-grid .btn{grid-column:1/-1}.contract-table{display:block;overflow-x:auto;white-space:nowrap}}
+
+.strategy-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:8px}.strategy-box{border:1px solid var(--line);background:#070d18;border-radius:12px;padding:9px}.strategy-box small{display:block;color:var(--muted);font-size:7px;text-transform:uppercase;letter-spacing:.5px}.strategy-box b{display:block;font-size:12px;margin-top:4px}.strategy-box span{display:block;color:var(--muted);font-size:7px;margin-top:3px;line-height:1.35}.riskbar{height:8px;background:#111a2a;border:1px solid var(--line);border-radius:999px;overflow:hidden;margin-top:7px}.riskbar i{display:block;height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,#ffffff,#ffcf67,#ff5f80)}
+@media(max-width:720px){.strategy-grid{grid-template-columns:1fr 1fr}}
+ .alert-controls{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-top:8px}.toggle{font-size:10px;color:var(--muted);display:flex;gap:4px;align-items:center;padding:7px 9px;border:1px solid var(--line);border-radius:9px;background:#0a1020}.alert-grid{display:grid;grid-template-columns:150px 1fr;gap:10px;margin-top:10px}.alert-feed{max-height:240px;overflow:auto;display:grid;gap:7px}.alert-item{padding:9px;border:1px solid var(--line);border-radius:10px;background:#0b1120}.alert-item b{display:block;font-size:11px}.alert-item span{display:block;color:var(--muted);font-size:9px;line-height:1.35;margin-top:3px}.alert-item.bullish{border-color:rgba(255,255,255,.55)}.alert-item.bearish{border-color:rgba(255,95,128,.7)}.alert-item.neutral{border-color:rgba(255,207,103,.5)}
+@media(max-width:720px){.alert-grid{grid-template-columns:1fr}}\n</style>
+
+<style id="phase10-prediction-css">
+.prediction-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:10px;margin-top:10px}
+.prediction-hero{border:1px solid var(--line2);border-radius:16px;padding:12px;background:radial-gradient(circle at 90% 0%,rgba(169,139,255,.12),transparent 45%),#060c18}
+.prediction-big{font-size:30px;font-weight:950;margin-top:5px;letter-spacing:.4px}
+.prediction-sub{color:var(--muted);font-size:9px;line-height:1.5;margin-top:4px}
+.prediction-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:9px}
+.prediction-stat{border:1px solid var(--line);background:#070d18;border-radius:11px;padding:9px}
+.prediction-stat small{display:block;color:var(--muted);font-size:7px;text-transform:uppercase;letter-spacing:.5px}
+.prediction-stat b{display:block;font-size:17px;margin-top:3px}
+.confirm-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.confirm-item{display:flex;justify-content:space-between;align-items:center;gap:6px;border:1px solid var(--line);background:#070d18;border-radius:10px;padding:8px;font-size:8px}
+.confirm-item .yes{color:#fff}.confirm-item .no{color:var(--amber)}
+.backtest{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:8px}
+.backtest .bt{border:1px solid var(--line);background:#070d18;border-radius:10px;padding:9px}.bt small{display:block;color:var(--muted);font-size:7px}.bt b{display:block;margin-top:4px;font-size:13px}
+.prediction-meter{height:10px;border:1px solid var(--line);border-radius:999px;background:#101827;overflow:hidden;margin-top:8px}.prediction-meter i{display:block;height:100%;width:0;background:linear-gradient(90deg,#ffcf67,#fff,#ff5f80);transition:width .25s ease}
+@media(max-width:820px){.prediction-grid{grid-template-columns:1fr}.prediction-stats{grid-template-columns:repeat(2,1fr)}.backtest{grid-template-columns:repeat(2,1fr)}}
+</style>
+<style id="phase9-account-css">
+.account-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:9px}.account-card{background:#08111f;border:1px solid var(--line);border-radius:12px;padding:10px}.account-card small{display:block;color:var(--muted);font-size:8px}.account-card b{display:block;margin-top:4px;font-size:14px}.account-card span{display:block;margin-top:3px;color:#7f8da6;font-size:7px}.account-positive{color:#f5f8ff}.account-negative{color:#ff5f80}.account-warn{color:#ffd86d}.broker-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:9px 0}.broker-tabs button{min-width:90px}.broker-panel{display:none}.broker-panel.active{display:block}.broker-table{width:100%;border-collapse:collapse;font-size:8px}.broker-table th,.broker-table td{border-bottom:1px solid rgba(58,75,103,.28);padding:7px 5px;text-align:left;white-space:nowrap}.broker-table th{color:#8fa0bb;font-weight:600}.broker-table td{color:#dfe7f5}.scroll-x{overflow-x:auto}.broker-action{padding:5px 7px;font-size:8px;border-radius:8px}.inline-actions{display:flex;gap:5px;flex-wrap:wrap}.broker-empty{padding:14px;border:1px dashed var(--line);border-radius:12px;color:var(--muted);font-size:9px}.account-status{font-size:8px;color:#8fa0bb}.quick-order{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-top:9px}.quick-order .full{grid-column:span 2}.@media(max-width:820px){.account-grid{grid-template-columns:repeat(2,1fr)}.quick-order{grid-template-columns:repeat(2,1fr)}.quick-order .full{grid-column:span 2}}
+</style>
+\n
 <style>
-:root{--bg:#05070c;--panel:#0b1018;--panel2:#101722;--line:#202a38;--text:#f4f7fb;--muted:#8793a6;--gold:#e6bb55;--green:#f6f7f9;--red:#ff4d5f;--amber:#ffc44f;--cyan:#69d7ff}
-body{background:radial-gradient(circle at 10% 0%,#182033 0%,#05070c 38%),#05070c}
-.top{background:linear-gradient(180deg,rgba(16,23,34,.98),rgba(8,12,18,.98));box-shadow:0 16px 45px rgba(0,0,0,.28)}
-.logo{box-shadow:0 0 24px rgba(230,187,85,.14)}.pbBrand{width:62px;height:62px;flex:0 0 62px;filter:drop-shadow(0 0 12px rgba(230,187,85,.22))}.pbBrand svg{display:block;width:100%;height:100%}.brandCopy{min-width:0}.brandCopy .title{font-size:15px}.brandCopy .sub{max-width:720px}
-.hero{display:grid;grid-template-columns:1.15fr .85fr;gap:12px;margin-top:12px}.heroCard{border:1px solid var(--line);border-radius:18px;background:linear-gradient(135deg,rgba(14,20,30,.98),rgba(8,12,18,.98));padding:16px}.eyebrow{font-size:10px;color:var(--gold);letter-spacing:1.8px;font-weight:800}.heroTitle{font-size:25px;font-weight:950;margin-top:5px}.heroText{font-size:12px;color:var(--muted);line-height:1.6;margin-top:5px}.heroStats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:13px}.mini{border:1px solid var(--line);border-radius:14px;padding:10px;background:#080c13}.mini .k{font-size:9px}.mini .v{font-size:14px;font-weight:900;margin-top:3px}
-.chartbox{position:relative;background:#060910}.chartEmpty{position:absolute;inset:0;display:grid;place-items:center;text-align:center;pointer-events:none;background:radial-gradient(circle at center,rgba(18,25,37,.1),rgba(6,9,16,.58))}.emptyInner{border:1px solid var(--line);background:rgba(8,12,18,.88);border-radius:16px;padding:18px 20px;max-width:360px}.emptyTitle{font-weight:900}.emptyText{font-size:11px;color:var(--muted);margin-top:5px;line-height:1.5}
-.firewall{display:grid;grid-template-columns:repeat(5,1fr);gap:7px}.guard{border:1px solid var(--line);border-radius:12px;padding:9px;background:#080c13}.guard b{display:block;font-size:11px;margin-top:3px}.guard small{color:var(--muted);font-size:9px}.guard.ok{border-color:#59656d}.guard.wait{border-color:var(--amber)}
-@media(max-width:1120px){.hero{grid-template-columns:1fr}.firewall{grid-template-columns:repeat(2,1fr)}}@media(max-width:680px){.heroStats{grid-template-columns:1fr 1fr}.firewall{grid-template-columns:1fr}}
-</style></head>
+/* Phase 11 — Capital Shield */
+.shield-grid{display:grid;grid-template-columns:1.25fr repeat(4,.65fr);gap:7px;margin-top:9px}
+.shield-hero{border:1px solid rgba(33,230,161,.25);background:linear-gradient(135deg,rgba(33,230,161,.10),rgba(100,230,255,.05));border-radius:15px;padding:11px}
+.shield-hero .big{font-size:20px;font-weight:950}.shield-hero .sub{display:block;color:var(--muted);font-size:8px;margin-top:3px;line-height:1.45}
+.shield-metric{border:1px solid var(--line);background:#070d18;border-radius:12px;padding:10px}.shield-metric small{display:block;color:var(--muted);font-size:7px;text-transform:uppercase}.shield-metric b{display:block;font-size:13px;margin-top:4px}
+.shield-rules{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:8px}.shield-rule{display:flex;justify-content:space-between;gap:8px;align-items:center;border:1px solid var(--line);background:#060c17;padding:8px 9px;border-radius:10px;font-size:8px}.shield-rule span{color:var(--muted)}
+.shield-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px}.shield-status{font-size:8px;color:var(--muted)}
+@media(max-width:980px){.shield-grid{grid-template-columns:1fr 1fr}.shield-hero{grid-column:span 2}.shield-rules{grid-template-columns:1fr 1fr}}
+@media(max-width:620px){.shield-grid{grid-template-columns:1fr 1fr}.shield-hero{grid-column:span 2}.shield-rules{grid-template-columns:1fr 1fr}}
+</style>
+</head>
 <body>
-<div class="wrap">
-<header class="top">
+<div class="app">
+<header class="top" id="home">
   <div class="brand">
-    <div class="pbBrand" aria-label="PB Men's Parthavi Beldar logo" title="PB MEN'S • PARTHAVI BELDAR">
-      <svg viewBox="0 0 120 120" role="img" aria-hidden="true">
-        <defs>
-          <linearGradient id="pbGold" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stop-color="#fff3b5"/><stop offset=".28" stop-color="#e9bd52"/><stop offset=".55" stop-color="#fff7c8"/><stop offset=".82" stop-color="#c99122"/><stop offset="1" stop-color="#ffe79a"/>
-          </linearGradient>
-          <radialGradient id="pbBg" cx="50%" cy="40%" r="70%">
-            <stop offset="0" stop-color="#1d2430"/><stop offset=".72" stop-color="#070b12"/><stop offset="1" stop-color="#020306"/>
-          </radialGradient>
-          <filter id="pbGlow"><feGaussianBlur stdDeviation="1.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-        </defs>
-        <circle cx="60" cy="60" r="57" fill="url(#pbBg)" stroke="url(#pbGold)" stroke-width="3"/>
-        <circle cx="60" cy="60" r="51" fill="none" stroke="#8b651e" stroke-width="1.2" opacity=".85"/>
-        <path d="M33 78V29h24c15 0 24 7 24 19 0 9-4 15-12 18l15 22H71L59 69H45v15H33Zm12-26h11c7 0 12-3 12-9 0-6-5-9-12-9H45v18Z" fill="url(#pbGold)" filter="url(#pbGlow)"/>
-        <path d="M53 51c9-5 18-5 29 0-4 4-7 9-8 15-5-4-12-7-21-8V51Z" fill="#090c12" opacity=".96"/>
-        <path d="M35 88c8 6 17 9 25 9 10 0 19-3 26-9" fill="none" stroke="url(#pbGold)" stroke-width="2" stroke-linecap="round"/>
-        <text x="60" y="107" text-anchor="middle" fill="#f5efe0" font-size="7" font-weight="800" letter-spacing="1.1">PB MEN'S</text>
-      </svg>
-    </div>
-    <div class="brandCopy"><div class="title">PARTHAVI TRADE DESK PRO</div><div class="sub">BY PARTHAVI BELDAR • PB MEN'S • LIVE MARKET INTELLIGENCE • OPTIONS • RISK-FIRST EXECUTION</div></div>
+    <div class="logo"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 520" aria-label="PARTHAVI BELDAR">
+      <defs>
+        <radialGradient id="bg" cx="30%" cy="15%" r="90%"><stop offset="0" stop-color="#2a3768"/><stop offset=".45" stop-color="#101731"/><stop offset="1" stop-color="#050914"/></radialGradient>
+        <linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#fff2ac"/><stop offset=".35" stop-color="#f7c95e"/><stop offset=".7" stop-color="#d99a24"/><stop offset="1" stop-color="#fff0a0"/></linearGradient>
+        <linearGradient id="p" x1="0" x2="1"><stop offset="0" stop-color="#ff6ed5"/><stop offset="1" stop-color="#a94cff"/></linearGradient>
+      </defs>
+      <circle cx="260" cy="260" r="240" fill="url(#bg)" stroke="url(#g)" stroke-width="9"/>
+      <circle cx="260" cy="260" r="219" fill="none" stroke="#ff4fd8" stroke-opacity=".55" stroke-width="3"/>
+      <path d="M150 118 L260 70 L370 118" fill="none" stroke="url(#g)" stroke-width="7" stroke-linecap="round"/>
+      <path d="M178 120 L205 88 L231 120 L260 75 L289 120 L315 88 L342 120" fill="url(#g)" stroke="#6e4810" stroke-width="3"/>
+      <circle cx="260" cy="75" r="12" fill="#ff57d5" stroke="url(#g)" stroke-width="5"/>
+      <text x="260" y="300" text-anchor="middle" font-family="Georgia,serif" font-size="165" font-weight="700" fill="url(#g)" letter-spacing="-10">P</text>
+      <text x="320" y="350" text-anchor="middle" font-family="Georgia,serif" font-size="150" font-weight="700" fill="url(#p)" letter-spacing="-8">B</text>
+      <path d="M120 382 C170 350 205 365 236 392" fill="none" stroke="#ff55ca" stroke-width="6" stroke-linecap="round"/>
+      <path d="M230 392 L260 360 L285 405 L335 354 L380 375" fill="none" stroke="url(#g)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M372 362 L393 345 L386 377" fill="none" stroke="url(#g)" stroke-width="6" stroke-linecap="round"/>
+      <text x="260" y="438" text-anchor="middle" font-family="Arial,sans-serif" font-size="28" font-weight="800" fill="#fff" letter-spacing="5">PARTHAVI</text>
+      <text x="260" y="474" text-anchor="middle" font-family="Arial,sans-serif" font-size="20" font-weight="700" fill="#ff72dc" letter-spacing="7">BELDAR</text>
+    </svg></div>
+    <div><h1>PARTHAVI TRADE DESK PRO</h1><p>LIVE MARKET • OPTIONS FUSION • NEWS • GLOBAL RISK • CONTROLLED EXECUTION</p></div>
   </div>
-  <div class="pills"><span class="pill" id="backend">● BACKEND</span><span class="pill" id="broker">● BROKER</span><span class="pill warn" id="gate">● EXECUTION LOCK</span></div>
+  <div class="top-actions">
+    <div class="pill"><span class="dot" id="dot"></span><b id="status">CHECKING</b></div>
+    <div class="pill">FEED <b id="feed">OFFLINE</b></div>
+    <button class="btn primary" onclick="openSettings()">⚙</button>
+  </div>
 </header>
 
-<div class="hero">
-<div class="heroCard"><div class="eyebrow">PARTHAVI INTELLIGENCE CORE</div><div class="heroTitle">Decision-first. Risk-first. Data-first.</div><div class="heroText">Fresh 1H → 15M → 5M confirmation, trend strength, option context and server-side safety gates. When checks conflict, the desk stops at <b>NO TRADE</b>.</div><div class="heroStats"><div class="mini"><div class="k">Model</div><div class="v">1H → 15M → 5M</div></div><div class="mini"><div class="k">Execution</div><div class="v">Firewall</div></div><div class="mini"><div class="k">Signal</div><div class="v" id="heroSignal">NO TRADE</div></div><div class="mini"><div class="k">Data</div><div class="v" id="heroData">WAITING</div></div></div></div>
-<div class="heroCard"><div class="eyebrow">EXECUTION POLICY</div><div class="heroTitle" style="font-size:18px">No forced trade</div><div class="heroText">Real-money execution remains locked until market session, registered IPv4, protective-SL verification, execution firewall and kill-switch checks all pass.</div><div class="lock" style="margin-top:12px">Angel One states API order execution is accepted only when it originates from the registered Static IP.</div></div>
+<div class="ticker" id="ticker">
+  <div class="titem"><small>NIFTY 50</small><strong id="nifty">WAIT</strong></div>
+  <div class="titem"><small>BANK NIFTY</small><strong id="bank">WAIT</strong></div>
+  <div class="titem"><small>FINNIFTY</small><strong id="fin">WAIT</strong></div>
+  <div class="titem"><small>MIDCPNIFTY</small><strong id="mid">WAIT</strong></div>
+  <div class="titem"><small>INDIA VIX</small><strong id="vix">WAIT</strong></div>
+  <div class="titem"><small>GLOBAL RISK</small><strong id="globalRisk" class="wait">WAIT</strong></div>
 </div>
-<div class="panel" style="margin-top:14px">
-<div class="head"><h2>Market Pulse</h2><span class="tag">LIVE / VERIFIED</span></div>
-<div class="market">
-<div class="mkt"><div class="k">NIFTY 50</div><div class="v" id="nifty">—</div><div class="chg" id="niftyc">—</div></div>
-<div class="mkt"><div class="k">BANK NIFTY</div><div class="v" id="bank">—</div><div class="chg" id="bankc">—</div></div>
-<div class="mkt"><div class="k">INDIA VIX</div><div class="v" id="vix">—</div><div class="chg" id="vixc">—</div></div>
-<div class="mkt"><div class="k">USD/INR</div><div class="v" id="usdinr">—</div><div class="chg" id="usdinrc">—</div></div>
-<div class="mkt"><div class="k">GIFT NIFTY</div><div class="v" id="gift">—</div><div class="chg" id="giftc">—</div></div>
-<div class="mkt"><div class="k">SYSTEM</div><div class="v" id="sys">READY</div><div class="chg" id="sysc">—</div></div>
-</div></div>
 
-<div class="grid">
-<section class="panel">
-<div class="head"><h2>Advanced Chart</h2><span class="tag" id="chartstate">NO LIVE FEED</span></div>
-<div class="charttools">
-<div id="tfs" class="controls"></div>
-<button class="tool on" onclick="chartMode('candle')">Candles</button><button class="tool" onclick="chartMode('line')">Line</button>
-<button class="tool" onclick="fit()">Auto</button><button class="tool" onclick="zoom(-1)">−</button><button class="tool" onclick="zoom(1)">+</button>
-<button class="tool" onclick="priceLine()">Reference</button><button class="tool" onclick="toggleSize('normal')">Normal</button><button class="tool" onclick="toggleSize('large')">Large</button><button class="tool" onclick="fullscreen()">Fullscreen</button>
+<div class="selector" id="selectors">
+  <button class="chip active" data-symbol="NIFTY">NIFTY 50</button>
+  <button class="chip" data-symbol="BANKNIFTY">BANK NIFTY</button>
+  <button class="chip" data-symbol="FINNIFTY">FINNIFTY</button>
+  <button class="chip" data-symbol="MIDCPNIFTY">MIDCPNIFTY</button>
+  <button class="chip" data-symbol="SENSEX">SENSEX</button>
 </div>
-<div class="chartbox" id="chartbox"><div id="chart" class="chart"></div><div id="chartEmpty" class="chartEmpty"><div class="emptyInner"><div class="emptyTitle">Live chart locked</div><div class="emptyText">Connect Angel One to load verified candles and SmartStream ticks. Synthetic demo candles are intentionally disabled.</div></div></div></div>
+
+
+<section class="card" id="contractFinder">
+  <div class="card-head"><h3>Contract Finder • NSE / BSE</h3><span>Exchange → Segment → Underlying → Expiry → CE/PE → Strike</span></div>
+  <div class="finder-grid">
+    <label>Exchange<select id="cfExchange"><option>NSE</option><option>BSE</option></select></label>
+    <label>Segment<select id="cfSegment"><option value="OPTIDX">Index Options</option><option value="OPTSTK">Stock Options</option><option value="FUTIDX">Index Futures</option><option value="FUTSTK">Stock Futures</option><option value="EQUITY">Equity</option></select></label>
+    <label>Underlying<input id="cfUnderlying" list="cfSymbols" placeholder="NIFTY / RELIANCE / ..." value="NIFTY"><datalist id="cfSymbols"><option value="NIFTY"><option value="BANKNIFTY"><option value="FINNIFTY"><option value="MIDCPNIFTY"><option value="SENSEX"></datalist></label>
+    <label>Expiry<select id="cfExpiry"><option value="">Connect feed</option></select></label>
+    <label>Type<select id="cfType"><option>CE</option><option>PE</option></select></label>
+    <label>Strike<input id="cfStrike" inputmode="decimal" placeholder="23500 / 22250"></label>
+    <button class="btn primary" onclick="findContracts()">Search Contract</button>
+  </div>
+  <div class="finder-note">Example: <b>NIFTY 23500 CE</b>, <b>NIFTY 23500 PE</b>, <b>NIFTY 22250 CE/PE</b>. Stock options use the strike ladder supported for that underlying; not every listed stock has an option contract. NSE/BSE contract rules are applied from the connected instrument master.</div>
+  <div id="cfResult" class="contract-result"><div class="news-item"><b>LIVE CONTRACT FEED REQUIRED</b><span>Once connected, this panel will show LTP, change, bid/ask, volume, OI, ΔOI, IV and an Analyse button.</span></div></div>
 </section>
 
-<aside class="panel">
-<div class="head"><h2>Angel One Connect</h2><span class="tag">SMARTAPI</span></div>
-<div class="search" style="grid-template-columns:1fr auto">
-<input id="totp" class="input" inputmode="numeric" maxlength="6" placeholder="Current 6-digit TOTP">
-<button class="btn gold" onclick="connect()">Connect</button>
-</div>
-<div class="controls" style="margin-top:9px"><button class="btn" onclick="autoconnect()">Auto Connect</button><button class="btn" onclick="logout()">Disconnect</button><button class="btn" onclick="refreshAll()">Refresh</button></div>
-<div class="lock" style="margin-top:10px">LIVE market data can run after broker login. Real-money order execution stays locked until server-side production gates and registered static IP checks pass.</div>
-<div class="cards" style="margin-top:11px">
-<div class="card"><div class="k">Cash</div><div class="v" id="cash">—</div></div>
-<div class="card"><div class="k">Net</div><div class="v" id="net">—</div></div>
-<div class="card"><div class="k">Margin</div><div class="v" id="margin">—</div></div>
-<div class="card"><div class="k">Day P&L</div><div class="v" id="pnl">—</div></div>
-</div>
+<section class="card" id="angelConnection">
+  <div class="card-head"><h3>Angel One SmartAPI • Secure Connection</h3><span id="angelStatusText">DISCONNECTED</span></div>
+  <div class="finder-grid">
+    <label>Client Code<input id="angelClient" placeholder="Your Angel One client code"></label>
+    <label>PIN<input id="angelPin" type="password" inputmode="numeric" autocomplete="off" placeholder="Enter only when connecting"></label>
+    <label>TOTP<input id="angelTotp" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="Authenticator code"></label>
+    <button class="btn primary" onclick="angelConnect()">Connect Angel One</button>
+    <button class="btn" onclick="angelDisconnect()">Disconnect</button>
+  </div>
+  <div class="finder-note">API key stays on the server. PIN/TOTP are used only for the login request and are not written to the journal or localStorage. Live order execution remains separately locked until the broker/static-IP and final-confirmation gates are verified.</div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+    <button class="btn primary" onclick="testAngelFeed()">⚡ Test Live Feed</button>
+    <button class="btn" onclick="refreshExpiries()">↻ Load Expiries</button>
+    <span class="badge warn" id="angelTestBadge">NOT TESTED</span>
+  </div>
+  <div class="finder-note" id="angelTestNote">Phase 2: login → instrument master → live quote → option contract lookup. WebSocket streaming can be enabled after the REST quote test passes.</div>
+</section>
+
+<section class="card" id="phase12Ready">
+  <div class="card-head"><h3>Phase 12 • Go-Live Readiness</h3><span id="p12Mode" class="neutral">LOCKED</span></div>
+  <div class="grid2">
+    <div class="strategy-box"><small>Angel One</small><b id="p12Angel" class="neutral">WAIT</b><span>Session</span></div>
+    <div class="strategy-box"><small>Static IP</small><b id="p12Static" class="neutral">WAIT</b><span>Order-source gate</span></div>
+    <div class="strategy-box"><small>Market</small><b id="p12Market" class="neutral">WAIT</b><span>Exchange session</span></div>
+    <div class="strategy-box"><small>Execution</small><b id="p12Exec" class="neutral">LOCKED</b><span>Server + kill switch</span></div>
+  </div>
+  <div id="p12Checks" class="finder-note">Readiness is checked server-side. No credentials are displayed here.</div>
+  <div class="exec"><button class="btn" onclick="loadPhase12Readiness()">✓ Check Go-Live Readiness</button></div>
+</section>
+
+<section class="card">
+  <div class="card-head"><h3>Live Connection Checklist</h3><span>verified step-by-step</span></div>
+  <div class="check"><span>Backend reachable</span><span class="badge warn" id="cxBackend">WAIT</span></div>
+  <div class="check"><span>Angel One session</span><span class="badge danger" id="cxLogin">OFF</span></div>
+  <div class="check"><span>Instrument master</span><span class="badge warn" id="cxMaster">WAIT</span></div>
+  <div class="check"><span>Live quote test</span><span class="badge warn" id="cxQuote">WAIT</span></div>
+  <div class="check"><span>WebSocket stream</span><span class="badge warn" id="cxWs">WAIT</span></div>
+  <div class="finder-note">Order placement is a separate phase. Angel One currently requires a registered static IP for API order execution; data APIs do not require that static-IP gate.</div>
+</section>
+
+<section class="card" id="alerts">
+  <div class="card-head"><h3>Phase 6 • Smart Alerts & Position Monitor</h3><span id="phase6State">LOCKED</span></div>
+  <div class="alert-controls">
+    <button class="btn primary" id="notifyBtn" onclick="enableNotifications()">🔔 Enable Notifications</button>
+    <button class="btn" onclick="clearAlerts()">Clear Alerts</button>
+    <label class="toggle"><input type="checkbox" id="alertBreakout" checked> Breakout</label>
+    <label class="toggle"><input type="checkbox" id="alertBreakdown" checked> Breakdown</label>
+    <label class="toggle"><input type="checkbox" id="alertSignal" checked> CALL/PUT change</label>
+    <label class="toggle"><input type="checkbox" id="alertRisk" checked> Risk / Event</label>
+    <label class="toggle"><input type="checkbox" id="alertOrder" checked> Order status</label>
+  </div>
+  <div class="alert-grid">
+    <div><div class="mini"><small>Monitor</small><b id="p6Monitor">WAIT</b></div><div class="mini"><small>Last check</small><b id="p6Time">—</b></div></div>
+    <div class="alert-feed" id="alertFeed"><div class="alert-item neutral"><b>Notifications ready</b><span>Breakout, breakdown, VWAP/RSI, signal-change, event-risk and broker-order alerts will appear here.</span></div></div>
+  </div>
+  <div class="note">Browser notifications require permission and, on hosted deployments, HTTPS. In-app alerts work without browser permission. Phase 6 does not auto-place or auto-modify orders.</div>
+  <div class="note"><b>Phase 7 confirmation gate:</b> Breakout/Breakdown alert is promoted to CONFIRMED only when 5M candle close + volume ≥ 1.5× 20-bar average + ADX ≥ 20 + higher-timeframe trend + option-positioning confirmation agree. Otherwise it remains WATCH / NO TRADE.</div>
+</section>
+
+
+
+<section class="card" id="phase11Shield">
+  <div class="card-head"><h3>Phase 11 • Capital Shield & Quality Gate</h3><span id="p11StatusText">LOCKED</span></div>
+  <div class="shield-grid">
+    <div class="shield-hero">
+      <div class="eyebrow">Profit-Protection Mode</div>
+      <div class="big" id="p11Mode">CAPITAL SHIELD ACTIVE</div>
+      <span class="sub">Low-quality setups, excessive exposure, wide spreads and repeated-loss conditions are filtered before live entry. This reduces avoidable risk; it cannot guarantee profit.</span>
+    </div>
+    <div class="shield-metric"><small>Daily loss left</small><b id="p11DailyLeft">₹ —</b></div>
+    <div class="shield-metric"><small>Trades today</small><b id="p11Trades">—</b></div>
+    <div class="shield-metric"><small>Confidence gate</small><b id="p11ConfGate">70%</b></div>
+    <div class="shield-metric"><small>Confirmation gate</small><b id="p11ConfirmGate">80%</b></div>
+  </div>
+  <div class="shield-rules">
+    <div class="shield-rule"><span>Min R:R</span><b id="p11RR">1.25R</b></div>
+    <div class="shield-rule"><span>Max open positions</span><b id="p11MaxPos">3</b></div>
+    <div class="shield-rule"><span>Max spread</span><b id="p11Spread">1.25%</b></div>
+    <div class="shield-rule"><span>Cooldown</span><b id="p11Cooldown">15m</b></div>
+    <div class="shield-rule"><span>No averaging</span><b id="p11Average">ON</b></div>
+    <div class="shield-rule"><span>No martingale</span><b id="p11Martingale">ON</b></div>
+    <div class="shield-rule"><span>Stop loss mandatory</span><b id="p11SL">ON</b></div>
+    <div class="shield-rule"><span>Signed signal</span><b id="p11Signed">ON</b></div>
+  </div>
+  <div class="shield-actions">
+    <button class="btn primary" onclick="loadPhase11Shield()">🛡 Refresh Shield</button>
+    <button class="btn" onclick="requestPhase11Signal()">✅ Get Confirmed Signal Lock</button>
+    <span class="shield-status" id="p11SignalStatus">No live signal token loaded.</span>
+  </div>
+  <div class="finder-note"><b>Performance view:</b> “Model confidence” is a rule-based confluence measure. “Historical target-hit” is a backtest statistic from Phase 10; it is not a forward probability of profit and does not include every real-world execution cost.</div>
+</section>
+
+<section class="card" id="phase10Prediction">
+  <div class="card-head"><h3>Phase 10 • Advanced Prediction & Confirmation</h3><span id="p10State">LOCKED</span></div>
+  <div class="prediction-grid">
+    <div class="prediction-hero">
+      <div class="eyebrow">PB Predictive Fusion</div>
+      <div id="p10Prediction" class="prediction-big neutral">NO TRADE</div>
+      <div id="p10Reason" class="prediction-sub">Connect Angel One and verified market/news/global/options feeds to calculate the live model.</div>
+      <div class="prediction-stats">
+        <div class="prediction-stat"><small>Suggested action</small><b id="p10Action" class="neutral">NO TRADE</b></div>
+        <div class="prediction-stat"><small>Model confidence</small><b id="p10Confidence">—</b></div>
+        <div class="prediction-stat"><small>Confirmation</small><b id="p10Confirmation">—</b></div>
+        <div class="prediction-stat"><small>Backtest target-hit</small><b id="p10HitRate">—</b></div>
+      </div>
+      <div class="prediction-meter"><i id="p10Meter"></i></div>
+      <div class="finder-note" id="p10Note">Confidence is a rule-based confluence estimate. Historical target-hit rate is based on the displayed rolling 5M backtest and is not a guarantee of future profit.</div>
+    </div>
+    <div>
+      <div class="card-head" style="margin-bottom:7px"><h3 style="font-size:12px">Confirmation Matrix</h3><span>Current decision inputs</span></div>
+      <div class="confirm-grid" id="p10ConfirmGrid">
+        <div class="confirm-item"><span>1H trend</span><b class="no">WAIT</b></div>
+        <div class="confirm-item"><span>15M setup</span><b class="no">WAIT</b></div>
+        <div class="confirm-item"><span>5M trigger</span><b class="no">WAIT</b></div>
+        <div class="confirm-item"><span>Momentum</span><b class="no">WAIT</b></div>
+        <div class="confirm-item"><span>Volume</span><b class="no">WAIT</b></div>
+        <div class="confirm-item"><span>ADX</span><b class="no">WAIT</b></div>
+        <div class="confirm-item"><span>Options / OI</span><b class="no">WAIT</b></div>
+        <div class="confirm-item"><span>News / macro</span><b class="no">WAIT</b></div>
+        <div class="confirm-item"><span>Global risk</span><b class="no">WAIT</b></div>
+        <div class="confirm-item"><span>Event safe</span><b class="no">WAIT</b></div>
+      </div>
+    </div>
+  </div>
+  <div class="backtest">
+    <div class="bt"><small>Backtest signals</small><b id="p10Signals">—</b></div>
+    <div class="bt"><small>Resolved</small><b id="p10Resolved">—</b></div>
+    <div class="bt"><small>Wins / Losses</small><b id="p10WinsLosses">—</b></div>
+    <div class="bt"><small>Expected R*</small><b id="p10ExpectedR">—</b></div>
+  </div>
+  <div class="finder-note"><b>*Backtest note:</b> 1.0R stop vs 1.25R target, up to 20 five-minute bars forward, using a transparent rolling technical trigger. It excludes brokerage, taxes, slippage and real-time execution effects. This is a historical statistic, not a promise that a future trade will be profitable.</div>
+  <div class="exec" style="margin-top:8px"><button class="btn primary" onclick="loadPrediction(true)">⚡ Run Advanced Prediction</button><button class="btn" onclick="scrollToPhase10Backtest()">▣ View Confirmation</button></div>
+</section>
+
+<section class="hero-grid">
+  <div class="card hero">
+    <div class="eyebrow">PB Fusion Decision Engine</div>
+    <h2 id="decision">NO TRADE</h2>
+    <p id="decisionReason">Waiting for verified live market data, options data, news, global-risk inputs and multi-timeframe confirmation. The engine stays defensive when a required feed is stale or missing.</p>
+    <div class="signal-legend" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+      <span class="signal-pill bullish">● BULLISH • WHITE</span>
+      <span class="signal-pill bearish">● BEARISH • RED</span>
+      <span class="signal-pill neutral">● NO TRADE / WAIT • AMBER</span>
+    </div>
+    <div class="decision-grid">
+      <div class="stat"><small>Final action</small><b class="wait" id="action">NO TRADE</b></div>
+      <div class="stat"><small>Confluence</small><b id="score">— / 100</b></div>
+      <div class="stat"><small>Confidence band</small><b id="confidence">—</b></div>
+      <div class="stat"><small>R:R</small><b id="rr">—</b></div>
+    </div>
+  </div>
+  <div class="card gate">
+    <div class="eyebrow">Hard Safety Gate</div>
+    <h3>Real-money protection</h3>
+    <p>One failed critical gate = NO TRADE.</p>
+    <div class="check"><span>Exchange session</span><span class="badge warn" id="gSession">WAIT</span></div>
+    <div class="check"><span>Market feed freshness</span><span class="badge danger" id="gMarket">OFF</span></div>
+    <div class="check"><span>Options / OI feed</span><span class="badge danger" id="gOptions">OFF</span></div>
+    <div class="check"><span>News + macro feed</span><span class="badge danger" id="gNews">OFF</span></div>
+    <div class="check"><span>Risk / SL validation</span><span class="badge ok">ON</span></div>
+    <div class="check"><span>Final user confirmation</span><span class="badge ok">ON</span></div>
+  </div>
+</section>
+
+<div class="layout">
+<section class="stack">
+  <div class="card" id="chart">
+    <div class="card-head">
+      <div><h3 id="chartTitle">NIFTY 50 — LIVE CHART</h3><span>1H trend → 15M setup → 5M entry confirmation</span></div>
+      <div class="tfbar">
+        <button class="tf" onclick="setTF('1M',this)">1M</button>
+        <button class="tf" onclick="setTF('5M',this)">5M</button>
+        <button class="tf active" onclick="setTF('15M',this)">15M</button>
+        <button class="tf" onclick="setTF('30M',this)">30M</button>
+        <button class="tf" onclick="setTF('1H',this)">1H</button>
+        <button class="tf" onclick="setTF('4H',this)">4H</button>
+        <button class="tf" onclick="setTF('1D',this)">1D</button>
+      </div>
+    </div>
+    <div class="chartbox">
+      <canvas id="cv"></canvas>
+      <div class="charttools">
+        <button class="tool" onclick="zoom(1.15)">＋ Zoom</button><button class="tool" onclick="zoom(.87)">－ Zoom</button>
+        <button class="tool" onclick="toggleCrosshair()">✛ Crosshair</button><button class="tool" onclick="addLine()">／ Draw</button>
+        <button class="tool" onclick="resetChart()">↺ Reset</button><button class="tool" onclick="fullChart()">⛶ Fullscreen</button>
+      </div>
+      <div class="chartinfo"><span class="hud" id="tfHud">15M</span><span class="hud">EMA 20/50/200</span><span class="hud">VWAP</span><span class="hud">RSI • MACD • ADX</span></div>
+      <div class="watermark">LIVE FEED CONNECTOR REQUIRED • NO SYNTHETIC PRICE USED</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h3>Key Levels & Market Structure</h3><span>Calculated from verified live candles</span></div>
+    <div class="levels">
+      <div class="level"><small>R2</small><b id="r2">—</b></div><div class="level"><small>R1</small><b id="r1">—</b></div>
+      <div class="level"><small>VWAP</small><b id="lvwap">—</b></div><div class="level"><small>S1</small><b id="s1">—</b></div><div class="level"><small>S2</small><b id="s2">—</b></div>
+    </div>
+  </div>
+
+  <div class="card" id="signals">
+    <div class="card-head"><h3>Multi-Timeframe Indicator Matrix</h3><span>Confluence model — not certainty</span></div>
+    <div class="grid8">
+      <div class="metric"><small>1H trend</small><b id="m1h">WAIT</b></div><div class="metric"><small>15M setup</small><b id="m15">WAIT</b></div>
+      <div class="metric"><small>5M trigger</small><b id="m5">WAIT</b></div><div class="metric"><small>EMA 20/50/200</small><b id="ema">WAIT</b></div>
+      <div class="metric"><small>RSI</small><b id="rsi">—</b></div><div class="metric"><small>MACD</small><b id="macd">WAIT</b></div>
+      <div class="metric"><small>ADX</small><b id="adx">—</b></div><div class="metric"><small>VWAP</small><b id="vwap">WAIT</b></div>
+    </div>
+    <div class="fusion" style="margin-top:7px">
+      <div class="mini"><small>Price action</small><b id="pa">WAIT</b></div>
+      <div class="mini"><small>Volume</small><b id="volume">WAIT</b></div>
+      <div class="mini"><small>Volatility / ATR</small><b id="atr">WAIT</b></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h3>Why the final decision is showing</h3><span>Explainable audit trail</span></div>
+    <div class="reason-grid">
+      <div class="reason"><span>1H trend</span><span class="badge warn" id="why1">WAIT</span></div>
+      <div class="reason"><span>15M structure</span><span class="badge warn" id="why15">WAIT</span></div>
+      <div class="reason"><span>5M trigger</span><span class="badge warn" id="why5">WAIT</span></div>
+      <div class="reason"><span>Momentum</span><span class="badge warn" id="whyMom">WAIT</span></div>
+      <div class="reason"><span>Option positioning</span><span class="badge warn" id="whyOI">WAIT</span></div>
+      <div class="reason"><span>News / macro</span><span class="badge warn" id="whyNews">WAIT</span></div>
+      <div class="reason"><span>Global risk</span><span class="badge warn" id="whyGlobal">WAIT</span></div>
+      <div class="reason"><span>Event risk</span><span class="badge warn" id="whyEvent">WAIT</span></div>
+    </div>
+  </div>
+
+  <div class="card" id="news">
+    <div class="card-head"><h3>Live News & Macro Impact</h3><span>Recency • relevance • source quality • conflict filter</span></div>
+    <div class="strategy-grid">
+      <div class="strategy-box"><small>Headline Bias</small><b id="newsBias" class="neutral">WAIT</b><span id="newsReason">Feed not connected</span></div>
+      <div class="strategy-box"><small>News Score</small><b id="newsScore">—</b><span>−100 to +100</span></div>
+      <div class="strategy-box"><small>Confidence</small><b id="newsConfidence">—</b><span>Source + freshness</span></div>
+      <div class="strategy-box"><small>High Impact</small><b id="newsImpact" class="neutral">WAIT</b><span id="newsBlock">No freeze</span></div>
+    </div>
+    <div class="news" id="newsList"><div class="news-item"><b>Feed not connected</b><span>Connect a compliant news provider on the server. Headlines are never hard-coded into the decision engine.</span></div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h3>International Market Radar</h3><span>Secondary risk modifier • not a trade trigger by itself</span></div>
+    <div class="strategy-grid">
+      <div class="strategy-box"><small>Risk Bias</small><b id="globalBias" class="neutral">WAIT</b><span id="globalReason">Feed not connected</span></div>
+      <div class="strategy-box"><small>Risk Score</small><b id="globalScore">—</b><span>−100 = risk-off</span></div>
+      <div class="strategy-box"><small>Confidence</small><b id="globalConfidence">—</b><span>Available inputs</span></div>
+      <div class="strategy-box"><small>Hard Risk</small><b id="globalHard" class="neutral">WAIT</b><span>Extreme conditions</span></div>
+    </div>
+    <div class="riskbar"><i id="globalBar"></i></div>
+    <div class="global" id="globalGrid">
+      <div class="global-item"><small>GIFT NIFTY</small><b>WAIT</b></div><div class="global-item"><small>US FUTURES</small><b>WAIT</b></div>
+      <div class="global-item"><small>ASIA</small><b>WAIT</b></div><div class="global-item"><small>USD/INR</small><b>WAIT</b></div>
+      <div class="global-item"><small>US 10Y</small><b>WAIT</b></div><div class="global-item"><small>BRENT</small><b>WAIT</b></div>
+      <div class="global-item"><small>GOLD</small><b>WAIT</b></div><div class="global-item"><small>VIX / RISK</small><b>WAIT</b></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h3>Upcoming Event Risk</h3><span>15-minute freeze • 60-minute caution window</span></div>
+    <div class="strategy-grid">
+      <div class="strategy-box"><small>Gate</small><b id="eventGate" class="neutral">WAIT</b><span id="eventReason">Calendar feed not connected</span></div>
+      <div class="strategy-box"><small>Watch</small><b id="eventWatch" class="neutral">WAIT</b><span>High-impact ≤60m</span></div>
+      <div class="strategy-box"><small>Freeze</small><b id="eventFreeze" class="neutral">WAIT</b><span>High-impact ≤15m</span></div>
+      <div class="strategy-box"><small>Method</small><b>HARD GATE</b><span>Event risk can block trade</span></div>
+    </div>
+    <div class="eventlist" id="events"><div class="event"><span>Calendar feed</span><b>WAIT</b></div><div class="event"><span>High-impact events</span><b>WAIT</b></div></div>
+  </div>
+</section>
+
+<aside class="stack rightcol">
+  <div class="card" id="trade">
+    <div class="card-head"><h3>Final Options Trade Blueprint</h3><span id="instrumentLabel">NIFTY options</span></div>
+    <div class="blueprint">
+      <div class="field"><label>Direction</label><select id="side"><option>CALL</option><option>PUT</option></select></div>
+      <div class="field"><label>Strike</label><input id="strike" placeholder="Live chain"></div>
+      <div class="field"><label>Entry</label><input id="entry" placeholder="—"></div>
+      <div class="field"><label>Stop loss</label><input id="sl" placeholder="Mandatory"></div>
+      <div class="field"><label>Target 1</label><input id="t1" placeholder="—"></div>
+      <div class="field"><label>Target 2</label><input id="t2" placeholder="—"></div>
+      <div class="field"><label>Order type</label><select id="orderType"><option value="LIMIT">LIMIT</option><option value="MARKET">MARKET</option></select></div>
+      <div class="field"><label>Quantity</label><input id="quantity" type="number" min="1" step="1" placeholder="Lot multiple"></div>
+    </div>
+    <div class="riskout">
+      <div class="mini"><small>Risk / trade</small><b id="riskOut">₹ —</b></div>
+      <div class="mini"><small>R:R</small><b id="rrOut">—</b></div>
+      <div class="mini"><small>Execution</small><b id="execState" class="wait">LOCKED</b></div>
+    </div>
+    <div class="exec"><button class="btn buy" onclick="requestOrder('BUY')">BUY • FINAL CONFIRM</button><button class="btn sell" onclick="requestOrder('SELL')">SELL • FINAL CONFIRM</button></div>
+    <div class="note">The engine can recommend; the broker server must validate session, instrument token, expiry, quantity, margin, price/SL protection, duplicate-order state and authentication before placing anything.</div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h3>Option Chain Pulse</h3><span>OI / ΔOI / volume / IV / PCR</span></div>
+    <div class="option-wrap"><table class="option-table">
+      <tr><th>CE OI</th><th>CE ΔOI</th><th>Strike</th><th>PE ΔOI</th><th>PE OI</th><th>IV</th><th>PCR</th></tr>
+      <tr><td id="ceoi">—</td><td id="cedoi">—</td><td id="atm">—</td><td id="pedoi">—</td><td id="peoi">—</td><td id="iv">—</td><td id="pcr">—</td></tr>
+    </table></div>
+    <div class="note">The options layer should also detect OI walls, unusual volume, IV expansion/compression, ATM/OTM liquidity and expiry effects.</div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h3>Risk Manager</h3><span>Real-money safeguards</span></div>
+    <div class="riskgrid">
+      <div class="field"><label>Capital (₹)</label><input id="capital" type="number" min="0" placeholder="Enter amount"></div>
+      <div class="field"><label>Risk / trade %</label><input id="riskPct" type="number" min="0" max="5" step=".1" value="1"></div>
+      <div class="field"><label>Daily loss cap %</label><input id="dailyCap" type="number" min="0" max="10" step=".1" value="2"></div>
+      <div class="field"><label>Max open positions</label><input id="maxPos" type="number" min="1" max="10" step="1" value="1"></div>
+    </div>
+    <div class="riskout">
+      <div class="mini"><small>Allowed loss</small><b id="allowed">₹ —</b></div><div class="mini"><small>Daily cap</small><b id="dailyOut">₹ —</b></div><div class="mini"><small>Position rule</small><b id="posOut">1 max</b></div>
+    </div>
+  </div>
+
+
+  <div class="card" id="executionPhase5">
+    <div class="card-head"><h3>Phase 5 • Execution & Risk Gate</h3><span>Server-side pre-trade validation</span></div>
+    <div class="strategy-grid">
+      <div class="strategy-box"><small>Broker Session</small><b id="exSession" class="neutral">WAIT</b><span>Angel One</span></div>
+      <div class="strategy-box"><small>Static IP</small><b id="exStatic" class="neutral">WAIT</b><span>Order-source gate</span></div>
+      <div class="strategy-box"><small>Execution</small><b id="exEnabled" class="neutral">LOCKED</b><span>Server switch</span></div>
+      <div class="strategy-box"><small>Kill Switch</small><b id="exKill" class="neutral">ON</b><span>New orders blocked when ON</span></div>
+    </div>
+    <div class="check"><span>Pre-trade validation</span><span class="badge ok">ON</span></div>
+    <div class="check"><span>Lot-size validation</span><span class="badge ok">ON</span></div>
+    <div class="check"><span>Max-loss validation</span><span class="badge ok">ON</span></div>
+    <div class="check"><span>Explicit confirmation</span><span class="badge ok">ON</span></div>
+    <div class="riskout" style="margin-top:8px">
+      <div class="mini"><small>Available cash</small><b id="exCash">—</b></div>
+      <div class="mini"><small>Order book</small><b id="exOrders">—</b></div>
+      <div class="mini"><small>Phase</small><b>5 ACTIVE</b></div>
+    </div>
+    <div class="exec" style="margin-top:8px"><button class="btn primary" onclick="loadExecutionStatus()">↻ Refresh Execution Gate</button><button class="btn" onclick="loadRMS()">₹ Check RMS</button><button class="btn" onclick="loadOrderBook()">▤ Order Book</button></div>
+    <div class="note">Real-money placement stays OFF by default. Enabling it requires your Angel One execution configuration, registered static IP and the server-side switches. This phase never auto-clicks a trade.</div>
+  </div>
+
+  <div class="card" id="brokerAccount">
+    <div class="card-head"><h3>Phase 9 • Angel One Account Center</h3><span id="p9BrokerStatus">LOCKED</span></div>
+    <div class="account-grid">
+      <div class="account-card"><small>Net</small><b id="acNet">₹ —</b><span>Broker RMS</span></div>
+      <div class="account-card"><small>Available Cash</small><b id="acCash">₹ —</b><span>Ready balance</span></div>
+      <div class="account-card"><small>Collateral</small><b id="acCollateral">₹ —</b><span>RMS collateral</span></div>
+      <div class="account-card"><small>Used Margin</small><b id="acUsed">₹ —</b><span>Utilised exposure</span></div>
+      <div class="account-card"><small>Realised M2M</small><b id="acRealised">₹ —</b><span>Today</span></div>
+      <div class="account-card"><small>Unrealised M2M</small><b id="acUnrealised">₹ —</b><span>Open positions</span></div>
+      <div class="account-card"><small>Holdings Value</small><b id="acHoldingValue">₹ —</b><span>All holdings</span></div>
+      <div class="account-card"><small>Total Holdings P&L</small><b id="acHoldingPnl">₹ —</b><span>Portfolio</span></div>
+    </div>
+    <div class="quick-order">
+      <div class="field"><label>Selected Contract</label><input id="qSymbol" readonly placeholder="Select from Contract Finder"></div>
+      <div class="field"><label>Order Side</label><select id="qSide"><option value="BUY">BUY</option><option value="SELL">SELL</option></select></div>
+      <div class="field"><label>Order Type</label><select id="qType"><option value="MARKET">MARKET</option><option value="LIMIT">LIMIT</option></select></div>
+      <div class="field"><label>Price</label><input id="qPrice" type="number" step="0.05" placeholder="0 for Market"></div>
+      <div class="field"><label>Quantity</label><input id="qQty" type="number" min="1" step="1" placeholder="Lot multiple"></div>
+      <div class="field"><label>Risk SL</label><input id="qSL" type="number" step="0.05" placeholder="Mandatory gate"></div>
+      <div class="field"><label>Target 1</label><input id="qTarget" type="number" step="0.05" placeholder="Quality gate"></div>
+      <div class="field"><label>Capital</label><input id="qCapital" type="number" step="1" placeholder="Use broker cash or plan"></div>
+      <div class="field"><label>Risk %</label><input id="qRisk" type="number" step="0.1" value="1"></div>
+      <div class="inline-actions full"><button class="btn buy" onclick="previewQuickOrder()">BUY/SELL • Preview Live Order</button><button class="btn" onclick="loadBrokerAccount()">↻ Refresh Account</button></div>
+    </div>
+    <div class="broker-tabs">
+      <button class="btn primary" onclick="showBrokerTab('positions')">Positions</button>
+      <button class="btn" onclick="showBrokerTab('holdings')">Holdings</button>
+      <button class="btn" onclick="showBrokerTab('orders')">Orders</button>
+      <button class="btn" onclick="showBrokerTab('trades')">Trades</button>
+    </div>
+    <div id="brokerPositions" class="broker-panel active"><div class="broker-empty">Connect Angel One to load live positions, P&L and exit controls.</div></div>
+    <div id="brokerHoldings" class="broker-panel"><div class="broker-empty">Holdings will appear here after connection.</div></div>
+    <div id="brokerOrders" class="broker-panel"><div class="broker-empty">Order book will appear here after connection.</div></div>
+    <div id="brokerTrades" class="broker-panel"><div class="broker-empty">Trade book will appear here after connection.</div></div>
+    <div class="account-status" id="p9Checked">Last broker sync: —</div>
+    <div class="note">Phase 9 connects the website to the Angel One account data layer: funds/RMS, positions, holdings, orders and trades. Live BUY/SELL/modify/cancel/exit actions remain behind market-session, static-IP, kill-switch and explicit confirmation gates. Angel One documents RMS/funds, holdings, positions, order book, trade book and order APIs.</div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h3>Data Health</h3><span>Staleness blocks the decision engine</span></div>
+    <div class="check"><span>Price / candles</span><span class="badge danger" id="dhPrice">OFF</span></div>
+    <div class="check"><span>Options chain</span><span class="badge danger" id="dhOpt">OFF</span></div>
+    <div class="check"><span>News / macro</span><span class="badge danger" id="dhNews">OFF</span></div>
+    <div class="check"><span>Global markets</span><span class="badge danger" id="dhGlobal">OFF</span></div>
+    <div class="check"><span>Clock / session</span><span class="badge ok">OK</span></div>
+    <div class="note" id="lastUpdated">Last update: —</div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h3>Connection Architecture</h3><span>Designed for later live hookup</span></div>
+    <div class="note">
+      Market data → secure backend → indicator engine → options/OI fusion → news/macro impact → global-risk layer → risk gate → final decision → user confirmation → broker order router.
+      API keys, OTPs and access tokens stay server-side.
+    </div>
+  </div>
 </aside>
 </div>
 
-<div class="grid">
-<section>
-<div class="panel">
-<div class="head"><h2>Automatic Decision Engine</h2><span class="tag">1H → 15M → 5M</span></div>
-<div class="cards">
-<div class="card"><div class="k">Direction</div><div class="signal amber" id="direction">NO TRADE</div></div>
-<div class="card"><div class="k">Confirmation</div><div class="signal amber" id="confirmation">WAIT</div></div>
-<div class="card"><div class="k">Confluence</div><div class="signal" id="confidence">—</div></div>
-<div class="card"><div class="k">Entry</div><div class="signal" id="entry">—</div></div>
-</div>
-<div class="row" style="margin-top:8px"><span>T3</span><b id="t3">—</b></div>
-<div class="two" style="margin-top:10px">
-<div class="panel" style="padding:10px;background:#0a0d1a"><div class="row"><span>Stop Loss</span><b id="sl">—</b></div><div class="row"><span>T1</span><b id="t1">—</b></div><div class="row"><span>T2</span><b id="t2">—</b></div><div class="row"><span>R:R</span><b id="rr">—</b></div></div>
-<div class="panel" style="padding:10px;background:#0a0d1a"><div class="k">1H / 15M / 5M</div><div class="row"><span>Trend</span><b id="f1">—</b></div><div class="row"><span>Setup</span><b id="f2">—</b></div><div class="row"><span>Trigger</span><b id="f3">—</b></div><div class="row"><span>Freshness</span><b id="freshness">—</b></div><div class="row"><span>Trend strength</span><b id="adxNow">—</b></div></div>
-</div>
-<div class="muted" style="font-size:11px;margin-top:8px" id="reason">Waiting for verified broker candles.</div>
+<div class="card" id="journal" style="margin-top:12px">
+  <div class="card-head"><h3>Trade Journal & Audit Trail</h3><span>Local view; live fills should be stored server-side after broker connection</span></div>
+  <div class="tablewrap"><table class="j" id="journalTable">
+    <tr><th>Time</th><th>Symbol</th><th>Side</th><th>Decision</th><th>Entry</th><th>SL</th><th>T1</th><th>T2</th><th>Status</th></tr>
+    <tr><td>—</td><td id="jSymbol">NIFTY</td><td>—</td><td>NO TRADE</td><td>—</td><td>—</td><td>—</td><td>—</td><td>LOCKED</td></tr>
+  </table></div>
 </div>
 
-<div class="panel" style="margin-top:14px">
-<div class="head"><h2>Indicator Matrix</h2><span class="tag">AUTO ENGINE</span></div>
-<div class="scroll"><table class="table"><thead><tr><th>Indicator</th><th>Value</th><th>Bias</th></tr></thead><tbody id="indicators"></tbody></table></div>
-</div>
-</section>
-
-<aside>
-<div class="panel">
-<div class="head"><h2>Options Chain</h2><span class="tag">OI • VOLUME • LTP</span></div>
-<div class="controls"><select id="underlying" class="input"><option>NIFTY</option><option>BANKNIFTY</option></select><button class="btn" onclick="loadChain()">Refresh Chain</button></div>
-<div class="scroll" style="margin-top:10px"><table class="table"><thead><tr><th>Strike</th><th>CE LTP</th><th>CE OI</th><th>PE OI</th><th>PE LTP</th></tr></thead><tbody id="chain"></tbody></table></div>
-<div id="optionSignal" class="lock" style="margin-top:10px">PCR/OI candidate: waiting for live option chain.</div>
-</div>
-<div class="panel" style="margin-top:14px">
-<div class="head"><h2>World Intelligence</h2><span class="tag">INDIA IMPACT</span></div>
-<div id="world"></div>
-</div>
-<div class="panel" style="margin-top:14px">
-<div class="head"><h2>Positions / Orders</h2><span class="tag">ACCOUNT CENTER</span></div>
-<div class="controls"><button class="btn" onclick="loadPositions()">Positions</button><button class="btn" onclick="loadOrders()">Orders</button><button class="btn" onclick="loadHoldings()">Holdings</button></div>
-<div id="accountList" class="scroll" style="margin-top:9px"></div>
-</div>
-</aside>
+<footer class="footer"><span>PARTHAVI TRADE DESK PRO • PB SIGNATURE</span><span>LIVE DATA + BROKER BACKEND REQUIRED • PHASE 10 ACTIVE • NO GUARANTEED PROFIT</span></footer>
 </div>
 
-<div class="panel" style="margin-top:12px">
-<div class="head"><h2>Execution Firewall</h2><span class="tag">SERVER-SIDE GATES</span></div>
-<div class="firewall"><div class="guard wait" id="gMarket"><small>MARKET</small><b>Checking…</b></div><div class="guard wait" id="gIp"><small>STATIC IP</small><b>Checking…</b></div><div class="guard wait" id="gSl"><small>PROTECTIVE SL</small><b>Checking…</b></div><div class="guard wait" id="gFw"><small>FIREWALL</small><b>Checking…</b></div><div class="guard wait" id="gKill"><small>KILL SWITCH</small><b>Checking…</b></div></div>
-</div><div class="panel" style="margin-top:14px">
-<div class="head"><h2>Production Controls</h2><span class="tag">PROTECTED</span></div>
-<div class="controls"><button class="btn danger" onclick="blockedOrder()">BUY / SELL</button><button class="btn" onclick="checkNetwork()">Check Static IP</button><button class="btn" onclick="loadWorld()">Reload Intelligence</button></div>
-<div id="prod" class="muted" style="margin-top:9px;font-size:12px">Execution remains server-gated. The broker API requires registered static IP validation for order requests. See official SmartAPI docs for the current requirement. </div>
+<nav class="bottom">
+  <a href="#home" class="active">⌂<br>Home</a><a href="#chart">◫<br>Chart</a><a href="#signals">◎<br>Signals</a><a href="#news">◌<br>News</a><a href="#trade">↗<br>Trade</a>
+</nav>
+
+
+<div class="modal" id="modifyModal">
+  <div class="modal-box">
+    <h3>Phase 9 • Modify Live Order</h3>
+    <div class="finder-grid">
+      <label>Order ID<input id="modOrderId" readonly></label>
+      <label>Order Type<select id="modOrderType"><option value="LIMIT">LIMIT</option><option value="MARKET">MARKET</option></select></label>
+      <label>Price<input id="modPrice" type="number" step="0.05"></label>
+      <label>Quantity<input id="modQty" type="number" min="1" step="1"></label>
+    </div>
+    <p>Type <b>MODIFY LIVE ORDER</b> to confirm. The server re-checks the broker session and static-IP gate.</p>
+    <div class="modal-actions"><button class="btn" onclick="closeModifyModal()">Cancel</button><button class="btn primary" onclick="executeModifyOrder()">Modify Live Order</button></div>
+  </div>
 </div>
-<div class="footer">PARTHAVI TRADE DESK PRO • Live data + analysis + option intelligence • Protected execution • No guaranteed profit</div>
+
+<div class="modal" id="exitModal">
+  <div class="modal-box">
+    <h3>Phase 9 • Exit Live Position</h3>
+    <p id="exitPreviewText">No exit preview yet.</p>
+    <input id="exitConfirm" placeholder="Type EXIT LIVE POSITION">
+    <div class="modal-actions"><button class="btn" onclick="closeExitModal()">Cancel</button><button class="btn sell" onclick="executeExitPosition()">Exit Live Position</button></div>
+  </div>
 </div>
+
+<div class="modal" id="orderModal">
+  <div class="modal-box">
+    <h3>Phase 5 • Live Order Confirmation</h3>
+    <p id="orderPreviewText">No preview yet.</p>
+    <p>Type <b>PLACE LIVE ORDER</b> and press the final button. The server will re-check market session, Angel One session, static-IP gate, kill switch, instrument token, lot size and max-loss limit.</p>
+    <div class="field"><label>Confirmation</label><input id="orderConfirm" autocomplete="off" placeholder="PLACE LIVE ORDER"></div>
+    <div class="modal-actions"><button class="btn" onclick="closeOrderModal()">Cancel</button><button class="btn primary" onclick="executeLiveOrder()">PLACE LIVE ORDER</button></div>
+  </div>
+</div>
+
+<div class="modal" id="modal">
+  <div class="modal-box">
+    <h3>Secure Live Connection</h3>
+    <p>Live mode is intentionally locked until the backend reports fresh market, options, news and global feeds. Broker credentials must remain on the server.</p>
+    <p>When Angel One is connected, keep its current SmartAPI authentication and execution requirements on the backend, including any registered static-IP requirement for API order execution.</p>
+    <div class="modal-actions"><button class="btn" onclick="closeSettings()">Close</button><button class="btn primary" onclick="pingBackend()">Test backend</button></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
 
 <script>
-const $=function(id){return document.getElementById(id)};
-const TF=["1M","5M","15M","30M","1H","1D"];let activeTF="15M",chart=null,candle=null,line=null,volume=null,liveSocket=null,lastCandle=null,lastCandidate=null,priceRef=null,autoTried=false;
-function req(u,o){return fetch(u,o||{}).then(function(r){return r.json().catch(function(){return null})}).catch(function(){return null})}
-function fmt(n){return Number.isFinite(Number(n))?Number(n).toLocaleString("en-IN",{maximumFractionDigits:2}):"—"}
-function cls(v){return v==="BULLISH"||v==="CALL"?"good":v==="BEARISH"||v==="PUT"?"bad":"amber"}
-function esc(v){return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;")}
-function setTfs(){
-  $("tfs").innerHTML=TF.map(function(x){return '<button class="tab '+(x===activeTF?'on':'')+'" data-tf="'+x+'">'+x+'</button>'}).join("");
-  $("tfs").querySelectorAll("[data-tf]").forEach(function(b){b.onclick=function(){setTF(b.getAttribute("data-tf"))}})
+async function angelStatus(){
+  try{ const r=await fetch(API_BASE+'/api/angel/status'); const d=await r.json(); const el=document.getElementById('angelStatusText'); if(el) el.textContent=d.connected?('CONNECTED • '+(d.clientCode||'')):'DISCONNECTED'; setGate('cxLogin',!!d.connected,'ON'); setGate('cxWs',!!d.websocket,'LIVE'); return d; }catch(e){ setGate('cxLogin',false,'OFF'); return {connected:false}; }
 }
-function setTF(x){activeTF=x;setTfs();buildChart();loadLive()}
-function buildChart(){
-  var host=$("chart");if(chart)try{chart.remove()}catch(e){}
-  chart=LightweightCharts.createChart(host,{width:host.clientWidth,height:host.clientHeight,layout:{background:{color:"#060910"},textColor:"#a7accb"},grid:{vertLines:{color:"#161a31"},horzLines:{color:"#161a31"}},rightPriceScale:{borderColor:"#282d4e"},timeScale:{borderColor:"#282d4e",timeVisible:true,secondsVisible:false}});
-  candle=chart.addCandlestickSeries({upColor:"#ffffff",downColor:"#ff4d5f",borderUpColor:"#ffffff",borderDownColor:"#ff4d5f",wickUpColor:"#ffffff",wickDownColor:"#ff4d5f"});
-  volume=chart.addHistogramSeries({priceFormat:{type:"volume"},priceScaleId:"",color:"#4a5568",base:0});
-  chart.priceScale("").applyOptions({scaleMargins:{top:.82,bottom:0}});
-  line=chart.addLineSeries({lineWidth:2,color:"#69d7ff",visible:false});
-  candle.setData([]);volume.setData([]);line.setData([]);chart.timeScale().fitContent();
-  $("chartstate").textContent="NO LIVE FEED";$("chartEmpty").style.display="grid";
+async function angelConnect(){
+  const clientCode=document.getElementById('angelClient').value.trim();
+  const pin=document.getElementById('angelPin').value;
+  const totp=document.getElementById('angelTotp').value.trim();
+  if(!pin||!totp){toast('PIN + TOTP required');return;}
+  try{
+    const r=await fetch(API_BASE+'/api/angel/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientCode,pin,totp})});
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.error||'Connection failed');
+    document.getElementById('angelPin').value=''; document.getElementById('angelTotp').value='';
+    toast('Angel One connected'); await angelStatus(); await loadBrokerAccount();
+  }catch(e){toast(e.message||'Connection failed');}
 }
-function loadLive(){
-  req("/api/health").then(function(h){if(!h||!h.brokerSession){$("chartstate").textContent="NO LIVE FEED";return}
-    var seg=$("underlying").value==="BANKNIFTY"?"BANKNIFTY":"NIFTY";
-    req("/api/instruments/search?exchange=NSE&segment=nse_cm&q="+seg+"&limit=10").then(function(f){
-      var c=f&&f.contracts?f.contracts.find(function(x){return String(x.symbol||"").toUpperCase()===seg}):null;
-      if(!c){$("chartstate").textContent="INDEX TOKEN NOT FOUND";return} lastCandidate=c;
-      req("/api/candles?exchange=NSE&symboltoken="+encodeURIComponent(c.token)+"&tf="+activeTF+"&days=5").then(function(d){
-        if(!d||!d.candles||!d.candles.length){$("chartstate").textContent="LIVE HISTORY EMPTY";return}
-        var data=d.candles.map(function(x){return{time:x.time,open:x.open,high:x.high,low:x.low,close:x.close}});
-        candle.setData(data);line.setData(data.map(function(x){return{time:x.time,value:x.close}}));volume.setData(d.candles.map(function(x){return{time:x.time,value:x.volume||0}}));lastCandle=data[data.length-1];chart.timeScale().fitContent();$("chartEmpty").style.display="none";$("chartstate").textContent="LIVE HISTORY • "+seg;startStream(c.token);
-      });
-    });
-  });
+async function angelDisconnect(){ try{await fetch(API_BASE+'/api/angel/logout',{method:'POST'}); await angelStatus(); toast('Disconnected');}catch(e){toast('Disconnect failed');} }
+const API_BASE = localStorage.getItem('PTD_API_BASE') || '';
+let symbol='NIFTY', tf='15M', scale=1, crosshair=false, drawing=false, liveData=null;
+const $=id=>document.getElementById(id);
+function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800)}
+function openSettings(){$('modal').classList.add('show')} function closeSettings(){$('modal').classList.remove('show')}
+async function pingBackend(){try{const r=await fetch(API_BASE+'/api/health');const j=await r.json();toast(j.ok?'Backend reachable':'Backend not ready')}catch(e){toast('Backend not reachable')}}
+function setTF(next,btn){tf=next;document.querySelectorAll('.tf').forEach(b=>b.classList.remove('active'));btn.classList.add('active');$('tfHud').textContent=tf;drawChart();loadAll()}
+function setSymbol(next){symbol=next;window.phase11SignalToken='';window.phase11Snapshot=null;$('p11SignalStatus').textContent='No live signal token loaded.';document.querySelectorAll('.chip').forEach(b=>b.classList.toggle('active',b.dataset.symbol===symbol));$('chartTitle').textContent=(symbol==='NIFTY'?'NIFTY 50':symbol)+' — LIVE CHART';$('instrumentLabel').textContent=symbol+' options';$('jSymbol').textContent=symbol;drawChart();loadAll()}
+document.querySelectorAll('.chip').forEach(b=>b.addEventListener('click',()=>setSymbol(b.dataset.symbol)));
+function indiaNow(){return new Intl.DateTimeFormat('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',weekday:'short',hour12:false,day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date())}
+function setGate(id, ok, text){const el=$(id);el.textContent=text;el.className='badge '+(ok?'ok':'danger')}
+function renderStatus(s){
+ $('status').textContent=s.open?'NSE OPEN':'NSE CLOSED'; $('dot').style.background=s.open?'var(--green)':'var(--red)';
+ $('gSession').textContent=s.open?'PASS':'WAIT'; $('gSession').className='badge '+(s.open?'ok':'warn');
+ $('lastUpdated').textContent='Last update: '+(s.asof || indiaNow());
 }
-function startStream(token){
-  if(liveSocket)try{liveSocket.close()}catch(e){}
-  var p=location.protocol==="https:"?"wss":"ws";liveSocket=new WebSocket(p+"://"+location.host+"/api/live/stream");
-  liveSocket.onopen=function(){liveSocket.send(JSON.stringify({action:"subscribe",mode:3,tokenList:[{exchangeType:1,tokens:[String(token)]}]}));$("chartstate").textContent="STREAM CONNECTING"};
-  liveSocket.onmessage=function(e){try{var m=JSON.parse(e.data);if(m.type==="tick"&&m.data){applyTick(m.data)}if(m.type==="connected")$("chartstate").textContent="LIVE STREAM CONNECTED"}catch(err){}}
-  liveSocket.onclose=function(){$("chartstate").textContent="STREAM DISCONNECTED"}
+function signalTone(value){
+ const t=String(value??'').toUpperCase();
+ if(/BEARISH|BEAR|DOWN|NEGATIVE|SELL|RESISTANCE|PUT/.test(t)) return 'bearish';
+ if(/BULLISH|BULL|UP|POSITIVE|BUY|SUPPORT|CALL/.test(t)) return 'bullish';
+ return 'neutral';
 }
-function bucket(tf){return({1M:60,5M:300,15M:900,30M:1800,1H:3600,1D:86400})[tf]||900}
-function applyTick(t){
-  var p=Number(t.ltp);if(!Number.isFinite(p)||!candle)return;var ts=Math.floor(Number(t.exchangeTimestamp||Date.now())/1000),tm=Math.floor(ts/bucket(activeTF))*bucket(activeTF);
-  if(!lastCandle||lastCandle.time!==tm)lastCandle={time:tm,open:p,high:p,low:p,close:p};else{lastCandle.close=p;lastCandle.high=Math.max(lastCandle.high,p);lastCandle.low=Math.min(lastCandle.low,p)}
-  candle.update(lastCandle);line.update({time:tm,value:p});$("chartstate").textContent="LIVE • "+fmt(p)+(t.openInterest!=null?" • OI "+fmt(t.openInterest):"");
+function paintSignal(id,value){const el=$(id);if(!el)return;el.textContent=value??'WAIT';el.classList.remove('bullish','bearish','neutral');el.classList.add(signalTone(value));}
+function renderDecision(d){
+ const action=d.action||'NO TRADE';
+ $('decision').textContent=action; $('action').textContent=action; $('score').textContent=(d.score??'—')+' / 100';
+ $('confidence').textContent=d.confidence||'—'; $('rr').textContent=d.rr||'—';
+ $('decisionReason').textContent=d.reason||'Waiting for verified data.';
+ const c=action==='CALL'?'bullish':action==='PUT'?'bearish':'neutral'; $('decision').className=c; $('action').className=c;
+ const map={m1h:'trend1h',m15:'setup15m',m5:'trigger5m',ema:'ema',rsi:'rsi',macd:'macd',adx:'adx',vwap:'vwap',pa:'priceAction',volume:'volume',atr:'atr'};
+ for(const [id,k] of Object.entries(map)) paintSignal(id,d[k]??'WAIT');
+ paintSignal('why1',d.trend1h??'WAIT');paintSignal('why15',d.setup15m??'WAIT');paintSignal('why5',d.trigger5m??'WAIT');
+ paintSignal('whyMom',d.momentum??'WAIT');paintSignal('whyOI',d.options??'WAIT');paintSignal('whyNews',d.news??'WAIT');
+ paintSignal('whyGlobal',d.global??'WAIT');paintSignal('whyEvent',d.event??'WAIT');
+ const vals=d.levels||{}; $('r2').textContent=vals.r2??'—';$('r1').textContent=vals.r1??'—';$('lvwap').textContent=vals.vwap??'—';$('s1').textContent=vals.s1??'—';$('s2').textContent=vals.s2??'—';
+ const bp=d.blueprint||{}; $('side').value=bp.direction==='PUT'?'PUT':'CALL';$('strike').value=bp.strike??'';$('entry').value=bp.entry??'';$('sl').value=bp.sl??'';$('t1').value=bp.t1??'';$('t2').value=bp.t2??'';
+ $('rrOut').textContent=d.rr||'—'; $('execState').textContent=action==='CALL'||action==='PUT'?'READY':'LOCKED'; $('execState').className=action==='CALL'?'bullish':action==='PUT'?'bearish':'neutral';
 }
-function chartMode(m){candle.applyOptions({visible:m==="candle"});line.applyOptions({visible:m==="line"});document.querySelectorAll(".tool").forEach(function(x){if(x.textContent==="Candles"||x.textContent==="Line")x.classList.toggle("on",x.textContent.toLowerCase()===m)})}
-function fit(){if(chart)chart.timeScale().fitContent()}
-function zoom(dir){if(!chart)return;var r=chart.timeScale().getVisibleLogicalRange();if(!r)return;var c=(r.from+r.to)/2,h=(r.to-r.from)/2*(dir>0?.75:1.333);chart.timeScale().setVisibleLogicalRange({from:c-h,to:c+h})}
-function priceLine(){if(!candle)return;if(priceRef)try{candle.removePriceLine(priceRef)}catch(e){};var p=lastCandle?lastCandle.close:0;priceRef=candle.createPriceLine({price:p,color:"#e9bd52",lineStyle:2,lineWidth:1,axisLabelVisible:true,title:"Reference"})}
-function toggleSize(s){$("chartbox").style.height=s==="large"?"720px":"560px";setTimeout(function(){chart.resize($("chart").clientWidth,$("chart").clientHeight)},40)}
-function fullscreen(){var x=$("chartbox");if(document.fullscreenElement)document.exitFullscreen();else x.requestFullscreen?.();setTimeout(function(){if(chart)chart.resize($("chart").clientWidth,$("chart").clientHeight)},100)}
-async function connect(){var t=$("totp").value.replace(/\D/g,"");if(t.length!==6){$("prod").textContent="Enter current 6-digit TOTP.";return}var r=await req("/api/broker/connect",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({totp:t})});if(r&&r.connected){$("totp").value="";$("broker").textContent="● BROKER LIVE";$("broker").className="pill live";refreshAll()}else $("prod").textContent=(r&&r.error)||"Broker connection failed."}
-async function autoconnect(){var r=await req("/api/broker/autoconnect",{method:"POST"});if(r&&r.connected){$("broker").textContent="● BROKER LIVE";$("broker").className="pill live";refreshAll()}else $("prod").textContent=(r&&r.error)||"Auto-connect unavailable; enter TOTP."}
-async function logout(){await req("/api/broker/logout",{method:"POST"});$("broker").textContent="● BROKER OFF";$("broker").className="pill warn";refreshAll()}
-function guard(id,ok,label,detail){
-  var x=$(id);if(!x)return;x.className="guard "+(ok?"ok":"wait");x.querySelector("b").textContent=label;x.querySelector("small").textContent=detail;
+function renderGates(h){
+ setGate('gMarket',!!h.market,'ON'); setGate('gOptions',!!h.options,'ON'); setGate('gNews',!!h.news,'ON');
+ setGate('dhPrice',!!h.market,'ON'); setGate('dhOpt',!!h.options,'ON'); setGate('dhNews',!!h.news,'ON'); setGate('dhGlobal',!!h.global,'ON');
+ $('feed').textContent=(h.market&&h.options&&h.news&&h.global)?'LIVE':'PARTIAL/OFFLINE';
 }
-async function refreshAll(){
-  var h=await req("/api/health");
-  if(h&&h.ok){
-    $("backend").textContent="● BACKEND OK";$("backend").className="pill ok";
-    $("gate").textContent=h.gates.unlocked?"● EXECUTION READY":"● EXECUTION LOCK";$("gate").className=h.gates.unlocked?"pill live":"pill warn";
-    $("sys").textContent=h.brokerSession?"LIVE":"READY";$("sysc").textContent=h.gates.marketOpen?"MARKET OPEN":"MARKET CLOSED";
-    guard("gMarket",!!h.gates.marketOpen,h.gates.marketOpen?"OPEN":"CLOSED","MARKET");
-    guard("gIp",!!h.gates.staticIpVerified,h.gates.staticIpVerified?"VERIFIED":"LOCKED","STATIC IP");
-    guard("gSl",!!h.gates.protectiveSlVerified,h.gates.protectiveSlVerified?"VERIFIED":"LOCKED","PROTECTIVE SL");
-    guard("gFw",!!h.gates.firewallVerified,h.gates.firewallVerified?"VERIFIED":"LOCKED","FIREWALL");
-    guard("gKill",!h.gates.killSwitch,!h.gates.killSwitch?"OFF":"ON","KILL SWITCH");
-    if(h.gates.marketOpen&&h.gates.staticIpVerified&&h.gates.protectiveSlVerified&&h.gates.firewallVerified&&!h.gates.killSwitch)$("prod").textContent="All execution gates report ready. Final human confirmation is still required.";
-    else $("prod").textContent="Execution locked: one or more server-side safety gates are not satisfied.";
-    $("heroSignal").textContent=h.gates.unlocked?"READY":"NO TRADE";
-    $("heroData").textContent=h.brokerSession?"LIVE":"WAITING";
-    if(h.brokerSession){$("broker").textContent="● BROKER LIVE";$("broker").className="pill live"}
-    else if(!autoTried){
-      autoTried=true;
-      var ac=await req("/api/broker/autoconnect",{method:"POST"});
-      if(ac&&ac.connected)h=await req("/api/health");
+function renderTicker(m){
+ const arr=[['nifty','NIFTY'],['bank','BANKNIFTY'],['fin','FINNIFTY'],['mid','MIDCPNIFTY'],['vix','VIX']];
+ for(const [id,k] of arr)$(id).textContent=m[k]?.ltp??'WAIT';
+ $('globalRisk').textContent=m.GLOBAL_RISK?.label??'WAIT';
+}
+function toneClass(v){return v==='BULLISH'||v==='RISK-ON'||v==='POSITIVE'||v==='UP'?'bullish':v==='BEARISH'||v==='RISK-OFF'||v==='NEGATIVE'||v==='DOWN'?'bearish':'neutral'}
+function setToneText(id,v){const el=$(id);if(!el)return;el.textContent=v??'WAIT';el.className=toneClass(v)}
+function renderNews(items,strategy){
+ const st=strategy||{}; setToneText('newsBias',st.bias||'WAIT'); $('newsScore').textContent=st.connected?String(st.score):'—'; $('newsConfidence').textContent=st.connected?String(st.confidence)+'%':'—'; setToneText('newsImpact',st.highImpact?'HIGH IMPACT':'NORMAL'); $('newsBlock').textContent=st.highImpact?'Caution modifier active':'No freeze'; $('newsReason').textContent=st.reason||'Feed not connected';
+ $('newsList').innerHTML=(items&&items.length?items:[]).map(x=>`<div class="news-item"><b>${escapeHtml(x.title||'Headline')}</b><span>${escapeHtml(x.source||'Source')} • ${escapeHtml(x.bias||'NEUTRAL')} • score ${escapeHtml(x.score??'—')} • ${escapeHtml(x.impact||'UNASSESSED')} • ${escapeHtml(x.ageMin!=null?(x.ageMin+'m'):(x.publishedAt||''))}</span></div>`).join('')||'<div class="news-item"><b>Feed not connected</b><span>Waiting for server feed.</span></div>'
+}
+function renderGlobal(g,strategy){
+ const st=strategy||{}; setToneText('globalBias',st.bias||'WAIT'); $('globalScore').textContent=st.connected?String(st.score):'—'; $('globalConfidence').textContent=st.connected?String(st.confidence)+'%':'—'; setToneText('globalHard',st.hardRisk?'HIGH RISK':'NORMAL'); $('globalReason').textContent=st.reason||'Feed not connected'; $('globalBar').style.width=st.connected?Math.min(100,Math.round(Math.abs(st.score)))+'%':'0%';
+ const items=[['GIFT NIFTY','GIFT_NIFTY'],['US FUTURES','US_FUTURES'],['ASIA','ASIA'],['USD/INR','USDINR'],['US 10Y','US10Y'],['BRENT','BRENT'],['GOLD','GOLD'],['VIX / RISK','VIX']];
+ $('globalGrid').innerHTML=items.map(([label,k])=>`<div class="global-item"><small>${label}</small><b class="${g[k]?.tone==='up'?'up':g[k]?.tone==='down'?'down':''}">${escapeHtml(g[k]?.value??'WAIT')}</b><span style="display:block;color:#65738a;font-size:7px;margin-top:2px">${escapeHtml(g[k]?.change!=null?(g[k].change+'%'):'—')}</span></div>`).join('');
+}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+function renderOptions(o){$('ceoi').textContent=o?.ceoi??'—';$('cedoi').textContent=o?.cedoi??'—';$('atm').textContent=o?.atm??'—';$('pedoi').textContent=o?.pedoi??'—';$('peoi').textContent=o?.peoi??'—';$('iv').textContent=o?.iv??'—';$('pcr').textContent=o?.pcr??'—'}
+function renderEvents(es){
+ const arr=es||[]; $('events').innerHTML=arr.map(e=>`<div class="event"><span>${escapeHtml(e.label||'Event')}<br><span style="color:#65738a">${escapeHtml(e.time||'')}</span></span><b>${escapeHtml(e.risk||'WATCH')}</b></div>`).join('')||'<div class="event"><span>No event feed</span><b>WAIT</b></div>';
+ const high=arr.filter(e=>['HIGH','RED','CRITICAL'].includes(String(e.risk||'').toUpperCase())).length; setToneText('eventGate', high?'WATCH':'NORMAL'); setToneText('eventWatch', high?'ACTIVE':'NONE'); setToneText('eventFreeze', 'WAIT'); $('eventReason').textContent=high?'Connected calendar contains high-impact events.':'No high-impact event detected from connected feed.';
+}
+function renderEventStrategy(st){ const x=st||{}; setToneText('eventGate',x.hardBlock?'NO TRADE':'NORMAL'); setToneText('eventWatch',x.watch?'ACTIVE':'NONE'); setToneText('eventFreeze',x.hardBlock?'ACTIVE':'NONE'); $('eventReason').textContent=x.reason||'Calendar feed not connected'; }
+async function getJSON(path){const r=await fetch(API_BASE+path);if(!r.ok)throw new Error('HTTP '+r.status);return await r.json()}
+
+async function findContracts(){
+  const exchange=$('cfExchange').value,segment=$('cfSegment').value,underlying=$('cfUnderlying').value.trim().toUpperCase(),expiry=$('cfExpiry').value,optionType=$('cfType').value,strike=$('cfStrike').value.trim();
+  if(!underlying){toast('Enter an underlying symbol');return}
+  const q=new URLSearchParams({exchange,segment,underlying,expiry,optionType,strike});
+  try{
+    const r=await getJSON('/api/contracts?'+q.toString());
+    if(!r.connected){$('cfResult').innerHTML='<div class="news-item"><b>CONNECT FEED FIRST</b><span>'+escapeHtml(r.message||'Live contract data is not connected.')+'</span></div>';toast('Live contract feed not connected');return}
+    renderContracts(r.contracts||[]);
+  }catch(e){$('cfResult').innerHTML='<div class="news-item"><b>CONTRACT SEARCH ERROR</b><span>Backend unavailable.</span></div>'}
+}
+function renderContracts(rows){
+  if(!rows.length){$('cfResult').innerHTML='<div class="news-item"><b>NO MATCHING CONTRACT</b><span>Try another expiry, strike or option type.</span></div>';return}
+  $('cfResult').innerHTML='<table class="contract-table"><thead><tr><th>Contract</th><th>LTP</th><th>Chg</th><th>Bid/Ask</th><th>OI</th><th>ΔOI</th><th>Vol</th><th>IV</th><th></th></tr></thead><tbody>'+rows.map(x=>'<tr><td>'+escapeHtml(x.contract)+'</td><td>'+escapeHtml(x.ltp??'—')+'</td><td>'+escapeHtml(x.change??'—')+'</td><td>'+escapeHtml((x.bid??'—')+' / '+(x.ask??'—'))+'</td><td>'+escapeHtml(x.oi??'—')+'</td><td>'+escapeHtml(x.doi??'—')+'</td><td>'+escapeHtml(x.volume??'—')+'</td><td>'+escapeHtml(x.iv??'—')+'</td><td><button class="btn" onclick="analyseContract('+JSON.stringify(x).replace(/</g,'\u003c')+')">Analyse</button></td></tr>').join('')+'</tbody></table>'
+}
+async function analyseContract(x){
+  $('cfUnderlying').value=x.underlying||$('cfUnderlying').value;$('cfExpiry').value=x.expiry||$('cfExpiry').value;$('cfType').value=x.optionType||'CE';$('cfStrike').value=x.strike||'';
+  try{const q=new URLSearchParams({exchange:x.exchange||$('cfExchange').value,underlying:x.underlying||'',expiry:x.expiry||'',optionType:x.optionType||'CE',strike:x.strike||''});const r=await getJSON('/api/contract/analyze?'+q.toString());toast(r.connected?'Contract loaded':'NO TRADE • live contract feed required')}catch(e){toast('Contract analysis unavailable')}}
+$('cfUnderlying')?.addEventListener('change',()=>{ $('cfExpiry').innerHTML='<option value="">Load expiries</option>'; refreshExpiries(); });
+
+
+async function refreshExpiries(){
+  const exchange=$('cfExchange').value,segment=$('cfSegment').value,underlying=$('cfUnderlying').value.trim().toUpperCase();
+  if(!underlying){toast('Enter an underlying symbol first');return}
+  try{
+    const r=await getJSON('/api/angel/expiries?'+new URLSearchParams({exchange,segment,underlying}));
+    $('cfExpiry').innerHTML=(r.expiries||[]).map(x=>`<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join('')||'<option value="">No expiry</option>';
+    toast((r.expiries||[]).length?'Expiries loaded':'No expiry data');
+    setGate('cxMaster',!!r.expiries?.length,'ON');
+  }catch(e){ toast('Expiry load failed'); }
+}
+async function testAngelFeed(){
+  try{
+    const health=await getJSON('/api/health');
+    setGate('cxBackend',!!health.ok,'ON');
+    const st=await angelStatus();
+    setGate('cxLogin',!!st.connected,'ON');
+    if(!st.connected){ setGate('cxQuote',false,'OFF'); setGate('cxWs',false,'OFF'); $('angelTestBadge').textContent='LOGIN REQUIRED'; $('angelTestNote').textContent='Enter Client Code + PIN + TOTP above, then run Test Live Feed.'; return; }
+    const q=await getJSON('/api/angel/connection-test?symbol='+encodeURIComponent(symbol));
+    const ok=!!q.ok;
+    setGate('cxQuote',ok,ok?'LIVE':'FAIL');
+    $('angelTestBadge').textContent=ok?'LIVE QUOTE OK':'QUOTE TEST FAILED';
+    $('angelTestBadge').className='badge '+(ok?'ok':'danger');
+    $('angelTestNote').textContent=ok?`Live quote received: ${q.symbol} • LTP ${q.data?.ltp??'—'} • token ${q.token}`:(q.error||'Quote test failed');
+    if(ok){
+      await refreshExpiries();
+      setGate('cxWs',!!st.websocket,st.websocket?'LIVE':'READY');
+      $('feed').textContent='LIVE QUOTE';
+      toast('Angel One live quote verified');
+    }
+  }catch(e){ setGate('cxQuote',false,'FAIL'); $('angelTestBadge').textContent='TEST FAILED'; $('angelTestBadge').className='badge danger'; $('angelTestNote').textContent=e.message||'Live feed test failed'; }
+}
+
+const alertState={lastPrice:null,lastR1:null,lastS1:null,lastAction:'',lastRsi:null,lastVwap:null,seen:new Set(),enabled:true,lastConfirmedBar:null};
+function addAlert(title,detail,tone='neutral',key=''){ 
+  if(key && alertState.seen.has(key)) return; if(key) alertState.seen.add(key);
+  const feed=$('alertFeed'); if(!feed)return; const el=document.createElement('div'); el.className='alert-item '+tone;
+  el.innerHTML='<b>'+escapeHtml(title)+'</b><span>'+escapeHtml(detail)+'</span>'; feed.prepend(el); while(feed.children.length>30)feed.lastChild.remove();
+  if(document.hidden || window.__notifyAlways){ if('Notification' in window && Notification.permission==='granted'){ try{new Notification('PARTHAVI TRADE DESK • '+title,{body:detail,tag:key||title});}catch{} } }
+}
+async function enableNotifications(){
+  if(!('Notification' in window)){toast('Browser notifications not supported; in-app alerts still work');return}
+  try{const p=await Notification.requestPermission(); if(p==='granted'){window.__notifyAlways=true;$('notifyBtn').textContent='🔔 Notifications ON';toast('Browser notifications enabled')}else toast('Notification permission not granted')}catch(e){toast('Notification permission failed')}
+}
+function clearAlerts(){alertState.seen.clear();$('alertFeed').innerHTML='<div class="alert-item neutral"><b>Alerts cleared</b><span>New events will appear here.</span></div>';}
+function crossedUp(prev,cur,level){return Number.isFinite(prev)&&Number.isFinite(cur)&&Number.isFinite(level)&&prev<=level&&cur>level}
+function crossedDown(prev,cur,level){return Number.isFinite(prev)&&Number.isFinite(cur)&&Number.isFinite(level)&&prev>=level&&cur<level}
+function processAlerts(a){
+  const d=a?.decision||{}, rows=a?.multiTf?.m5?.rows||a?.candles||[], last=Number(a?.multiTf?.m5?.last||rows.at?.(-1)?.c||NaN), levels=d.levels||{};
+  const r1=Number(levels.r1),s1=Number(levels.s1),rsi=Number(a?.multiTf?.m5?.rsi),vwap=Number(a?.multiTf?.m5?.vwap),adx=Number(a?.multiTf?.m5?.adx);
+  const cur=rows.at?.(-1), prev=rows.at?.(-2);
+  const vols=rows.slice?.(-21,-1).map(x=>Number(x.v)).filter(Number.isFinite)||[];
+  const avgVol=vols.length?vols.reduce((x,y)=>x+y,0)/vols.length:NaN;
+  const volRatio=Number.isFinite(avgVol)&&avgVol>0?Number(cur?.v||0)/avgVol:NaN;
+  const candleBull=!!cur&&Number(cur.c)>Number(cur.o)&&Number(cur.c)>r1;
+  const candleBear=!!cur&&Number(cur.c)<Number(cur.o)&&Number(cur.c)<s1;
+  const options=a?.decision?.optionsData||a?.options||{};
+  const pcr=Number(options.pcr), ceDoi=Number(options.cedoi), peDoi=Number(options.pedoi);
+  const oiBull=Number.isFinite(pcr)?pcr>=1.0:(Number.isFinite(peDoi)&&Number.isFinite(ceDoi)?peDoi>ceDoi:false);
+  const oiBear=Number.isFinite(pcr)?pcr<=1.0:(Number.isFinite(peDoi)&&Number.isFinite(ceDoi)?ceDoi>peDoi:false);
+  const volumeConfirmed=Number.isFinite(volRatio)&&volRatio>=1.5;
+  const trendConfirmed=String(a?.multiTf?.h1?.trend||'')==='BULLISH' || String(a?.multiTf?.h1?.trend||'')==='BEARISH';
+  if(alertState.lastPrice!==null){
+    if($('alertBreakout').checked&&crossedUp(alertState.lastPrice,last,r1)){
+      const confirmed=candleBull&&volumeConfirmed&&adx>=20&&oiBull&&trendConfirmed;
+      if(confirmed) addAlert('🚀 CONFIRMED BULLISH BREAKOUT',`${symbol} • 5M close > R1 • volume ${volRatio.toFixed(1)}x • ADX ${adx.toFixed(1)} • option positioning confirmed.`,'bullish',`cbo-${cur?.t||Math.floor(Date.now()/60000)}`);
+      else addAlert('👀 Breakout WATCH',`${symbol} crossed R1, but confirmation is incomplete: 5M close/volume/ADX/OI/trend must align. No trade alert.`,'neutral',`bo-watch-${Math.floor(Date.now()/60000)}`);
+    }
+    if($('alertBreakdown').checked&&crossedDown(alertState.lastPrice,last,s1)){
+      const confirmed=candleBear&&volumeConfirmed&&adx>=20&&oiBear&&trendConfirmed;
+      if(confirmed) addAlert('🔻 CONFIRMED BEARISH BREAKDOWN',`${symbol} • 5M close < S1 • volume ${volRatio.toFixed(1)}x • ADX ${adx.toFixed(1)} • option positioning confirmed.`,'bearish',`cbd-${cur?.t||Math.floor(Date.now()/60000)}`);
+      else addAlert('👀 Breakdown WATCH',`${symbol} crossed S1, but confirmation is incomplete: 5M close/volume/ADX/OI/trend must align. No trade alert.`,'neutral',`bd-watch-${Math.floor(Date.now()/60000)}`);
+    }
+    if(Number.isFinite(alertState.lastVwap)&&Number.isFinite(vwap)){
+      if(crossedUp(alertState.lastPrice,last,vwap)) addAlert('VWAP Bullish Cross',`${symbol} moved above VWAP ${vwap.toFixed(2)}. Await 5M close + volume confirmation.`,'bullish',`vwu-${Math.floor(Date.now()/60000)}`);
+      if(crossedDown(alertState.lastPrice,last,vwap)) addAlert('VWAP Bearish Cross',`${symbol} moved below VWAP ${vwap.toFixed(2)}. Await 5M close + volume confirmation.`,'bearish',`vwd-${Math.floor(Date.now()/60000)}`);
     }
   }
-  var a=h&&h.brokerSession?await req("/api/account"):null;
-  if(a&&a.connected){$("cash").textContent="₹"+fmt(a.cash);$("net").textContent="₹"+fmt(a.net);$("margin").textContent="₹"+fmt(a.usedMargin);$("pnl").textContent="₹"+fmt(a.dayPnl)}
-  if(h&&h.brokerSession){$("broker").textContent="● BROKER LIVE";$("broker").className="pill live";loadLive();loadAnalysis();loadChain();loadPositions()}
-  else $("chartEmpty").style.display="grid";
-  loadWorld();loadMarketPulse()
+  if($('alertRisk').checked){
+    if(rsi>=70&&alertState.lastRsi<70) addAlert('RSI Overbought',`${symbol} RSI crossed 70. Momentum is stretched; wait for confirmation.`,'neutral',`rsi70-${Math.floor(Date.now()/60000)}`);
+    if(rsi<=30&&alertState.lastRsi>30) addAlert('RSI Oversold',`${symbol} RSI crossed 30. Wait for reversal confirmation.`,'neutral',`rsi30-${Math.floor(Date.now()/60000)}`);
+    if(d.eventStrategy?.hardGate) addAlert('⚠ High Event Risk','Event gate is blocking new trade decisions.','neutral',`event-${Math.floor(Date.now()/60000)}`);
+  }
+  if($('alertSignal').checked && alertState.lastAction && d.action && d.action!==alertState.lastAction){
+    addAlert(`Signal changed → ${d.action}`,`${symbol}: previous ${alertState.lastAction}, current ${d.action}. Re-check full confluence.` ,d.action==='CALL'?'bullish':d.action==='PUT'?'bearish':'neutral',`sig-${d.action}-${Math.floor(Date.now()/60000)}`);
+  }
+  alertState.lastPrice=last; alertState.lastR1=r1; alertState.lastS1=s1; alertState.lastAction=d.action||''; alertState.lastRsi=rsi; alertState.lastVwap=vwap;
 }
-async function loadAnalysis(){
-  var u=$("underlying").value,d=await req("/api/analysis?underlying="+u);if(!d)return;
-  $("direction").textContent=d.direction||"NO TRADE";$("direction").className="signal "+cls(d.direction);
-  $("confirmation").textContent=d.confirmation||"NO TRADE";$("confirmation").className="signal "+(d.confirmation==="CONFIRMED"?"good":"amber");
-  $("confidence").textContent=d.confidence!=null?d.confidence+"%":"—";$("entry").textContent=fmt(d.entry||d.price);$("sl").textContent=fmt(d.sl);$("t1").textContent=fmt(d.t1);$("t2").textContent=fmt(d.t2);$("t3").textContent=fmt(d.t3);$("rr").textContent=d.rr||"—";$("reason").textContent=d.reason||"—";
-  $("heroSignal").textContent=d.direction||"NO TRADE";
-  $("freshness").textContent=d.frames&&d.frames.every(function(x){return x.fresh!==false})?"FRESH":"STALE";
-  $("adxNow").textContent=d.trendStrength!=null?fmt(d.trendStrength):"—";
-  $("heroData").textContent=d.dataFresh===false?"STALE":"LIVE";
-  if(d.frames){$("f1").textContent=d.frames[0].state;$("f2").textContent=d.frames[1].state;$("f3").textContent=d.frames[2].state;renderIndicators(d.frames[2].indicators)}
+async function phase6Monitor(){
+  try{
+    const r=await getJSON('/api/phase6/status');
+    $('phase6State').textContent=r.monitoring||'LOCKED'; $('p6Monitor').textContent=r.monitoring||'LOCKED'; $('p6Time').textContent=indiaNow();
+    if($('alertOrder').checked){ for(const ev of (r.events||[])){ const status=String(ev.to||'').toLowerCase(); const tone=['complete','executed'].includes(status)?'bullish':['rejected','cancelled'].includes(status)?'bearish':'neutral'; addAlert(`Order ${ev.to||'updated'}`,`${ev.symbol||''} • Order ${ev.orderId||''} • ${ev.text||''}`,tone,`ord-${ev.orderId}-${ev.to}`); } }
+  }catch(e){$('phase6State').textContent='ERROR';$('p6Monitor').textContent='ERROR'}
 }
-function renderIndicators(x){
-  if(!x){$("indicators").innerHTML="";return}
-  var list=[["EMA20",x.EMA20],["EMA50",x.EMA50],["EMA200",x.EMA200],["RSI",x.RSI],["MACD",x.MACD&&x.MACD.macd],["MACD Signal",x.MACD&&x.MACD.signal],["ADX",x.ADX&&x.ADX.adx],["ATR",x.ATR],["VWAP",x.VWAP],["Bollinger Upper",x.Bollinger&&x.Bollinger.upper],["Bollinger Lower",x.Bollinger&&x.Bollinger.lower],["Stochastic K",x.Stochastic&&x.Stochastic.k],["CCI",x.CCI],["MFI",x.MFI],["ROC",x.ROC],["Williams %R",x.WilliamsR],["OBV",x.OBV],["Supertrend",x.Supertrend&&x.Supertrend.value],["Ichimoku Tenkan",x.Ichimoku&&x.Ichimoku.tenkan],["Candle Pattern",(x.patterns||[]).join(", ")||"—"]];
-  $("indicators").innerHTML=list.map(function(r){var bias=r[1]===null||r[1]===undefined?"WAIT":typeof r[1]==="string"?r[1]:"LIVE";return"<tr><td>"+r[0]+"</td><td>"+(typeof r[1]==="number"?fmt(r[1]):r[1])+"</td><td class=\""+(bias==="LIVE"?"good":"amber")+"\">"+bias+"</td></tr>"}).join("")
+
+function setP10Tone(el,state){ if(!el)return; const x=String(state||'').toUpperCase(); el.className=x==='BULLISH'||x==='CALL'?'bullish':x==='BEARISH'||x==='PUT'?'bearish':'neutral'; }
+function formatPct(v){ return Number.isFinite(Number(v))?Number(v).toFixed(1)+'%':'—'; }
+function renderPredictionPanel(r){
+  const p=r?.prediction||{}; const hist=r?.backtest||p?.historical||{};
+  const pred=$('p10Prediction'), act=$('p10Action');
+  pred.textContent=p.prediction||'NO TRADE'; setP10Tone(pred,p.prediction);
+  act.textContent=p.action||'NO TRADE'; setP10Tone(act,p.action);
+  $('p10State').textContent=p.signalState||'LOCKED'; setP10Tone($('p10State'),p.signalState);
+  $('p10Confidence').textContent=p.modelConfidence!=null?String(p.modelConfidence)+'%':'—';
+  $('p10Confirmation').textContent=(p.confirmedCount!=null?`${p.confirmedCount}/${p.confirmationTotal||10}`:'—')+(p.confirmationPct!=null?` • ${p.confirmationPct}%`:'');
+  $('p10HitRate').textContent=hist.available&&hist.targetHitRate!=null?String(hist.targetHitRate)+'%':'NOT CALIBRATED';
+  $('p10Signals').textContent=hist.signals??'—'; $('p10Resolved').textContent=hist.resolved??'—'; $('p10WinsLosses').textContent=(hist.wins??'—')+' / '+(hist.losses??'—');
+  const exp=hist.available&&hist.targetHitRate!=null?((Number(hist.targetHitRate)/100*1.25)-(1-Number(hist.targetHitRate)/100)).toFixed(2):null; $('p10ExpectedR').textContent=exp==null?'—':(Number(exp)>0?'+':'')+exp+'R';
+  $('p10Reason').textContent=p.reasoning||'Waiting for prediction engine.'; $('p10Meter').style.width=Math.max(0,Math.min(100,Number(p.confirmationPct||0)))+'%';
+  const labels={trend:'1H trend',setup:'15M setup',trigger:'5M trigger',momentum:'Momentum',volume:'Volume',strength:'ADX',options:'Options / OI',news:'News / macro',global:'Global risk',eventSafe:'Event safe'};
+  const grid=$('p10ConfirmGrid');
+  grid.innerHTML=Object.entries(labels).map(([k,label])=>{const yes=!!p.confirmations?.[k];return `<div class="confirm-item"><span>${label}</span><b class="${yes?'yes':'no'}">${yes?'✓ CONFIRMED':'WAIT'}</b></div>`}).join('');
+  $('p10Note').textContent=p.note||'Model output is not a guaranteed probability of profit.';
 }
-async function loadChain(){
-  var u=$("underlying").value,d=await req("/api/options/chain?underlying="+u+"&width=4"),rows=d&&d.chain?d.chain:[];var by={};rows.forEach(function(x){by[x.strike]=by[x.strike]||{};by[x.strike][x.type]=x});
-  $("chain").innerHTML=Object.keys(by).sort(function(a,b){return Number(a)-Number(b)}).map(function(s){var c=by[s].CE||{},p=by[s].PE||{};return"<tr><td>"+fmt(Number(s))+(Number(s)===Number(d.atm)?" <b class='amber'>ATM</b>":"")+"</td><td>"+fmt(c.ltp)+"</td><td>"+fmt(c.openInterest)+"</td><td>"+fmt(p.openInterest)+"</td><td>"+fmt(p.ltp)+"</td></tr>"}).join("")||"<tr><td colspan='5' class='muted'>Connect broker to load live option chain.</td></tr>";
-  var q=d&&d.pcrOI!=null?Number(d.pcrOI).toFixed(2):"—",cand=d&&d.indicativeCandidate;
-  if(cand){
-    var cc=cls(cand.direction);
-    $("optionSignal").innerHTML="<b>PCR(OI): "+q+" • "+esc(cand.direction)+" candidate</b><br>"+esc(cand.symbol)+" @ ₹"+fmt(cand.ltp)+" • SL ₹"+fmt(cand.sl)+" • T1 ₹"+fmt(cand.t1)+" • T2 ₹"+fmt(cand.t2)+" • T3 ₹"+fmt(cand.t3);
-    $("optionSignal").className="lock "+cc;
-  }else{
-    $("optionSignal").textContent="PCR(OI): "+q+" • NO TRADE candidate. Confirm 1H → 15M → 5M.";
-    $("optionSignal").className="lock amber";
+async function loadPrediction(showToast=false){
+  try{
+    const r=await getJSON('/api/phase10/prediction?symbol='+encodeURIComponent(symbol));
+    renderPredictionPanel(r);
+    if(r?.prediction?.signalState!=='CONFIRMED'){window.phase11SignalToken='';window.phase11Snapshot=null;$('p11SignalStatus').textContent='No live signal token loaded.';}
+    if(showToast) toast(r?.prediction?.signalState==='CONFIRMED'?'Phase 10 prediction confirmed':'Phase 10 prediction refreshed');
+  }catch(e){
+    renderPredictionPanel({prediction:{prediction:'NO TRADE',action:'NO TRADE',signalState:'LOCKED',modelConfidence:null,confirmationPct:0,confirmedCount:0,confirmationTotal:10,reasoning:'Prediction service unavailable or live data is not connected.',note:'Connect the backend and broker feeds before using the predictive panel.'},backtest:{available:false}});
+    if(showToast) toast('Phase 10 prediction unavailable');
   }
 }
-async function loadWorld(){
-  var d=await req("/api/intelligence");if(!d){$("world").innerHTML='<div class="muted">No intelligence feed.</div>';return}
-  var html=(d.snapshots||[]).map(function(x){var c=x.changePct>0?"good":x.changePct<0?"bad":"amber";return'<div class="row"><span>'+esc(x.symbol)+'</span><b class="'+c+'">'+fmt(x.price)+' ('+(x.changePct==null?"—":x.changePct.toFixed(2)+"%")+")</b></div>"}).join("");
-  var news=(d.news||[]).slice(0,8).map(function(n){return'<div class="row" style="align-items:flex-start"><span style="max-width:80%">'+esc(n.title)+'</span><span class="muted" style="font-size:10px">'+esc(n.publishedAt||"")+'</span></div>'}).join("");
-  $("world").innerHTML=html+'<div class="k" style="margin:10px 0 6px">India-impact news</div>'+news+'<div style="margin-top:8px;font-size:11px" class="muted">Updated '+new Date(d.updatedAt).toLocaleTimeString()+'</div>'
+function scrollToPhase10Backtest(){ $('phase10Prediction')?.scrollIntoView({behavior:'smooth',block:'start'}); }
+
+
+window.phase11SignalToken=''; window.phase11Snapshot=null;
+async function loadPhase11Shield(){
+ try{
+  const r=await getJSON('/api/phase11/protection'); const p=r.protection||{};
+  $('p11StatusText').textContent=p.locked?'LOCKED':'READY'; setP10Tone($('p11StatusText'),p.locked?'NO TRADE':'BULLISH');
+  $('p11Mode').textContent=p.locked?'CAPITAL SHIELD • LOCKED':'CAPITAL SHIELD ACTIVE';
+  $('p11DailyLeft').textContent='₹ '+Number(p.dailyLossRemaining||0).toLocaleString('en-IN');
+  $('p11Trades').textContent=`${p.tradesToday||0} / ${p.maxTradesPerDay||0}`;
+  $('p11ConfGate').textContent=(p.minModelConfidence||0)+'%'; $('p11ConfirmGate').textContent=(p.minConfirmationPct||0)+'%';
+  $('p11RR').textContent=(p.minRR||0)+'R'; $('p11MaxPos').textContent=p.maxOpenPositions||'—'; $('p11Spread').textContent=(p.maxSpreadPct||0)+'%'; $('p11Cooldown').textContent=(p.cooldownMinutes||0)+'m';
+  $('p11Average').textContent=p.noAveraging?'ON':'OFF'; $('p11Martingale').textContent=p.noMartingale?'ON':'OFF'; $('p11SL').textContent=p.requireStopLoss?'ON':'OFF'; $('p11Signed').textContent=p.requireSignalToken?'ON':'OFF';
+  if(p.locked && $('alertRisk')?.checked) addAlert('🛡 CAPITAL SHIELD LOCK',`Trading gate locked: ${(p.breachReasons||[]).join(', ')||'risk limits active'}.`,'neutral',`p11-lock-${p.asOf}`);
+ }catch(e){$('p11StatusText').textContent='ERROR';$('p11Mode').textContent='CAPITAL SHIELD • ERROR';}
 }
-async function loadMarketPulse(){
-  var d=await req("/api/intelligence");if(!d||!d.snapshots)return;var m={};d.snapshots.forEach(function(x){m[x.symbol]=x});
-  [["NIFTY 50","nifty","niftyc"],["BANK NIFTY","bank","bankc"],["INDIA VIX","vix","vixc"],["USD/INR","usdinr","usdinrc"],["GIFT NIFTY","gift","giftc"]].forEach(function(z){
-    var x=m[z[0]],v=$(z[1]),ch=$(z[2]);if(x){v.textContent=fmt(x.price);ch.textContent=x.changePct==null?"—":x.changePct.toFixed(2)+"%";ch.className="chg "+(x.changePct>0?"good":x.changePct<0?"bad":"amber")}else{v.textContent="—";ch.textContent="—"}
-  });
+async function requestPhase11Signal(){
+ try{
+  const r=await fetch(API_BASE+'/api/phase11/signal-token?symbol='+encodeURIComponent(symbol)); const d=await r.json();
+  if(!r.ok||!d.ok) throw new Error(d.error||'Confirmed signal unavailable');
+  window.phase11SignalToken=d.token; window.phase11Snapshot=d.snapshot;
+  $('p11SignalStatus').textContent=`LOCKED • ${d.snapshot.action} • ${d.snapshot.modelConfidence}% confidence • ${d.snapshot.confirmationPct}% confirmation • 60s`;
+  addAlert('✅ Confirmed Signal Lock',`${symbol} • ${d.snapshot.action} • ${d.snapshot.modelConfidence}% model confidence • ${d.snapshot.confirmationPct}% confirmation.`,'bullish','p11-'+d.snapshot.createdAt);
+  toast('Phase 11 confirmed signal lock loaded');
+ }catch(e){window.phase11SignalToken='';window.phase11Snapshot=null;$('p11SignalStatus').textContent='Not available • confirmation gate not met or live feed unavailable.';toast(e.message||'Confirmed signal unavailable')}
 }
-async function loadPositions(){var d=await req("/api/positions");$("accountList").innerHTML=d&&d.positions&&d.positions.length?d.positions.map(function(x){return'<div class="row"><span>'+String(x.tradingsymbol||x.symbol||"")+' × '+String(x.netqty||x.quantity||"")+'</span><b>₹'+fmt(Number(x.pnl||0))+'</b></div>'}).join(""):'<div class="muted">No verified live positions.</div>'}
-async function loadOrders(){var d=await req("/api/orders");$("accountList").innerHTML=d&&d.orders?d.orders.map(function(x){return'<div class="row"><span>'+String(x.tradingsymbol||"")+'</span><b>'+String(x.status||x.orderstatus||"")+'</b></div>'}).join(""):'<div class="muted">No orders.</div>'}
-async function loadHoldings(){var d=await req("/api/holdings");var a=d&&d.data?d.data:[];$("accountList").innerHTML=Array.isArray(a)&&a.length?a.map(function(x){return'<div class="row"><span>'+String(x.tradingsymbol||"")+'</span><b>'+String(x.quantity||"")+'</b></div>'}).join(""):'<div class="muted">No holdings.</div>'}
-async function checkNetwork(){var d=await req("/api/network/status");$("prod").textContent="Observed outbound IP: "+(d&&d.observedOutboundIp||"—")+" • Registered match: "+(d&&d.match?"YES":"NO")+" • Execution verification flag: "+(d&&d.staticIpVerified?"ON":"OFF")}
-function blockedOrder(){$("prod").textContent="BUY / SELL is protected. Server unlock requires the configured execution flag, registered static-IP verification, protective-SL verification and kill-switch OFF."}
-window.addEventListener("resize",function(){if(chart)chart.resize($("chart").clientWidth,$("chart").clientHeight)});
-$("underlying").addEventListener("change",function(){loadLive();loadAnalysis();loadChain()});
-setTfs();buildChart();refreshAll();
-setInterval(function(){refreshAll()},30000);
+async function loadAll(){
+ try{
+   const reqs=await Promise.allSettled([
+    getJSON('/api/status?symbol='+encodeURIComponent(symbol)),
+    getJSON('/api/market?symbol='+encodeURIComponent(symbol)),
+    getJSON('/api/news?symbol='+encodeURIComponent(symbol)),
+    getJSON('/api/global'),
+    getJSON('/api/options?symbol='+encodeURIComponent(symbol)),
+    getJSON('/api/events'),
+    getJSON('/api/analyze?symbol='+encodeURIComponent(symbol)+'&tf='+tf)
+   ]);
+   const val=(i,f)=>reqs[i].status==='fulfilled'?reqs[i].value:f;
+   const s=val(0,{open:false}); const m=val(1,{data:{}}); const n=val(2,{items:[],strategy:{connected:false}}); const g=val(3,{data:{},strategy:{connected:false}}); const o=val(4,{data:{}}); const e=val(5,{items:[],strategy:{connected:false}}); const a=val(6,{health:{},decision:{action:'NO TRADE',reason:'Analysis feed unavailable.'},candles:null});
+   renderStatus(s);
+   renderTicker(m.data||{});
+   renderNews(n.items||[],n.strategy||{});
+   renderGlobal(g.data||{},g.strategy||{});
+   renderOptions(o.data||{});
+   renderEvents(e.items||[]);
+   renderEventStrategy(e.strategy||{});
+   renderGates(a.health||{});
+   renderDecision(a.decision||{});
+   processAlerts(a);
+   if(Array.isArray(a.candles)&&a.candles.length){
+     liveData=a.candles;
+     try{window.__chartCacheAt=Date.now();localStorage.setItem('PTD_LAST_CANDLES_'+symbol,JSON.stringify({savedAt:window.__chartCacheAt,rows:a.candles.slice(-500)}));}catch{}
+   }else{
+     liveData=null;
+     try{
+       const cached=JSON.parse(localStorage.getItem('PTD_LAST_CANDLES_'+symbol)||'null');
+       if(Array.isArray(cached?.rows)&&cached.rows.length){liveData=cached.rows;window.__chartCacheAt=cached.savedAt||null;}
+     }catch{}
+     if(!liveData){
+       try{
+         const end=new Date();
+         const days=tf==='1D'?365:tf==='4H'?60:tf==='1H'?45:15;
+         const from=new Date(end.getTime()-days*86400000);
+         const fmt=x=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(x).replace(', ',' ').replace(/\\//g,'-');
+         const tokenMap={NIFTY:'99926000',BANKNIFTY:'99926009',FINNIFTY:'99926037',MIDCPNIFTY:'99926074',SENSEX:'99919000'};
+         const intervalMap={'1M':'ONE_MINUTE','5M':'FIVE_MINUTE','15M':'FIFTEEN_MINUTE','30M':'THIRTY_MINUTE','1H':'ONE_HOUR','4H':'ONE_HOUR','1D':'ONE_DAY'};
+         const cr=await fetch(API_BASE+'/api/angel/candles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({exchange:'NSE',symboltoken:tokenMap[symbol]||'99926000',interval:intervalMap[tf]||'FIFTEEN_MINUTE',fromdate:fmt(from),todate:fmt(end)})});
+         const cd=await cr.json();
+         const raw=cd?.data?.data||cd?.data||[];
+         const rows=Array.isArray(raw)?raw.map(x=>({t:x[0],o:Number(x[1]),h:Number(x[2]),l:Number(x[3]),c:Number(x[4]),v:Number(x[5]||0)})).filter(x=>[x.o,x.h,x.l,x.c].every(Number.isFinite)):[];;
+         if(rows.length){liveData=rows;window.__chartCacheAt=Date.now();try{localStorage.setItem('PTD_LAST_CANDLES_'+symbol,JSON.stringify({savedAt:window.__chartCacheAt,rows:rows.slice(-500)}));}catch{}}
+       }catch{}
+     }
+   }
+   drawChart();
+   if(m?.connected) await loadBrokerAccount();
+ }catch(err){
+   renderGates({}); $('decision').textContent='NO TRADE';$('action').textContent='NO TRADE';$('decision').className='neutral';$('action').className='neutral';$('decisionReason').textContent='Live backend data is not connected or is stale. The engine is locked for safety.';
+   drawChart();
+ }
+}
+function resizeCanvas(c){const r=c.getBoundingClientRect(),d=window.devicePixelRatio||1;c.width=Math.max(1,Math.floor(r.width*d));c.height=Math.max(1,Math.floor(r.height*d));const ctx=c.getContext('2d');ctx.setTransform(d,0,0,d,0,0);return [ctx,r.width,r.height]}
+function drawChart(){
+ const c=$('cv'),[ctx,w,h]=resizeCanvas(c);ctx.clearRect(0,0,w,h);
+ ctx.strokeStyle='rgba(55,72,98,.35)';ctx.lineWidth=1;for(let i=0;i<8;i++){let y=25+i*(h-50)/7;ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke()}for(let i=0;i<10;i++){let x=i*w/9;ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke()}
+ const d=liveData?.length?liveData:null;if(!d){ctx.fillStyle='#4f5d75';ctx.font='12px system-ui';ctx.fillText('NO CACHED DATA • CONNECT ANGEL ONE TO LOAD LAST SESSION',18,h/2);return}
+ const max=Math.max(...d.map(x=>x.h)),min=Math.min(...d.map(x=>x.l)),pad=20;const py=v=>pad+(max-v)*(h-pad*2)/(max-min||1);const step=Math.max(3,w/d.length*scale*.88);
+ const prevClose=Number(d.at(-1)?.c); if(Number.isFinite(prevClose)){ctx.save();ctx.setLineDash([6,5]);ctx.strokeStyle='rgba(255,216,109,.72)';ctx.beginPath();ctx.moveTo(0,py(prevClose));ctx.lineTo(w,py(prevClose));ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#ffd86d';ctx.font='10px system-ui';ctx.fillText('PREVIOUS CLOSE  '+prevClose.toFixed(2),10,Math.max(14,py(prevClose)-6));ctx.restore();}
+ if(window.__chartCacheAt){ctx.fillStyle='#8b98ad';ctx.font='9px system-ui';ctx.fillText('LAST SESSION DATA • '+new Date(window.__chartCacheAt).toLocaleString('en-IN'),10,h-10);} 
+ const start=Math.max(0,d.length-Math.floor(w/Math.max(4,step))-3);
+ for(let i=start;i<d.length;i++){const a=d[i],x=(i-start)*step+10,up=a.c>=a.o;ctx.strokeStyle=up?'#21e6a1':'#ff5f80';ctx.fillStyle=ctx.strokeStyle;ctx.beginPath();ctx.moveTo(x,py(a.h));ctx.lineTo(x,py(a.l));ctx.stroke();const top=py(Math.max(a.o,a.c)),bot=py(Math.min(a.o,a.c));ctx.fillRect(x-3,top,6,Math.max(2,bot-top))}
+ if(crosshair){c.addEventListener('pointermove',onCross);c.addEventListener('pointerleave',clearCross,{once:true})}
+}
+function onCross(ev){const c=$('cv'),r=c.getBoundingClientRect(),ctx=c.getContext('2d');drawChart();const x=ev.clientX-r.left,y=ev.clientY-r.top;ctx.strokeStyle='rgba(255,216,109,.5)';ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,r.height);ctx.moveTo(0,y);ctx.lineTo(r.width,y);ctx.stroke();ctx.setLineDash([])}
+function clearCross(){drawChart()}
+function toggleCrosshair(){crosshair=!crosshair;toast(crosshair?'Crosshair ON':'Crosshair OFF');drawChart()}
+function addLine(){drawing=true;toast('Draw mode: tap chart twice');}
+$('cv').addEventListener('click',ev=>{if(!drawing)return;drawing=false;toast('Trendline request sent to chart layer')})
+function zoom(z){scale=Math.min(3,Math.max(.65,scale*z));drawChart()}
+function resetChart(){scale=1;drawChart();toast('Chart reset')}
+async function fullChart(){const el=$('chart');try{await el.requestFullscreen?.();}catch{}}
+
+let brokerAccountData=null; let pendingExitPreview=null; let pendingModify=null;
+function money(v){const n=Number(v);return Number.isFinite(n)?'₹ '+n.toLocaleString('en-IN',{maximumFractionDigits:2}):'₹ —'}
+function pnlClass(v){const n=Number(v);return Number.isFinite(n)&&n<0?'account-negative':'account-positive'}
+function showBrokerTab(tab){for(const id of ['positions','holdings','orders','trades']) $('broker'+id[0].toUpperCase()+id.slice(1)).classList.remove('active'); $('broker'+tab[0].toUpperCase()+tab.slice(1)).classList.add('active');}
+function setBrokerText(id,v,cls=''){const el=$(id);if(!el)return;el.textContent=v;el.className=cls||''}
+function qContractSync(){const x=window.selectedContract;if(x){$('qSymbol').value=x.contract||x.symbol||''; if(x.exchange) $('qSide').dataset.exchange=x.exchange;}}
+function renderBrokerAccount(d){
+  brokerAccountData=d||null;
+  const rms=d?.rms||{}; const h=d?.allHoldings?.totalholding||d?.allHoldings?.totalHolding||{};
+  setBrokerText('acNet',money(rms.net)); setBrokerText('acCash',money(rms.availablecash)); setBrokerText('acCollateral',money(rms.collateral)); setBrokerText('acUsed',money(Number(rms.utilisedspan||0)+Number(rms.utilisedexposure||0)+Number(rms.utiliseddebits||0)));
+  const realised=Number(rms.m2mrealized); const unreal=Number(rms.m2munrealized); setBrokerText('acRealised',money(realised),pnlClass(realised)); setBrokerText('acUnrealised',money(unreal),pnlClass(unreal));
+  setBrokerText('acHoldingValue',money(h.totalholdingvalue)); setBrokerText('acHoldingPnl',money(h.totalprofitandloss),pnlClass(h.totalprofitandloss));
+  $('p9BrokerStatus').textContent=d?.ok?'LIVE SYNC':'ERROR'; $('p9Checked').textContent='Last broker sync: '+(d?.checkedAt?new Date(d.checkedAt).toLocaleString('en-IN'):'—');
+  renderBrokerPositions(Array.isArray(d?.positions)?d.positions:[]); renderBrokerHoldings(Array.isArray(d?.holdings)?d.holdings:[]); renderBrokerOrders(Array.isArray(d?.orders)?d.orders:[]); renderBrokerTrades(Array.isArray(d?.trades)?d.trades:[]); qContractSync();
+}
+function renderBrokerPositions(rows){
+  const el=$('brokerPositions'); if(!rows.length){el.innerHTML='<div class="broker-empty">No open/net positions returned by Angel One.</div>';return}
+  const active=rows.filter(x=>Number(x.netqty??((Number(x.buyqty)||0)-(Number(x.sellqty)||0)))!==0);
+  if(!active.length){el.innerHTML='<div class="broker-empty">No open/net positions. Day positions may still be listed below if the broker returns them.</div>';return}
+  el.innerHTML='<div class="scroll-x"><table class="broker-table"><tr><th>Symbol</th><th>Side</th><th>Qty</th><th>Avg</th><th>LTP</th><th>P&L</th><th>Product</th><th>Action</th></tr>'+active.map(x=>{const q=Number(x.netqty??((Number(x.buyqty)||0)-(Number(x.sellqty)||0)));const pnl=Number(x.pnl??x.m2m??0);const ltp=x.ltp??x.ltpPrice??'';return `<tr><td>${x.tradingsymbol||'—'}</td><td>${q>0?'LONG':'SHORT'}</td><td>${Math.abs(q)}</td><td>${Number(x.avgnetprice??x.buyavgprice??x.sellavgprice??0).toFixed(2)}</td><td>${ltp!==''?Number(ltp).toFixed(2):'—'}</td><td class="${pnl<0?'account-negative':'account-positive'}">${money(pnl)}</td><td>${x.producttype||'—'}</td><td><button class="btn sell broker-action" onclick="previewExit('${String(x.symboltoken||'')}', '${String(x.tradingsymbol||'').replaceAll("'","&#39;")}')">EXIT</button></td></tr>`}).join('')+'</table></div>';
+}
+function renderBrokerHoldings(rows){const el=$('brokerHoldings');if(!rows.length){el.innerHTML='<div class="broker-empty">No holdings returned.</div>';return} el.innerHTML='<div class="scroll-x"><table class="broker-table"><tr><th>Symbol</th><th>Qty</th><th>Avg</th><th>LTP</th><th>P&L</th><th>P&L %</th><th>Exchange</th></tr>'+rows.map(x=>{const pnl=Number(x.profitandloss||0);return `<tr><td>${x.tradingsymbol||'—'}</td><td>${x.quantity??'—'}</td><td>${x.averageprice!=null?Number(x.averageprice).toFixed(2):'—'}</td><td>${x.ltp!=null?Number(x.ltp).toFixed(2):'—'}</td><td class="${pnl<0?'account-negative':'account-positive'}">${money(pnl)}</td><td>${x.pnlpercentage!=null?Number(x.pnlpercentage).toFixed(2)+'%':'—'}</td><td>${x.exchange||'—'}</td></tr>`}).join('')+'</table></div>';}
+function renderBrokerOrders(rows){const el=$('brokerOrders');if(!rows.length){el.innerHTML='<div class="broker-empty">No orders returned.</div>';return} el.innerHTML='<div class="scroll-x"><table class="broker-table"><tr><th>Order ID</th><th>Symbol</th><th>Side</th><th>Qty</th><th>Price</th><th>Status</th><th>Updated</th><th>Action</th></tr>'+rows.map(x=>{const st=String(x.orderstatus||x.status||'').toLowerCase();const can=['open','trigger pending','pending','after market order req received'].includes(st);return `<tr><td>${x.orderid||'—'}</td><td>${x.tradingsymbol||'—'}</td><td>${x.transactiontype||'—'}</td><td>${x.quantity||'—'}</td><td>${x.price||'—'}</td><td>${x.orderstatus||x.status||'—'}</td><td>${x.updatetime||x.exchorderupdatetime||'—'}</td><td>${can?`<div class="inline-actions"><button class="btn broker-action" onclick='openModify(${JSON.stringify({orderid:x.orderid,ordertype:x.ordertype||'LIMIT',price:x.price||0,quantity:x.quantity||0,tradingsymbol:x.tradingsymbol,symboltoken:x.symboltoken,exchange:x.exchange,producttype:x.producttype||'INTRADAY',variety:x.variety||'NORMAL',ordertag:x.ordertag||''})})'>MODIFY</button><button class="btn sell broker-action" onclick="cancelLive('${String(x.orderid||'')}','${String(x.exchange||'NSE')}')">CANCEL</button></div>`:'—'}</td></tr>`}).join('')+'</table></div>';}
+function renderBrokerTrades(rows){const el=$('brokerTrades');if(!rows.length){el.innerHTML='<div class="broker-empty">No trades returned.</div>';return} el.innerHTML='<div class="scroll-x"><table class="broker-table"><tr><th>Symbol</th><th>Side</th><th>Qty</th><th>Price</th><th>Order ID</th><th>Time</th></tr>'+rows.map(x=>`<tr><td>${x.tradingsymbol||'—'}</td><td>${x.transactiontype||x.side||'—'}</td><td>${x.fillsize||x.quantity||x.filledshares||'—'}</td><td>${x.fillprice||x.averageprice||x.price||'—'}</td><td>${x.orderid||'—'}</td><td>${x.filltime||x.updatetime||'—'}</td></tr>`).join('')+'</table></div>';}
+async function loadBrokerAccount(){try{const r=await getJSON('/api/broker/account');if(!r.ok)throw new Error(r.error||'Broker account unavailable');renderBrokerAccount(r);}catch(e){$('p9BrokerStatus').textContent='LOCKED';toast(e.message||'Broker account unavailable')}}
+async function previewQuickOrder(){
+  const c=window.selectedContract;if(!c?.token){toast('First select a live contract from Contract Finder');return}
+  const side=$('qSide').value, type=$('qType').value, price=Number($('qPrice').value||0), qty=Number($('qQty').value||0), sl=Number($('qSL').value||0), capital=Number($('qCapital').value||$('capital').value||0), riskPct=Number($('qRisk').value||$('riskPct').value||0);
+  const body={transactiontype:side,exchange:c.exchange||'NSE',tradingsymbol:c.contract||c.symbol,symboltoken:c.token,ordertype:type,producttype:'INTRADAY',price,stopLoss:sl,target1:Number($('qTarget').value||0),quantity:qty,capital,riskPct,signalToken:window.phase11SignalToken||''};
+  try{const r=await fetch(API_BASE+'/api/order/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const d=await r.json();if(!r.ok||!d.ok)throw new Error([d.error,...(d.errors||[])].filter(Boolean).join(' • '));pendingOrderPreview={previewId:d.previewId};$('orderPreviewText').textContent=`${d.order.transactiontype} ${d.order.tradingsymbol} • Qty ${d.order.quantity} • ${d.order.ordertype} • Max risk ${money(d.maxLoss)} • 60 sec.`;$('orderConfirm').value='';$('orderModal').classList.add('show');}catch(e){toast(e.message||'Order preview failed')}}
+async function previewExit(token,symbol){try{const r=await fetch(API_BASE+'/api/position/exit/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symboltoken:token})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.error||'Exit preview failed');pendingExitPreview={previewId:d.previewId};$('exitPreviewText').textContent=`Exit ${d.position.symbol||symbol} • Net Qty ${d.position.netQty} • ${d.order.transactiontype} MARKET • No order has been placed yet.`;$('exitConfirm').value='';$('exitModal').classList.add('show');}catch(e){toast(e.message||'Exit preview failed')}}
+function closeExitModal(){$('exitModal').classList.remove('show');pendingExitPreview=null}
+async function executeExitPosition(){if(!pendingExitPreview){toast('Exit preview missing');return}const confirmation=$('exitConfirm').value.trim();if(confirmation.toUpperCase()!=='EXIT LIVE POSITION'){toast('Type EXIT LIVE POSITION exactly');return}try{const r=await fetch(API_BASE+'/api/position/exit/execute',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({previewId:pendingExitPreview.previewId,confirmation})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.error||'Exit order failed');closeExitModal();toast('Exit order submitted • verify fill in Orders/Trades');await loadBrokerAccount();}catch(e){toast(e.message||'Exit order failed')}}
+function openModify(o){pendingModify=o;$('modOrderId').value=o.orderid||'';$('modOrderType').value=o.ordertype||'LIMIT';$('modPrice').value=o.price||0;$('modQty').value=o.quantity||0;$('modifyModal').classList.add('show')}
+function closeModifyModal(){$('modifyModal').classList.remove('show');pendingModify=null}
+async function executeModifyOrder(){if(!pendingModify){toast('Order details missing');return}const confirmation='MODIFY LIVE ORDER';const o=pendingModify;try{const body={...o,ordertype:$('modOrderType').value,price:Number($('modPrice').value||0),quantity:Number($('modQty').value||0),confirmation};const r=await fetch(API_BASE+'/api/order/modify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.error||'Modify order failed');closeModifyModal();toast('Modify request submitted');await loadBrokerAccount();}catch(e){toast(e.message||'Modify order failed')}}
+async function cancelLive(orderid,exchange='NSE'){if(!confirm('Cancel this live order?'))return;try{const r=await fetch(API_BASE+'/api/order/cancel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({orderid,exchange})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.error||'Cancel failed');toast('Cancel request submitted');await loadBrokerAccount();}catch(e){toast(e.message||'Cancel failed')}}
+
+async function loadPhase12Readiness(){ try{ const ex=(document.getElementById('exchange')?.value||'NSE'); const r=await fetch('/api/phase12/readiness?exchange='+encodeURIComponent(ex)); const d=await r.json(); setToneText('p12Mode',d.mode||'LOCKED'); setToneText('p12Angel',d.checks?.find(x=>x.id==='ANGEL_SESSION')?.ok?'OK':'WAIT'); setToneText('p12Static',d.checks?.find(x=>x.id==='STATIC_IP')?.ok?'VERIFIED':'WAIT'); setToneText('p12Market',d.checks?.find(x=>x.id==='MARKET_SESSION')?.ok?'OPEN':'CLOSED'); setToneText('p12Exec',d.liveReady?'READY':'LOCKED'); const failed=(d.checks||[]).filter(x=>!x.ok).map(x=>x.label); document.getElementById('p12Checks').textContent=failed.length?'Blocked: '+failed.join(' • '):'All production readiness checks passed. Live order execution still requires explicit user confirmation.'; }catch(e){ setToneText('p12Mode','LOCKED'); setToneText('p12Exec','LOCKED'); document.getElementById('p12Checks').textContent='Readiness service unavailable.'; } }
+
+async function loadExecutionStatus(){
+ try{
+   const r=await getJSON('/api/execution/status'); const s=r.status||{};
+   setToneText('exSession',s.connected?'CONNECTED':'OFF'); setToneText('exStatic',s.staticIpVerified?'VERIFIED':'NOT VERIFIED'); setToneText('exEnabled',s.executionEnabled?'ON':'LOCKED'); setToneText('exKill',s.killSwitch?'ON':'OFF');
+   $('execState').textContent=s.ready?'READY':'LOCKED'; $('execState').className=s.ready?'bullish':'wait';
+ }catch(e){ setToneText('exSession','OFF'); setToneText('exStatic','WAIT'); setToneText('exEnabled','LOCKED'); setToneText('exKill','ON'); }
+}
+async function loadRMS(){
+ try{ const r=await getJSON('/api/execution/rms'); const d=r.data||{}; $('exCash').textContent=d.availablecash!=null?'₹ '+Number(d.availablecash).toLocaleString('en-IN'):'—'; toast(r.ok?'RMS loaded':'RMS unavailable'); }catch(e){ toast('RMS unavailable'); }
+}
+async function loadOrderBook(){
+ try{ const r=await getJSON('/api/execution/orders'); const d=Array.isArray(r.data)?r.data:(r.data?.data||[]); $('exOrders').textContent=Array.isArray(d)?String(d.length):'LIVE'; toast(r.ok?'Order book loaded':'Order book unavailable'); }catch(e){ toast('Order book unavailable'); }
+}
+let pendingOrderPreview=null;
+async function requestOrder(side){
+ const decision=$('action').textContent.trim();
+ if(decision==='NO TRADE'){toast('NO TRADE • decision engine is locked');return}
+ const strike=$('strike').value.trim(); const entry=$('entry').value.trim(); const sl=$('sl').value.trim(); const qty=$('quantity').value.trim();
+ if(!strike||!entry||!sl||!qty){toast('Strike, Entry, SL and Quantity required');return}
+ let token=window.selectedContract?.token||''; let exch=window.selectedContract?.exchange||'NSE'; let symbol=window.selectedContract?.contract||'';
+ if(!token){
+   toast('Select a live contract from Contract Finder first'); return;
+ }
+ const body={side:'BUY',transactiontype:side,exchange:exch,tradingsymbol:symbol,symboltoken:token,ordertype:$('orderType').value,producttype:'INTRADAY',price:Number(entry),stopLoss:Number(sl),target1:Number($('t1').value||0),quantity:Number(qty),capital:Number($('capital').value||0),riskPct:Number($('riskPct').value||0),signalToken:window.phase11SignalToken||''};
+ try{
+   const r=await fetch(API_BASE+'/api/order/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); const d=await r.json();
+   if(!r.ok||!d.ok) throw new Error([d.error,...(d.errors||[])].filter(Boolean).join(' • '));
+   pendingOrderPreview={previewId:d.previewId}; $('orderPreviewText').textContent=`${d.order.transactiontype} ${d.order.tradingsymbol} • Qty ${d.order.quantity} • Price ${d.order.price} • Max risk ₹${d.maxLoss} • expires in 60s.`; $('orderConfirm').value=''; $('orderModal').classList.add('show');
+ }catch(e){toast(e.message||'Order preview failed')}
+}
+function closeOrderModal(){ $('orderModal').classList.remove('show'); pendingOrderPreview=null; }
+async function executeLiveOrder(){
+ if(!pendingOrderPreview){toast('Preview missing or expired');return}
+ const confirmation=$('orderConfirm').value.trim(); if(confirmation.toUpperCase()!=='PLACE LIVE ORDER'){toast('Type PLACE LIVE ORDER exactly');return}
+ try{
+   const r=await fetch(API_BASE+'/api/order/execute',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({previewId:pendingOrderPreview.previewId,confirmation})}); const d=await r.json();
+   if(!r.ok||!d.ok) throw new Error(d.error||'Live order rejected');
+   closeOrderModal(); toast('Order request submitted • check broker order book'); await loadOrderBook();
+ }catch(e){toast(e.message||'Live order failed')}
+}
+
+function updateRisk(){
+ const c=Number($('capital').value||0),r=Number($('riskPct').value||0),d=Number($('dailyCap').value||0);
+ $('allowed').textContent=c&&r?'₹ '+Math.round(c*r/100).toLocaleString('en-IN'):'₹ —';$('riskOut').textContent=c&&r?'₹ '+Math.round(c*r/100).toLocaleString('en-IN'):'₹ —';
+ $('dailyOut').textContent=c&&d?'₹ '+Math.round(c*d/100).toLocaleString('en-IN'):'₹ —';$('posOut').textContent=(Number($('maxPos').value||1))+' max';
+}
+['capital','riskPct','dailyCap','maxPos'].forEach(id=>$(id).addEventListener('input',updateRisk));
+window.addEventListener('resize',drawChart);
+loadAll();loadPrediction(false);loadPhase11Shield();updateRisk();drawChart();loadExecutionStatus();loadPhase12Readiness();phase6Monitor();setInterval(loadAll,15000);setInterval(loadPrediction,20000);setInterval(loadPhase11Shield,10000);setInterval(loadBrokerAccount,10000);setInterval(loadExecutionStatus,15000);setInterval(loadPhase12Readiness,15000);setInterval(phase6Monitor,5000);
 </script>
 </body>
 </html>
