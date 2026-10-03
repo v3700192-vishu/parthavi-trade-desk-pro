@@ -139,13 +139,13 @@ function setTfs(){
 function setTF(x){activeTF=x;setTfs();buildChart();loadLive()}
 function buildChart(){
   var host=$("chart");if(chart)try{chart.remove()}catch(e){}
-  chart=LightweightCharts.createChart(host,{width:host.clientWidth,height:host.clientHeight,layout:{background:{color:"#080b16"},textColor:"#a7accb"},grid:{vertLines:{color:"#161a31"},horzLines:{color:"#161a31"}},rightPriceScale:{borderColor:"#282d4e"},timeScale:{borderColor:"#282d4e",timeVisible:true,secondsVisible:false}});
-  candle=chart.addCandlestickSeries({upColor:"#ffffff",downColor:"#ff3f52",borderUpColor:"#ffffff",borderDownColor:"#ff3f52",wickUpColor:"#ffffff",wickDownColor:"#ff3f52"});
-  volume=chart.addHistogramSeries({priceFormat:{type:"volume"},priceScaleId:"",color:"#5f6a92",base:0});
+  chart=LightweightCharts.createChart(host,{width:host.clientWidth,height:host.clientHeight,layout:{background:{color:"#060910"},textColor:"#a7accb"},grid:{vertLines:{color:"#161a31"},horzLines:{color:"#161a31"}},rightPriceScale:{borderColor:"#282d4e"},timeScale:{borderColor:"#282d4e",timeVisible:true,secondsVisible:false}});
+  candle=chart.addCandlestickSeries({upColor:"#ffffff",downColor:"#ff4d5f",borderUpColor:"#ffffff",borderDownColor:"#ff4d5f",wickUpColor:"#ffffff",wickDownColor:"#ff4d5f"});
+  volume=chart.addHistogramSeries({priceFormat:{type:"volume"},priceScaleId:"",color:"#4a5568",base:0});
   chart.priceScale("").applyOptions({scaleMargins:{top:.82,bottom:0}});
-  line=chart.addLineSeries({lineWidth:2,color:"#b48cff",visible:false});
-  var demo=[];var now=Math.floor(Date.now()/1000/900)*900,p=23500;for(var i=140;i>=0;i--){var t=now-i*900,o=p,c=p+(Math.sin(i/7)*3+Math.cos(i/19)*1.8),h=Math.max(o,c)+3,l=Math.min(o,c)-3;demo.push({time:t,open:o,high:h,low:l,close:c});p=c}
-  candle.setData(demo);volume.setData(demo.map(function(x){return{time:x.time,value:900+Math.abs(Math.sin(x.time/50000))*1200}}));line.setData(demo.map(function(x){return{time:x.time,value:x.close}}));chart.timeScale().fitContent();$("chartstate").textContent="DEMO • CONNECT BROKER FOR LIVE";
+  line=chart.addLineSeries({lineWidth:2,color:"#69d7ff",visible:false});
+  candle.setData([]);volume.setData([]);line.setData([]);chart.timeScale().fitContent();
+  $("chartstate").textContent="NO LIVE FEED";$("chartEmpty").style.display="grid";
 }
 function loadLive(){
   req("/api/health").then(function(h){if(!h||!h.brokerSession){$("chartstate").textContent="NO LIVE FEED";return}
@@ -156,7 +156,7 @@ function loadLive(){
       req("/api/candles?exchange=NSE&symboltoken="+encodeURIComponent(c.token)+"&tf="+activeTF+"&days=5").then(function(d){
         if(!d||!d.candles||!d.candles.length){$("chartstate").textContent="LIVE HISTORY EMPTY";return}
         var data=d.candles.map(function(x){return{time:x.time,open:x.open,high:x.high,low:x.low,close:x.close}});
-        candle.setData(data);line.setData(data.map(function(x){return{time:x.time,value:x.close}}));volume.setData(d.candles.map(function(x){return{time:x.time,value:x.volume||0}}));lastCandle=data[data.length-1];chart.timeScale().fitContent();$("chartstate").textContent="LIVE HISTORY • "+seg;startStream(c.token);
+        candle.setData(data);line.setData(data.map(function(x){return{time:x.time,value:x.close}}));volume.setData(d.candles.map(function(x){return{time:x.time,value:x.volume||0}}));lastCandle=data[data.length-1];chart.timeScale().fitContent();$("chartEmpty").style.display="none";$("chartstate").textContent="LIVE HISTORY • "+seg;startStream(c.token);
       });
     });
   });
@@ -183,12 +183,24 @@ function fullscreen(){var x=$("chartbox");if(document.fullscreenElement)document
 async function connect(){var t=$("totp").value.replace(/\D/g,"");if(t.length!==6){$("prod").textContent="Enter current 6-digit TOTP.";return}var r=await req("/api/broker/connect",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({totp:t})});if(r&&r.connected){$("totp").value="";$("broker").textContent="● BROKER LIVE";$("broker").className="pill live";refreshAll()}else $("prod").textContent=(r&&r.error)||"Broker connection failed."}
 async function autoconnect(){var r=await req("/api/broker/autoconnect",{method:"POST"});if(r&&r.connected){$("broker").textContent="● BROKER LIVE";$("broker").className="pill live";refreshAll()}else $("prod").textContent=(r&&r.error)||"Auto-connect unavailable; enter TOTP."}
 async function logout(){await req("/api/broker/logout",{method:"POST"});$("broker").textContent="● BROKER OFF";$("broker").className="pill warn";refreshAll()}
+function guard(id,ok,label,detail){
+  var x=$(id);if(!x)return;x.className="guard "+(ok?"ok":"wait");x.querySelector("b").textContent=label;x.querySelector("small").textContent=detail;
+}
 async function refreshAll(){
   var h=await req("/api/health");
   if(h&&h.ok){
     $("backend").textContent="● BACKEND OK";$("backend").className="pill ok";
     $("gate").textContent=h.gates.unlocked?"● EXECUTION READY":"● EXECUTION LOCK";$("gate").className=h.gates.unlocked?"pill live":"pill warn";
     $("sys").textContent=h.brokerSession?"LIVE":"READY";$("sysc").textContent=h.gates.marketOpen?"MARKET OPEN":"MARKET CLOSED";
+    guard("gMarket",!!h.gates.marketOpen,h.gates.marketOpen?"OPEN":"CLOSED","MARKET");
+    guard("gIp",!!h.gates.staticIpVerified,h.gates.staticIpVerified?"VERIFIED":"LOCKED","STATIC IP");
+    guard("gSl",!!h.gates.protectiveSlVerified,h.gates.protectiveSlVerified?"VERIFIED":"LOCKED","PROTECTIVE SL");
+    guard("gFw",!!h.gates.firewallVerified,h.gates.firewallVerified?"VERIFIED":"LOCKED","FIREWALL");
+    guard("gKill",!h.gates.killSwitch,!h.gates.killSwitch?"OFF":"ON","KILL SWITCH");
+    if(h.gates.marketOpen&&h.gates.staticIpVerified&&h.gates.protectiveSlVerified&&h.gates.firewallVerified&&!h.gates.killSwitch)$("prod").textContent="All execution gates report ready. Final human confirmation is still required.";
+    else $("prod").textContent="Execution locked: one or more server-side safety gates are not satisfied.";
+    $("heroSignal").textContent=h.gates.unlocked?"READY":"NO TRADE";
+    $("heroData").textContent=h.brokerSession?"LIVE":"WAITING";
     if(h.brokerSession){$("broker").textContent="● BROKER LIVE";$("broker").className="pill live"}
     else if(!autoTried){
       autoTried=true;
@@ -199,13 +211,18 @@ async function refreshAll(){
   var a=h&&h.brokerSession?await req("/api/account"):null;
   if(a&&a.connected){$("cash").textContent="₹"+fmt(a.cash);$("net").textContent="₹"+fmt(a.net);$("margin").textContent="₹"+fmt(a.usedMargin);$("pnl").textContent="₹"+fmt(a.dayPnl)}
   if(h&&h.brokerSession){$("broker").textContent="● BROKER LIVE";$("broker").className="pill live";loadLive();loadAnalysis();loadChain();loadPositions()}
+  else $("chartEmpty").style.display="grid";
   loadWorld();loadMarketPulse()
 }
 async function loadAnalysis(){
   var u=$("underlying").value,d=await req("/api/analysis?underlying="+u);if(!d)return;
   $("direction").textContent=d.direction||"NO TRADE";$("direction").className="signal "+cls(d.direction);
-  $("confirmation").textContent=d.confirmation||"WAIT";$("confirmation").className="signal "+(d.confirmation==="CONFIRMED"?"good":"amber");
+  $("confirmation").textContent=d.confirmation||"NO TRADE";$("confirmation").className="signal "+(d.confirmation==="CONFIRMED"?"good":"amber");
   $("confidence").textContent=d.confidence!=null?d.confidence+"%":"—";$("entry").textContent=fmt(d.entry||d.price);$("sl").textContent=fmt(d.sl);$("t1").textContent=fmt(d.t1);$("t2").textContent=fmt(d.t2);$("t3").textContent=fmt(d.t3);$("rr").textContent=d.rr||"—";$("reason").textContent=d.reason||"—";
+  $("heroSignal").textContent=d.direction||"NO TRADE";
+  $("freshness").textContent=d.frames&&d.frames.every(function(x){return x.fresh!==false})?"FRESH":"STALE";
+  $("adxNow").textContent=d.trendStrength!=null?fmt(d.trendStrength):"—";
+  $("heroData").textContent=d.dataFresh===false?"STALE":"LIVE";
   if(d.frames){$("f1").textContent=d.frames[0].state;$("f2").textContent=d.frames[1].state;$("f3").textContent=d.frames[2].state;renderIndicators(d.frames[2].indicators)}
 }
 function renderIndicators(x){
