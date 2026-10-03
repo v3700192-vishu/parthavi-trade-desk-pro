@@ -9,14 +9,28 @@
 :root{--bg:#060812;--panel:#0d1020;--panel2:#11162a;--line:#232844;--text:#f3f5ff;--muted:#8f96b8;--gold:#e9bd52;--green:#fff;--red:#ff3f52;--amber:#ffbd48}
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top,#13172b,#060812 45%);color:var(--text);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}button,input,select{font:inherit}button{cursor:pointer}.wrap{max-width:1500px;margin:auto;padding:16px}.top{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:14px 16px;border:1px solid var(--line);border-radius:18px;background:rgba(11,14,28,.95);position:sticky;top:0;z-index:10}.brand{display:flex;gap:12px;align-items:center}.logo{width:40px;height:40px;border:1px solid var(--gold);border-radius:12px;display:grid;place-items:center;color:var(--gold);font-weight:900;letter-spacing:-1px}.title{font-weight:900;letter-spacing:.6px}.sub{font-size:12px;color:var(--muted)}.pills{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.pill,.badge,.tab,.tool,.btn{border:1px solid var(--line);background:var(--panel2);color:var(--text);border-radius:999px;padding:7px 11px;font-size:12px}.pill.ok{border-color:#64737b}.pill.live{border-color:#fff}.pill.warn{border-color:var(--amber);color:var(--amber)}.pill.bad{border-color:var(--red);color:var(--red)}.grid{display:grid;grid-template-columns:1.5fr .9fr;gap:14px;margin-top:14px}.panel{border:1px solid var(--line);border-radius:18px;background:rgba(13,16,32,.96);padding:14px;box-shadow:0 16px 40px rgba(0,0,0,.2)}.head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px}.head h2{font-size:15px;margin:0}.tag{font-size:10px;color:var(--gold);letter-spacing:1px}.market{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}.mkt{padding:11px;border:1px solid var(--line);border-radius:14px;background:#0a0d1a}.k{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}.v{font-size:17px;font-weight:800;margin-top:3px}.chg{font-size:11px;margin-top:2px}.good{color:var(--green)}.bad{color:var(--red)}.amber{color:var(--amber)}.controls{display:flex;flex-wrap:wrap;gap:7px}.tab.on,.tool.on{border-color:var(--gold);color:var(--gold)}.btn{border-radius:10px;padding:9px 12px}.btn.gold{border-color:var(--gold);color:#111;background:var(--gold)}.btn.danger{border-color:var(--red);color:var(--red)}.row{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px}.row:last-child{border-bottom:0}.muted{color:var(--muted)}.chartbox{height:560px;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#080b16}.charttools{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:9px}.chart{width:100%;height:100%}.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.card{border:1px solid var(--line);border-radius:14px;padding:11px;background:#0a0d1a}.signal{font-size:22px;font-weight:900;letter-spacing:1px}.table{width:100%;border-collapse:collapse;font-size:12px}.table th,.table td{text-align:left;padding:8px;border-bottom:1px solid var(--line)}.table th{color:var(--muted);font-weight:600}.scroll{max-height:350px;overflow:auto}.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}.search{display:grid;grid-template-columns:1.2fr .7fr .7fr .6fr auto;gap:7px}.input,select{width:100%;border:1px solid var(--line);background:#090c17;color:var(--text);border-radius:10px;padding:9px}.footer{text-align:center;color:var(--muted);font-size:11px;padding:18px 0}.lock{padding:10px;border:1px dashed var(--amber);border-radius:12px;color:var(--amber);background:#17130a;font-size:12px}.hide{display:none}.livebar{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:8px}.dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:var(--amber);margin-right:6px}.dot.live{background:#fff}.dot.red{background:var(--red)}@media(max-width:1100px){.grid{grid-template-columns:1fr}.market{grid-template-columns:repeat(2,1fr)}.cards{grid-template-columns:repeat(2,1fr)}}@media(max-width:680px){.wrap{padding:8px}.top{position:static;border-radius:14px}.market{grid-template-columns:1fr 1fr}.search{grid-template-columns:1fr 1fr}.chartbox{height:430px}.two{grid-template-columns:1fr}.pills{justify-content:flex-start}}
 </style>
-</head>
+
+<style>
+:root{--bg:#05070c;--panel:#0b1018;--panel2:#101722;--line:#202a38;--text:#f4f7fb;--muted:#8793a6;--gold:#e6bb55;--green:#f6f7f9;--red:#ff4d5f;--amber:#ffc44f;--cyan:#69d7ff}
+body{background:radial-gradient(circle at 10% 0%,#182033 0%,#05070c 38%),#05070c}
+.top{background:linear-gradient(180deg,rgba(16,23,34,.98),rgba(8,12,18,.98));box-shadow:0 16px 45px rgba(0,0,0,.28)}
+.logo{box-shadow:0 0 24px rgba(230,187,85,.14)}
+.hero{display:grid;grid-template-columns:1.15fr .85fr;gap:12px;margin-top:12px}.heroCard{border:1px solid var(--line);border-radius:18px;background:linear-gradient(135deg,rgba(14,20,30,.98),rgba(8,12,18,.98));padding:16px}.eyebrow{font-size:10px;color:var(--gold);letter-spacing:1.8px;font-weight:800}.heroTitle{font-size:25px;font-weight:950;margin-top:5px}.heroText{font-size:12px;color:var(--muted);line-height:1.6;margin-top:5px}.heroStats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:13px}.mini{border:1px solid var(--line);border-radius:14px;padding:10px;background:#080c13}.mini .k{font-size:9px}.mini .v{font-size:14px;font-weight:900;margin-top:3px}
+.chartbox{position:relative;background:#060910}.chartEmpty{position:absolute;inset:0;display:grid;place-items:center;text-align:center;pointer-events:none;background:radial-gradient(circle at center,rgba(18,25,37,.1),rgba(6,9,16,.58))}.emptyInner{border:1px solid var(--line);background:rgba(8,12,18,.88);border-radius:16px;padding:18px 20px;max-width:360px}.emptyTitle{font-weight:900}.emptyText{font-size:11px;color:var(--muted);margin-top:5px;line-height:1.5}
+.firewall{display:grid;grid-template-columns:repeat(5,1fr);gap:7px}.guard{border:1px solid var(--line);border-radius:12px;padding:9px;background:#080c13}.guard b{display:block;font-size:11px;margin-top:3px}.guard small{color:var(--muted);font-size:9px}.guard.ok{border-color:#59656d}.guard.wait{border-color:var(--amber)}
+@media(max-width:1120px){.hero{grid-template-columns:1fr}.firewall{grid-template-columns:repeat(2,1fr)}}@media(max-width:680px){.heroStats{grid-template-columns:1fr 1fr}.firewall{grid-template-columns:1fr}}
+</style></head>
 <body>
 <div class="wrap">
 <header class="top">
-  <div class="brand"><div class="logo">PT</div><div><div class="title">PARTHAVI TRADE DESK PRO</div><div class="sub">BY PARTHAVI BELDAR • LIVE MARKET INTELLIGENCE • OPTIONS • RISK-FIRST EXECUTION</div></div></div>
+  <div class="brand"><div class="logo">P</div><div><div class="title">PARTHAVI TRADE DESK PRO</div><div class="sub">BY PARTHAVI BELDAR • LIVE MARKET INTELLIGENCE • OPTIONS • RISK-FIRST EXECUTION</div></div></div>
   <div class="pills"><span class="pill" id="backend">● BACKEND</span><span class="pill" id="broker">● BROKER</span><span class="pill warn" id="gate">● EXECUTION LOCK</span></div>
 </header>
 
+<div class="hero">
+<div class="heroCard"><div class="eyebrow">PARTHAVI INTELLIGENCE CORE</div><div class="heroTitle">Decision-first. Risk-first. Data-first.</div><div class="heroText">Fresh 1H → 15M → 5M confirmation, trend strength, option context and server-side safety gates. When checks conflict, the desk stops at <b>NO TRADE</b>.</div><div class="heroStats"><div class="mini"><div class="k">Model</div><div class="v">1H → 15M → 5M</div></div><div class="mini"><div class="k">Execution</div><div class="v">Firewall</div></div><div class="mini"><div class="k">Signal</div><div class="v" id="heroSignal">NO TRADE</div></div><div class="mini"><div class="k">Data</div><div class="v" id="heroData">WAITING</div></div></div></div>
+<div class="heroCard"><div class="eyebrow">EXECUTION POLICY</div><div class="heroTitle" style="font-size:18px">No forced trade</div><div class="heroText">Real-money execution remains locked until market session, registered IPv4, protective-SL verification, execution firewall and kill-switch checks all pass.</div><div class="lock" style="margin-top:12px">Angel One states API order execution is accepted only when it originates from the registered Static IP.</div></div>
+</div>
 <div class="panel" style="margin-top:14px">
 <div class="head"><h2>Market Pulse</h2><span class="tag">LIVE / VERIFIED</span></div>
 <div class="market">
@@ -37,7 +51,7 @@
 <button class="tool" onclick="fit()">Auto</button><button class="tool" onclick="zoom(-1)">−</button><button class="tool" onclick="zoom(1)">+</button>
 <button class="tool" onclick="priceLine()">Reference</button><button class="tool" onclick="toggleSize('normal')">Normal</button><button class="tool" onclick="toggleSize('large')">Large</button><button class="tool" onclick="fullscreen()">Fullscreen</button>
 </div>
-<div class="chartbox" id="chartbox"><div id="chart" class="chart"></div></div>
+<div class="chartbox" id="chartbox"><div id="chart" class="chart"></div><div id="chartEmpty" class="chartEmpty"><div class="emptyInner"><div class="emptyTitle">Live chart locked</div><div class="emptyText">Connect Angel One to load verified candles and SmartStream ticks. Synthetic demo candles are intentionally disabled.</div></div></div></div>
 </section>
 
 <aside class="panel">
@@ -64,13 +78,13 @@
 <div class="cards">
 <div class="card"><div class="k">Direction</div><div class="signal amber" id="direction">NO TRADE</div></div>
 <div class="card"><div class="k">Confirmation</div><div class="signal amber" id="confirmation">WAIT</div></div>
-<div class="card"><div class="k">Confidence</div><div class="signal" id="confidence">—</div></div>
+<div class="card"><div class="k">Confluence</div><div class="signal" id="confidence">—</div></div>
 <div class="card"><div class="k">Entry</div><div class="signal" id="entry">—</div></div>
 </div>
 <div class="row" style="margin-top:8px"><span>T3</span><b id="t3">—</b></div>
 <div class="two" style="margin-top:10px">
 <div class="panel" style="padding:10px;background:#0a0d1a"><div class="row"><span>Stop Loss</span><b id="sl">—</b></div><div class="row"><span>T1</span><b id="t1">—</b></div><div class="row"><span>T2</span><b id="t2">—</b></div><div class="row"><span>R:R</span><b id="rr">—</b></div></div>
-<div class="panel" style="padding:10px;background:#0a0d1a"><div class="k">1H / 15M / 5M</div><div class="row"><span>Trend</span><b id="f1">—</b></div><div class="row"><span>Setup</span><b id="f2">—</b></div><div class="row"><span>Trigger</span><b id="f3">—</b></div></div>
+<div class="panel" style="padding:10px;background:#0a0d1a"><div class="k">1H / 15M / 5M</div><div class="row"><span>Trend</span><b id="f1">—</b></div><div class="row"><span>Setup</span><b id="f2">—</b></div><div class="row"><span>Trigger</span><b id="f3">—</b></div><div class="row"><span>Freshness</span><b id="freshness">—</b></div><div class="row"><span>Trend strength</span><b id="adxNow">—</b></div></div>
 </div>
 <div class="muted" style="font-size:11px;margin-top:8px" id="reason">Waiting for verified broker candles.</div>
 </div>
@@ -100,7 +114,10 @@
 </aside>
 </div>
 
-<div class="panel" style="margin-top:14px">
+<div class="panel" style="margin-top:12px">
+<div class="head"><h2>Execution Firewall</h2><span class="tag">SERVER-SIDE GATES</span></div>
+<div class="firewall"><div class="guard wait" id="gMarket"><small>MARKET</small><b>Checking…</b></div><div class="guard wait" id="gIp"><small>STATIC IP</small><b>Checking…</b></div><div class="guard wait" id="gSl"><small>PROTECTIVE SL</small><b>Checking…</b></div><div class="guard wait" id="gFw"><small>FIREWALL</small><b>Checking…</b></div><div class="guard wait" id="gKill"><small>KILL SWITCH</small><b>Checking…</b></div></div>
+</div><div class="panel" style="margin-top:14px">
 <div class="head"><h2>Production Controls</h2><span class="tag">PROTECTED</span></div>
 <div class="controls"><button class="btn danger" onclick="blockedOrder()">BUY / SELL</button><button class="btn" onclick="checkNetwork()">Check Static IP</button><button class="btn" onclick="loadWorld()">Reload Intelligence</button></div>
 <div id="prod" class="muted" style="margin-top:9px;font-size:12px">Execution remains server-gated. The broker API requires registered static IP validation for order requests. See official SmartAPI docs for the current requirement. </div>
