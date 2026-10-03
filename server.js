@@ -65,13 +65,14 @@ function gates(){
     orderExecutionEnabled:process.env.ORDER_EXECUTION_ENABLED==="true",
     staticIpVerified:process.env.STATIC_IP_VERIFIED==="true"&&runtimeStaticIpMatch,
     protectiveSlVerified:process.env.PROTECTIVE_SL_VERIFIED==="true",
+    firewallVerified:process.env.EXECUTION_FIREWALL_VERIFIED==="true",
     killSwitch:process.env.TRADING_KILL_SWITCH!=="false"
   };
 }
 function orderGate(){
   const g=gates(),m=marketWindow();
   return {
-    unlocked:g.orderExecutionEnabled&&g.staticIpVerified&&g.protectiveSlVerified&&!g.killSwitch&&m.open,
+    unlocked:g.orderExecutionEnabled&&g.staticIpVerified&&g.protectiveSlVerified&&g.firewallVerified&&!g.killSwitch&&m.open,
     marketOpen:m.open,
     marketSession:m.session,
     ...g
@@ -290,21 +291,46 @@ function frameSignal(c){
 }
 function decision(frames,livePrice=null){
   const states=frames.map(x=>x.state),bull=states.filter(x=>x==="BULLISH").length,bear=states.filter(x=>x==="BEARISH").length;
+  const fresh=frames.every(x=>x.fresh!==false);
   const last=frames[2],price=Number(livePrice)||last?.price||null,a=last?.indicators?.ATR||0;
-  const confirmed=bull===3||bear===3;
-  let direction="NO TRADE",confidence=50;
-  if(bull===3){direction="CALL";confidence=78+Math.min(10,Math.max(0,last.score*2));}
-  else if(bear===3){direction="PUT";confidence=78+Math.min(10,Math.max(0,Math.abs(last.score)*2));}
-  else confidence=50+Math.min(20,Math.abs(last?.score||0)*3);
-  const buffer=a?Math.max(a*0.7,price*0.002):price?price*0.002:null;
-  const entry=price,sl=entry!=null&&buffer!=null?(direction==="CALL"?entry-buffer:direction==="PUT"?entry+buffer:null):null;
+  const adx=Number(last?.indicators?.ADX?.adx||0);
+  const directional=last?.score>=5?"BULLISH":last?.score<=-5?"BEARISH":"NEUTRAL";
+  const alignedBull=bull===3&&directional==="BULLISH";
+  const alignedBear=bear===3&&directional==="BEARISH";
+  const confirmed=fresh&&(alignedBull||alignedBear)&&adx>=18;
+  let direction="NO TRADE",confluence=0;
+  if(alignedBull)direction="CALL";
+  else if(alignedBear)direction="PUT";
+  confluence=Math.round(Math.min(100,50+
+    (bull===3||bear===3?20:0)+
+    (fresh?15:0)+
+    (adx>=18?10:0)+
+    (Math.min(7,Math.abs(last?.score||0))/7)*5
+  ));
+  if(!confirmed)direction="NO TRADE";
+  const buffer=a?Math.max(a*0.7,price?price*0.002:0):price?price*0.002:null;
+  const entry=price,sl=confirmed&&entry!=null&&buffer!=null?(direction==="CALL"?entry-buffer:direction==="PUT"?entry+buffer:null):null;
   const risk=entry!=null&&sl!=null?Math.abs(entry-sl):null;
   const t1=risk!=null?(direction==="CALL"?entry+risk*1.5:direction==="PUT"?entry-risk*1.5:null):null;
   const t2=risk!=null?(direction==="CALL"?entry+risk*2.5:direction==="PUT"?entry-risk*2.5:null):null;
   const t3=risk!=null?(direction==="CALL"?entry+risk*3.5:direction==="PUT"?entry-risk*3.5:null):null;
   const rr=risk?3.5:"—";
   const align=states.join(" / ");
-  return {direction,confirmation:confirmed?"CONFIRMED":"WAIT",confidence:confirmed?Math.min(confidence,94):confidence,entry,sl,t1,t2,t3,rr,states,reason:confirmed?"1H / 15M / 5M aligned: "+align+".":"1H / 15M / 5M are not aligned enough: "+align+"."};
+  const blockers=[];
+  if(!fresh)blockers.push("stale market data");
+  if(!(alignedBull||alignedBear))blockers.push("1H/15M/5M not aligned");
+  if(adx<18)blockers.push("trend strength below ADX 18");
+  return {
+    direction,
+    confirmation:confirmed?"CONFIRMED":"NO TRADE",
+    confidence:confirmed?confluence:Math.min(confluence,60),
+    entry,sl,t1,t2,t3,rr,states,
+    dataFresh:fresh,
+    trendStrength:adx,
+    reason:confirmed
+      ?"1H / 15M / 5M aligned with trend-strength confirmation: "+align+"."
+      :"Blocked: "+(blockers.join(", ")||"risk checks not satisfied")+"."
+  };
 }
 
 /* ---------- API ---------- */
@@ -354,9 +380,13 @@ app.get("/api/analysis",async(req,res)=>{
     const c2=await candlesFor("NSE",idx.token,"15M",10);
     const c3=await candlesFor("NSE",idx.token,"5M",5);
     const q=(await quoteBatch("NSE",[idx.token],"LTP"))[0]||{};
-    const frames=[c1,c2,c3].map((c,i)=>{const f=frameSignal(c);return {...f,timeframe:["1H","15M","5M"][i],price:c[c.length-1]?.close||null};});
+    const frames=[c1,c2,c3].map((c,i)=>{
+      const tf=["1H","15M","5M"][i],f=frameSignal(c),lastTs=c[c.length-1]?.time||0,ageMin=lastTs?Math.max(0,(Date.now()/1000-lastTs)/60):9999;
+      const maxAge=tf==="5M"?20:tf==="15M"?45:tf==="1H"?120:120;
+      return {...f,timeframe:tf,price:c[c.length-1]?.close||null,lastCandleTime:lastTs,ageMinutes:Number(ageMin.toFixed(1)),fresh:ageMin<=maxAge};
+    });
     const livePrice=Number(q.ltp||frames[2].price||0);
-     const d=decision(frames,livePrice);const out={live:true,underlying,token:String(idx.token),price:livePrice,...d,frames};
+    const d=decision(frames,livePrice);const out={live:true,underlying,token:String(idx.token),price:livePrice,...d,frames};
     analysisCache={key,at:Date.now(),data:out};res.json(out);
   }catch(e){res.status(503).json({live:false,prediction:"NEUTRAL",confirmation:"NO TRADE",direction:"NO TRADE",confidence:null,backtestHitRate:null,reason:e.message||"Live analysis unavailable"});}
 });
@@ -515,11 +545,30 @@ app.get("/api/market/status",async(req,res)=>{
 });
 
 /* Order APIs intentionally require all production gates; env defaults keep real-money execution OFF. */
+const recentOrderIds=new Map();
+function cleanOrderId(v){return String(v||"").trim().slice(0,80);}
+function rememberOrderId(id){
+  const now=Date.now();
+  for(const [k,t] of recentOrderIds)if(now-t>10*60*1000)recentOrderIds.delete(k);
+  if(!id)return false;
+  if(recentOrderIds.has(id))return true;
+  recentOrderIds.set(id,now);return false;
+}
 app.post("/api/orders/place",async(req,res)=>{
   await refreshRuntimeStaticIp(true);
   const gate=orderGate();
   if(!gate.unlocked)return res.status(423).json({placed:false,locked:true,gate,reason:"Production order gate is locked."});
-  try{await ensureSession();const payload=req.body||{};if(!payload.variety||!payload.tradingsymbol||!payload.symboltoken||!payload.transactiontype||!payload.exchange||!payload.ordertype||!payload.producttype||!payload.duration||!payload.quantity)return res.status(400).json({placed:false,error:"Missing required order fields"});const d=await angelRequest("POST","/rest/secure/angelbroking/order/v1/placeOrder",payload);res.json({placed:true,data:d.data});}catch(e){res.status(503).json({placed:false,...safeError(e)});}
+  try{
+    await ensureSession();
+    const payload={...(req.body||{})},clientOrderId=cleanOrderId(payload.clientOrderId);
+    delete payload.clientOrderId;
+    if(!clientOrderId)return res.status(400).json({placed:false,error:"clientOrderId is required"});
+    if(rememberOrderId(clientOrderId))return res.status(409).json({placed:false,error:"Duplicate clientOrderId rejected"});
+    if(!payload.variety||!payload.tradingsymbol||!payload.symboltoken||!payload.transactiontype||!payload.exchange||!payload.ordertype||!payload.producttype||!payload.duration||!payload.quantity)return res.status(400).json({placed:false,error:"Missing required order fields"});
+    if(String(payload.ordertype).toUpperCase()==="MARKET")return res.status(400).json({placed:false,error:"MARKET orders are disabled by the execution firewall; use a validated protected order flow."});
+    const d=await angelRequest("POST","/rest/secure/angelbroking/order/v1/placeOrder",payload);
+    res.json({placed:true,clientOrderId,data:d.data});
+  }catch(e){res.status(503).json({placed:false,...safeError(e)});}
 });
 app.post("/api/orders/modify",async(req,res)=>{await refreshRuntimeStaticIp(true);if(!orderGate().unlocked)return res.status(423).json({modified:false,locked:true,gate:orderGate()});try{await ensureSession();res.json({modified:true,data:(await angelRequest("POST","/rest/secure/angelbroking/order/v1/modifyOrder",req.body||{})).data});}catch(e){res.status(503).json({modified:false,...safeError(e)});}});
 app.post("/api/orders/cancel",async(req,res)=>{await refreshRuntimeStaticIp(true);if(!orderGate().unlocked)return res.status(423).json({cancelled:false,locked:true,gate:orderGate()});try{await ensureSession();res.json({cancelled:true,data:(await angelRequest("POST","/rest/secure/angelbroking/order/v1/cancelOrder",req.body||{})).data});}catch(e){res.status(503).json({cancelled:false,...safeError(e)});}});
