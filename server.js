@@ -403,7 +403,24 @@ const PUBLIC_SOURCES=[
   {symbol:"GOLD",ticker:"GC=F",group:"COMMODITY"}
 ];
 function xmlDecode(s){
-  return String(s||"").replace(/<!\[CDATA\[|\]\]>/g,"").replace(/<[^>]+>/g,"").replace(/&amp;/g,"&").replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&lt;/g,"<").replace(/&gt;/g,">").trim();
+  let out=String(s||"");
+  out=out.split("<![CDATA[").join("").split("]]>").join("");
+  let clean="";
+  for(let i=0;i<out.length;){
+    const a=out.indexOf("<",i);
+    if(a<0){clean+=out.slice(i);break;}
+    clean+=out.slice(i,a);
+    const b=out.indexOf(">",a+1);
+    if(b<0)break;
+    i=b+1;
+  }
+  return clean.split("&amp;").join("&").split("&quot;").join('"').split("&#39;").join("'").split("&lt;").join("<").split("&gt;").join(">").trim();
+}
+function extractXmlTag(block,tag){
+  const open="<"+tag+">",close="</"+tag+">";
+  const a=block.indexOf(open);if(a<0)return "";
+  const b=block.indexOf(close,a+open.length);if(b<0)return "";
+  return block.slice(a+open.length,b);
 }
 async function fetchNews(){
   const queries=[
@@ -417,14 +434,23 @@ async function fetchNews(){
       const u="https://news.google.com/rss/search?q="+encodeURIComponent(q)+"&hl=en-IN&gl=IN&ceid=IN:en";
       const r=await fetch(u,{headers:{"User-Agent":"PARTHAVI-TRADE-DESK/2.0"},signal:AbortSignal.timeout(5000)});
       if(!r.ok)return [];
-      const xml=await r.text(),items=[...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)];
-      return items.slice(0,5).map(m=>{
-        const b=m[1],title=xmlDecode((b.match(/<title>([\s\S]*?)<\/title>/)||[])[1]),link=xmlDecode((b.match(/<link>([\s\S]*?)<\/link>/)||[])[1]),pub=xmlDecode((b.match(/<pubDate>([\s\S]*?)<\/pubDate>/)||[])[1]);
+      const xml=await r.text();
+      const parts=xml.split("<item>").slice(1);
+      return parts.slice(0,5).map(block=>{
+        const title=xmlDecode(extractXmlTag(block,"title"));
+        const link=xmlDecode(extractXmlTag(block,"link"));
+        const pub=xmlDecode(extractXmlTag(block,"pubDate"));
         return {title,link,publishedAt:pub||null};
       }).filter(x=>x.title);
     }catch(e){return []}
   }))).flat();
-  const seen=new Set();return rows.filter(x=>{const k=x.title.toLowerCase();if(seen.has(k))return false;seen.add(k);return true;}).slice(0,12);
+  const seen=new Set();
+  return rows.filter(x=>{
+    const k=x.title.toLowerCase();
+    if(seen.has(k))return false;
+    seen.add(k);
+    return true;
+  }).slice(0,12);
 }
 app.get("/api/intelligence",async(req,res)=>{
   if(intelligenceCache.at&&Date.now()-intelligenceCache.at<20000)return res.json(intelligenceCache.data);
