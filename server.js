@@ -546,7 +546,7 @@ async function ensureStream(mode,tokens){
     if(state.closed)return;
     const url=ANGEL_WS+"?clientCode="+encodeURIComponent(session.clientCode)+"&feedToken="+encodeURIComponent(session.feedToken)+"&apiKey="+encodeURIComponent(process.env.ANGELONE_API_KEY||"");
     state.ws=new WebSocket(url,{handshakeTimeout:10000});
-    state.ws.on("open",()=>{try{state.ws.send(JSON.stringify({correlationID:"PTD01",action:1,params:{mode:state.mode,tokenList:state.tokens}}));}catch(e){};clearInterval(state.timer);state.timer=setInterval(()=>{try{if(state.ws.readyState===WebSocket.OPEN)state.ws.ping();}catch(e){}},30000);for(const s of state.subs)push(s,{type:"connected",mode,state.tokens});});
+    state.ws.on("open",()=>{try{state.ws.send(JSON.stringify({correlationID:"PTD01",action:1,params:{mode:state.mode,tokenList:state.tokens}}));}catch(e){};clearInterval(state.timer);state.timer=setInterval(()=>{try{if(state.ws.readyState===WebSocket.OPEN)state.ws.ping();}catch(e){}},30000);for(const s of state.subs)push(s,{type:"connected",mode,tokens:state.tokens});});
     state.ws.on("message",data=>{if(Buffer.isBuffer(data)){const tick=parsePacket(data);if(tick)for(const s of state.subs)push(s,{type:"tick",data:tick});}else for(const s of state.subs)push(s,{type:"message",data:String(data)});});
     state.ws.on("error",e=>{for(const s of state.subs)push(s,{type:"stream_error",message:e.message});});
     state.ws.on("close",()=>{clearInterval(state.timer);if(!state.closed){for(const s of state.subs)push(s,{type:"disconnected"});setTimeout(open,2000);}});
