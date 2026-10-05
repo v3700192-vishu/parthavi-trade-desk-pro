@@ -70,8 +70,8 @@ function normalizeGlobal(raw){
   const out={};
   for(const [k,keys] of Object.entries(aliases)){
     let v=null; for(const key of keys){ if(x[key]!=null){v=x[key];break;} }
-    const value=typeof v==='object'?(v.value??v.ltp??v.price):v;
-    const change=typeof v==='object'?n(v.changePct??v.changePercent??v.pct??v.change):null;
+    const value=typeof v==='object' && v!==null ? (v.value??v.ltp??v.price) : v;
+    const change=typeof v==='object' && v!==null ? n(v.changePct??v.changePercent??v.pct??v.change) : null;
     out[k]={value:value??'WAIT',change, tone:change>0.1?'up':change<-0.1?'down':'flat'};
   }
   return out;
