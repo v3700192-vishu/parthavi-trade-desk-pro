@@ -798,6 +798,11 @@ function aggregateCandles(rows, minutes){
   if(cur) out.push(cur);
   return out;
 }
+function dropIncompleteCandle(rows, minutes){
+  if(!Array.isArray(rows)||!rows.length) return [];
+  const boundary=bucketStart(new Date(),minutes);
+  return rows.filter(r=>Date.parse(r.t)<boundary);
+}
 function yahooTicker(symbol){
   const map={NIFTY:'^NSEI',BANKNIFTY:'^NSEBANK',FINNIFTY:'NIFTY_FIN_SERVICE.NS',MIDCPNIFTY:'NIFTY_MID_SELECT.NS',VIX:'^INDIAVIX',SENSEX:'^BSESN'};
   return map[String(symbol||'NIFTY').toUpperCase()]||'^NSEI';
@@ -836,20 +841,21 @@ async function loadBase5m(symbol){
 }
 async function loadTfSummary(symbol, interval, days){
   const ins=await resolveIndexToken(symbol); let rows=[];
-  if(interval==='FIVE_MINUTE') rows=await loadBase5m(symbol);
-  else if(interval==='FIFTEEN_MINUTE') rows=aggregateCandles(await loadBase5m(symbol),15);
-  else if(interval==='ONE_HOUR') rows=aggregateCandles(await loadBase5m(symbol),60);
+  if(interval==='FIVE_MINUTE') rows=dropIncompleteCandle(await loadBase5m(symbol),5);
+  else if(interval==='FIFTEEN_MINUTE') rows=dropIncompleteCandle(aggregateCandles(await loadBase5m(symbol),15),15);
+  else if(interval==='ONE_HOUR') rows=dropIncompleteCandle(aggregateCandles(await loadBase5m(symbol),60),60);
   else {
     const end=new Date(), from=new Date(end.getTime()-Math.min(days||1,1)*86400000);
     const f=x=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false})
       .format(new Date(x)).replace(', ',' ').replace(/\\//g,'-');
     rows=candleRows(await angelCandles({exchange:'NSE',symboltoken:ins.token,interval,fromdate:f(from),todate:f(end)}));
+    if(interval!=='ONE_DAY') rows=dropIncompleteCandle(rows,5);
   }
   const wanted=interval==='ONE_HOUR'?Math.max(30,Math.ceil((days||10)*5))
     :interval==='FIFTEEN_MINUTE'?Math.max(20,Math.ceil((days||10)*26))
     :Math.max(60,Math.ceil((days||10)*75));
   const trimmed=rows.slice(-wanted);
-  return {ins,rows:trimmed,summary:summarize(trimmed)};
+  return {ins,rows:trimmed,summary:summarize(trimmed),closed:true};
 }
 
 // PHASE 10 — advanced prediction, confirmation and transparent historical target-hit analysis.
