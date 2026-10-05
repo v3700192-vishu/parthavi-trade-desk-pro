@@ -97,7 +97,8 @@ function phase11PolicyForOrder({p,instrument,signalSnapshot=null,openPositions=0
     maxLoss:projection,rr:modelSafe(rr),
     modelConfidence:signalSnapshot?.modelConfidence,confirmationPct:signalSnapshot?.confirmationPct,
     spreadPct:Number.isFinite(spreadPct)?spreadPct:null,openPositions,side:orderType,
-    signalAction:signalSnapshot?.action||'',isOption,hasStopLoss:sl>0
+    signalAction:signalSnapshot?.action||'',isOption,hasStopLoss:sl>0,
+    vix:signalSnapshot?.vix,adx:signalSnapshot?.adx,volumeRatio10d:signalSnapshot?.volumeRatio10d,eventDayBlock:!!signalSnapshot?.eventDayBlock
   });
 }
 function modelSafe(x){return Number.isFinite(x)&&x>0?x:0;}
