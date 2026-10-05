@@ -617,11 +617,12 @@ button,input,select{font:inherit} button{cursor:pointer}
 </div>
 
 <div class="card" id="journal" style="margin-top:12px">
-  <div class="card-head"><h3>Trade Journal & Audit Trail</h3><span>Local view; live fills should be stored server-side after broker connection</span></div>
+  <div class="card-head"><h3>Trade Journal & Audit Trail</h3><span>Auto-saved on this device • live broker fills remain gated</span></div>
   <div class="tablewrap"><table class="j" id="journalTable">
     <tr><th>Time</th><th>Symbol</th><th>Side</th><th>Decision</th><th>Entry</th><th>SL</th><th>T1</th><th>T2</th><th>Status</th></tr>
-    <tr><td>—</td><td id="jSymbol">NIFTY</td><td>—</td><td>NO TRADE</td><td>—</td><td>—</td><td>—</td><td>—</td><td>LOCKED</td></tr>
+    <tbody id="journalBody"><tr><td colspan="9">No trades recorded yet.</td></tr></tbody>
   </table></div>
+  <div class="note" id="journalSummary">Journal: 0 trades • Wins 0 • Losses 0 • Net P&L ₹0</div>
 </div>
 
 <footer class="footer"><span>PARTHAVI TRADE DESK PRO • PB SIGNATURE</span><span>LIVE DATA + BROKER BACKEND REQUIRED • PHASE 10 ACTIVE • NO GUARANTEED PROFIT</span></footer>
@@ -740,13 +741,21 @@ function renderDecision(d){
  const action=d.action||'NO TRADE';
  $('decision').textContent=action; $('action').textContent=action; $('score').textContent=(d.score??'—')+' / 100';
  $('confidence').textContent=d.confidence||'—'; $('rr').textContent=d.rr||'—';
- $('decisionReason').textContent=d.reason||'Waiting for verified data.';
+ const diag=[
+   d.vix!=null?`VIX ${Number(d.vix).toFixed(2)}`:'',
+   d.adx!=null?`ADX ${Number(d.adx).toFixed(1)}`:'',
+   d.volumeRatio10d!=null?`Vol ${Number(d.volumeRatio10d).toFixed(2)}x 10D`:'',
+   d.oi?.resistance!=null?`R OI ${d.oi.resistance}`:'',
+   d.oi?.support!=null?`S OI ${d.oi.support}`:''
+ ].filter(Boolean).join(' • ');
+ $('decisionReason').textContent=(d.reason||'Waiting for verified data.')+(diag?' | '+diag:'');
  const c=action==='CALL'?'bullish':action==='PUT'?'bearish':'neutral'; $('decision').className=c; $('action').className=c;
  const map={m1h:'trend1h',m15:'setup15m',m5:'trigger5m',ema:'ema',rsi:'rsi',macd:'macd',adx:'adx',vwap:'vwap',pa:'priceAction',volume:'volume',atr:'atr'};
  for(const [id,k] of Object.entries(map)) paintSignal(id,d[k]??'WAIT');
  paintSignal('why1',d.trend1h??'WAIT');paintSignal('why15',d.setup15m??'WAIT');paintSignal('why5',d.trigger5m??'WAIT');
  paintSignal('whyMom',d.momentum??'WAIT');paintSignal('whyOI',d.options??'WAIT');paintSignal('whyNews',d.news??'WAIT');
  paintSignal('whyGlobal',d.global??'WAIT');paintSignal('whyEvent',d.event??'WAIT');
+ paintSignal('volume',d.volumeRatio10d!=null?(Number(d.volumeRatio10d)>=1.5?'BREAKOUT '+Number(d.volumeRatio10d).toFixed(2)+'x':'FAKE BREAKOUT '+Number(d.volumeRatio10d).toFixed(2)+'x'):(d.volume??'WAIT'));
  const vals=d.levels||{}; $('r2').textContent=vals.r2??'—';$('r1').textContent=vals.r1??'—';$('lvwap').textContent=vals.vwap??'—';$('s1').textContent=vals.s1??'—';$('s2').textContent=vals.s2??'—';
  const bp=d.blueprint||{}; $('side').value=bp.direction==='PUT'?'PUT':'CALL';$('strike').value=bp.strike??'';$('entry').value=bp.entry??'';$('sl').value=bp.sl??'';$('t1').value=bp.t1??'';$('t2').value=bp.t2??'';
  $('rrOut').textContent=d.rr||'—'; $('execState').textContent=action==='CALL'||action==='PUT'?'READY':'LOCKED'; $('execState').className=action==='CALL'?'bullish':action==='PUT'?'bearish':'neutral';
@@ -940,7 +949,9 @@ function renderPredictionPanel(r){
   $('p10HitRate').textContent=hist.available&&hist.targetHitRate!=null?String(hist.targetHitRate)+'%':'NOT CALIBRATED';
   $('p10Signals').textContent=hist.signals??'—'; $('p10Resolved').textContent=hist.resolved??'—'; $('p10WinsLosses').textContent=(hist.wins??'—')+' / '+(hist.losses??'—');
   const exp=hist.available&&hist.targetHitRate!=null?((Number(hist.targetHitRate)/100*1.25)-(1-Number(hist.targetHitRate)/100)).toFixed(2):null; $('p10ExpectedR').textContent=exp==null?'—':(Number(exp)>0?'+':'')+exp+'R';
-  $('p10Reason').textContent=p.reasoning||'Waiting for prediction engine.'; $('p10Meter').style.width=Math.max(0,Math.min(100,Number(p.confirmationPct||0)))+'%';
+  const gateText=(p.noTradeReasons||[]).join(' • ');
+  $('p10Reason').textContent=(p.reasoning||'Waiting for prediction engine.')+(gateText?' | '+gateText:'');
+  $('p10Meter').style.width=Math.max(0,Math.min(100,Number(p.confirmationPct||0)))+'%';
 
   const plan=p.finalPlan||{};
   $('finalPlanDirection').textContent=p.action||'NO TRADE'; setP10Tone($('finalPlanDirection'),p.action);
@@ -1110,7 +1121,7 @@ function renderBrokerPositions(rows){
   const el=$('brokerPositions'); if(!rows.length){el.innerHTML='<div class="broker-empty">No open/net positions returned by Angel One.</div>';return}
   const active=rows.filter(x=>Number(x.netqty??((Number(x.buyqty)||0)-(Number(x.sellqty)||0)))!==0);
   if(!active.length){el.innerHTML='<div class="broker-empty">No open/net positions. Day positions may still be listed below if the broker returns them.</div>';return}
-  el.innerHTML='<div class="scroll-x"><table class="broker-table"><tr><th>Symbol</th><th>Side</th><th>Qty</th><th>Avg</th><th>LTP</th><th>P&L</th><th>Product</th><th>Action</th></tr>'+active.map(x=>{const q=Number(x.netqty??((Number(x.buyqty)||0)-(Number(x.sellqty)||0)));const pnl=Number(x.pnl??x.m2m??0);const ltp=x.ltp??x.ltpPrice??'';return `<tr><td>${x.tradingsymbol||'—'}</td><td>${q>0?'LONG':'SHORT'}</td><td>${Math.abs(q)}</td><td>${Number(x.avgnetprice??x.buyavgprice??x.sellavgprice??0).toFixed(2)}</td><td>${ltp!==''?Number(ltp).toFixed(2):'—'}</td><td class="${pnl<0?'account-negative':'account-positive'}">${money(pnl)}</td><td>${x.producttype||'—'}</td><td><button class="btn sell broker-action" onclick="previewExit('${String(x.symboltoken||'')}', '${String(x.tradingsymbol||'').replaceAll("'","&#39;")}')">EXIT</button></td></tr>`}).join('')+'</table></div>';
+  el.innerHTML='<div class="scroll-x"><table class="broker-table"><tr><th>Symbol</th><th>Side</th><th>Qty</th><th>Avg</th><th>LTP</th><th>P&L</th><th>Product</th><th>Action</th></tr>'+active.map(x=>{const q=Number(x.netqty??((Number(x.buyqty)||0)-(Number(x.sellqty)||0)));const pnl=Number(x.pnl??x.m2m??0);const ltp=x.ltp??x.ltpPrice??'';const avg=Number(x.avgnetprice??x.buyavgprice??x.sellavgprice??0);if(Number(ltp)>0&&avg>0&&((q>0&&Number(ltp)>avg)||(q<0&&Number(ltp)<avg))){const k=String(x.symboltoken||x.tradingsymbol||'');window.__trailSeen=window.__trailSeen||{};if(!window.__trailSeen[k]||Date.now()-window.__trailSeen[k]>300000){window.__trailSeen[k]=Date.now();addAlert('🛡 COST-TO-COST ALERT',`${x.tradingsymbol||'Position'} is in profit. Consider moving SL to cost-to-cost now.`,'bullish','trail-'+k+'-'+Math.floor(Date.now()/300000));}}return `<tr><td>${x.tradingsymbol||'—'}</td><td>${q>0?'LONG':'SHORT'}</td><td>${Math.abs(q)}</td><td>${Number(x.avgnetprice??x.buyavgprice??x.sellavgprice??0).toFixed(2)}</td><td>${ltp!==''?Number(ltp).toFixed(2):'—'}</td><td class="${pnl<0?'account-negative':'account-positive'}">${money(pnl)}</td><td>${x.producttype||'—'}</td><td><button class="btn sell broker-action" onclick="previewExit('${String(x.symboltoken||'')}', '${String(x.tradingsymbol||'').replaceAll("'","&#39;")}')">EXIT</button></td></tr>`}).join('')+'</table></div>';
 }
 function renderBrokerHoldings(rows){const el=$('brokerHoldings');if(!rows.length){el.innerHTML='<div class="broker-empty">No holdings returned.</div>';return} el.innerHTML='<div class="scroll-x"><table class="broker-table"><tr><th>Symbol</th><th>Qty</th><th>Avg</th><th>LTP</th><th>P&L</th><th>P&L %</th><th>Exchange</th></tr>'+rows.map(x=>{const pnl=Number(x.profitandloss||0);return `<tr><td>${x.tradingsymbol||'—'}</td><td>${x.quantity??'—'}</td><td>${x.averageprice!=null?Number(x.averageprice).toFixed(2):'—'}</td><td>${x.ltp!=null?Number(x.ltp).toFixed(2):'—'}</td><td class="${pnl<0?'account-negative':'account-positive'}">${money(pnl)}</td><td>${x.pnlpercentage!=null?Number(x.pnlpercentage).toFixed(2)+'%':'—'}</td><td>${x.exchange||'—'}</td></tr>`}).join('')+'</table></div>';}
 function renderBrokerOrders(rows){const el=$('brokerOrders');if(!rows.length){el.innerHTML='<div class="broker-empty">No orders returned.</div>';return} el.innerHTML='<div class="scroll-x"><table class="broker-table"><tr><th>Order ID</th><th>Symbol</th><th>Side</th><th>Qty</th><th>Price</th><th>Status</th><th>Updated</th><th>Action</th></tr>'+rows.map(x=>{const st=String(x.orderstatus||x.status||'').toLowerCase();const can=['open','trigger pending','pending','after market order req received'].includes(st);return `<tr><td>${x.orderid||'—'}</td><td>${x.tradingsymbol||'—'}</td><td>${x.transactiontype||'—'}</td><td>${x.quantity||'—'}</td><td>${x.price||'—'}</td><td>${x.orderstatus||x.status||'—'}</td><td>${x.updatetime||x.exchorderupdatetime||'—'}</td><td>${can?`<div class="inline-actions"><button class="btn broker-action" onclick='openModify(${JSON.stringify({orderid:x.orderid,ordertype:x.ordertype||'LIMIT',price:x.price||0,quantity:x.quantity||0,tradingsymbol:x.tradingsymbol,symboltoken:x.symboltoken,exchange:x.exchange,producttype:x.producttype||'INTRADAY',variety:x.variety||'NORMAL',ordertag:x.ordertag||''})})'>MODIFY</button><button class="btn sell broker-action" onclick="cancelLive('${String(x.orderid||'')}','${String(x.exchange||'NSE')}')">CANCEL</button></div>`:'—'}</td></tr>`}).join('')+'</table></div>';}
@@ -1162,12 +1173,33 @@ async function requestOrder(side){
  }catch(e){toast(e.message||'Order preview failed')}
 }
 function closeOrderModal(){ $('orderModal').classList.remove('show'); pendingOrderPreview=null; }
+function loadTradeJournal(){
+  try{return JSON.parse(localStorage.getItem('PTD_TRADE_JOURNAL')||'[]')}catch{return[]}
+}
+function renderTradeJournal(){
+  const rows=loadTradeJournal(), body=$('journalBody'); if(!body)return;
+  if(!rows.length){body.innerHTML='<tr><td colspan="9">No trades recorded yet.</td></tr>';$('journalSummary').textContent='Journal: 0 trades • Wins 0 • Losses 0 • Net P&L ₹0';return}
+  const esc=escapeHtml;
+  body.innerHTML=rows.slice().reverse().slice(0,100).map(x=>`<tr><td>${esc(new Date(x.time).toLocaleString('en-IN'))}</td><td>${esc(x.symbol||'—')}</td><td>${esc(x.side||'—')}</td><td>${esc(x.decision||'—')}</td><td>${esc(x.entry??'—')}</td><td>${esc(x.sl??'—')}</td><td>${esc(x.t1??'—')}</td><td>${esc(x.t2??'—')}</td><td>${esc(x.status||'—')}</td></tr>`).join('');
+  const wins=rows.filter(x=>Number(x.pnl)>0).length, losses=rows.filter(x=>Number(x.pnl)<0).length, net=rows.reduce((a,x)=>a+(Number(x.pnl)||0),0);
+  $('journalSummary').textContent=`Journal: ${rows.length} trades • Wins ${wins} • Losses ${losses} • Net P&L ₹${net.toLocaleString('en-IN',{maximumFractionDigits:2})}`;
+}
+function saveTradeJournal(entry){
+  try{
+    const rows=loadTradeJournal();
+    rows.push({...entry,time:entry.time||new Date().toISOString()});
+    localStorage.setItem('PTD_TRADE_JOURNAL',JSON.stringify(rows.slice(-500)));
+    renderTradeJournal();
+  }catch{}
+}
+
 async function executeLiveOrder(){
  if(!pendingOrderPreview){toast('Preview missing or expired');return}
  const confirmation=$('orderConfirm').value.trim(); if(confirmation.toUpperCase()!=='PLACE LIVE ORDER'){toast('Type PLACE LIVE ORDER exactly');return}
  try{
    const r=await fetch(API_BASE+'/api/order/execute',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({previewId:pendingOrderPreview.previewId,confirmation})}); const d=await r.json();
    if(!r.ok||!d.ok) throw new Error(d.error||'Live order rejected');
+   saveTradeJournal({symbol:window.selectedContract?.contract||symbol,side:side,decision:'TRADE',entry:Number(entry),sl:Number(sl),t1:Number($('t1').value||0),t2:Number($('t2').value||0),status:'LIVE ORDER SUBMITTED',pnl:0});
    closeOrderModal(); toast('Order request submitted • check broker order book'); await loadOrderBook();
  }catch(e){toast(e.message||'Live order failed')}
 }
@@ -1179,7 +1211,7 @@ function updateRisk(){
 }
 ['capital','riskPct','dailyCap','maxPos'].forEach(id=>$(id).addEventListener('input',updateRisk));
 window.addEventListener('resize',drawChart);
-angelStatus();setInterval(angelStatus,5000);loadAll();loadPrediction(false);loadPhase11Shield();updateRisk();drawChart();loadExecutionStatus();loadPhase12Readiness();phase6Monitor();setInterval(loadAll,15000);setInterval(loadPrediction,20000);setInterval(loadPhase11Shield,10000);setInterval(loadBrokerAccount,10000);setInterval(loadExecutionStatus,15000);setInterval(loadPhase12Readiness,15000);setInterval(phase6Monitor,5000);
+angelStatus();setInterval(angelStatus,5000);loadAll();loadPrediction(false);loadPhase11Shield();updateRisk();drawChart();loadExecutionStatus();loadPhase12Readiness();phase6Monitor();renderTradeJournal();setInterval(loadAll,15000);setInterval(loadPrediction,20000);setInterval(loadPhase11Shield,10000);setInterval(loadBrokerAccount,10000);setInterval(loadExecutionStatus,15000);setInterval(loadPhase12Readiness,15000);setInterval(phase6Monitor,5000);
 </script>
 </body>
 </html>
