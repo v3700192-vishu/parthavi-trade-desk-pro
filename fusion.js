@@ -72,7 +72,11 @@ function normalizeGlobal(raw){
     let v=null; for(const key of keys){ if(x[key]!=null){v=x[key];break;} }
     const value=typeof v==='object' && v!==null ? (v.value??v.ltp??v.price) : v;
     const change=typeof v==='object' && v!==null ? n(v.changePct??v.changePercent??v.pct??v.change) : null;
-    out[k]={value:value??'WAIT',change, tone:change>0.1?'up':change<-0.1?'down':'flat'};
+    const usableValue=value!==null && value!==undefined && value!=='WAIT' && value!=='';
+    const usableChange=Number.isFinite(Number(change));
+    out[k]=usableValue||usableChange
+      ? {value:value??'WAIT',change:usableChange?Number(change):null,tone:usableChange?(Number(change)>0.1?'up':Number(change)<-0.1?'down':'flat'):'flat'}
+      : {value:'WAIT',change:null,tone:'flat'};
   }
   return out;
 }
@@ -80,11 +84,11 @@ function analyzeGlobal(global){
   const parts=[]; let weighted=0,wsum=0;
   for(const [k,r] of Object.entries(global||{})){
     const c=n(r.change); const rule=GLOBAL_RULES[k];
-    if(c==null||!rule) continue;
+    if(c==null||!rule||r.value==='WAIT') continue;
     const contribution=clamp(c,-5,5)*rule.sign*rule.weight; weighted+=contribution; wsum+=rule.weight*5;
     parts.push({key:k,change:c,contribution:Number(contribution.toFixed(2))});
   }
-  if(!parts.length) return {connected:false,score:0,bias:'WAIT',confidence:0,hardRisk:false,reason:'Global market feeds not connected.'};
+  if(!parts.length) return {connected:false,score:0,bias:'WAIT',confidence:0,hardRisk:false,reason:'Global market feeds not connected or no fresh changes verified.'};
   const score=clamp((weighted/wsum)*100,-100,100); const hardRisk=Math.abs(score)>=70;
   return {connected:true,score:Number(score.toFixed(1)),bias:score>18?'RISK-ON':score<-18?'RISK-OFF':'MIXED',confidence:Math.round(clamp(parts.length/8*100,0,100)),hardRisk,parts,reason:hardRisk?'Global risk is extreme; the engine tightens trade gates.':'Global conditions are incorporated as a secondary risk modifier.'};
 }
