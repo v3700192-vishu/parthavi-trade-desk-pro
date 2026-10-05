@@ -49,7 +49,7 @@ function status(){
     requireSignalToken:cfg.requireSignalToken,breachReasons:[...state.breachReasons],asOf:new Date().toISOString()
   };
 }
-function evaluate({maxLoss=0,rr=0,modelConfidence=null,confirmationPct=null,spreadPct=null,openPositions=0,side='BUY',signalAction='',isOption=false,hasStopLoss=true,vix=null,adx=null,volumeRatio10d=null,eventDayBlock=false}={}){
+function evaluate({maxLoss=0,rr=0,modelConfidence=null,confirmationPct=null,spreadPct=null,openPositions=0,side='BUY',signalAction='',isOption=false,hasStopLoss=true,vix=null,adx=null,volumeRatio10d=null,eventDayBlock=false,theta=null,delta=null}={}){
   rollDay(); const errors=[]; const now=Date.now();
   if(!cfg.enabled) return {ok:true,errors:[],status:status()};
   if(state.dailyLoss>=cfg.maxDailyLoss) errors.push('DAILY_LOSS_CAP_REACHED');
@@ -61,6 +61,9 @@ function evaluate({maxLoss=0,rr=0,modelConfidence=null,confirmationPct=null,spre
   if(Number.isFinite(Number(adx)) && Number(adx)<20) errors.push('ADX_BELOW_20');
   if(Number.isFinite(Number(volumeRatio10d)) && Number(volumeRatio10d)<1.5) errors.push('BREAKOUT_VOLUME_BELOW_1_5X_10D');
   if(eventDayBlock) errors.push('HIGH_IMPACT_EVENT_DAY');
+  if(isOption && (!Number.isFinite(Number(theta)) || !Number.isFinite(Number(delta)))) errors.push('OPTION_GREEKS_UNVERIFIED');
+  if(isOption && Number.isFinite(Number(theta)) && Math.abs(Number(theta))>=10) errors.push('THETA_DECAY_TOO_HIGH');
+  if(isOption && Number.isFinite(Number(delta)) && Math.abs(Number(delta))<0.20) errors.push('DELTA_TOO_LOW_FOR_OPTION_BUYING');
   if(cfg.requireStopLoss&&!hasStopLoss) errors.push('STOP_LOSS_REQUIRED');
   if(maxLoss>0 && maxLoss>Math.max(0,cfg.maxDailyLoss-state.dailyLoss)) errors.push('TRADE_RISK_EXCEEDS_DAILY_PROTECTION_BUDGET');
   if(rr>0 && rr<cfg.minRR) errors.push(`MIN_RR_${cfg.minRR}_REQUIRED`);
