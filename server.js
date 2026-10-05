@@ -221,7 +221,7 @@ async function market(symbol){
   const tokens={NIFTY:['NSE','Nifty 50','99926000'],BANKNIFTY:['NSE','Nifty Bank','99926009'],FINNIFTY:['NSE','Nifty Fin Service','99926037'],MIDCPNIFTY:['NSE','NIFTY MID SELECT','99926074'],VIX:['NSE','India VIX','99926017']};
   const out={};
   for(const [key,info] of Object.entries(tokens)){
-    try{ const r=await angelLtp({exchange:info[0],tradingsymbol:info[1],symboltoken:info[2]}); const d=r?.data||r; out[key]={ltp:d?.ltp??null,change:d?.percentChange??d?.percentageChange??null,open:d?.open??null,high:d?.high??null,low:d?.low??null,close:d?.close??null}; }catch{ out[key]={ltp:null,change:null}; }
+    try{ const r=await angelLtp({exchange:info[0],tradingsymbol:info[1],symboltoken:info[2]}); const d=r?.data||r; out[key]={ltp:d?.ltp??null,change:d?.percentChange??d?.percentageChange??(Number.isFinite(Number(d?.ltp))&&Number.isFinite(Number(d?.close))&&Number(d?.close)!==0?((Number(d.ltp)-Number(d.close))/Number(d.close))*100:null),open:d?.open??null,high:d?.high??null,low:d?.low??null,close:d?.close??null}; }catch{ out[key]={ltp:null,change:null}; }
   }
   out[symbol]=out[symbol]||{ltp:null,change:null};
   out.GLOBAL_RISK={label:"WAIT"};
@@ -289,6 +289,12 @@ app.post("/api/angel/login", async (req,res)=>{
   }
 });
 app.post("/api/angel/logout", async (req,res)=>{ try { res.json(await logoutAngel()); } catch(e){ res.status(500).json({error:e?.message||"Logout failed"}); } });
+app.get("/api/angel/ltp", async (req,res)=>{
+  try{
+    const {exchange='NSE',tradingsymbol='Nifty 50',symboltoken='99926000'}=req.query||{};
+    res.json({ok:true,data:await angelLtp({exchange:String(exchange),tradingsymbol:String(tradingsymbol),symboltoken:String(symboltoken)})});
+  }catch(e){res.status(401).json({ok:false,error:e?.message||"LTP failed"});}
+});
 app.post("/api/angel/ltp", async (req,res)=>{ try { res.json({ok:true,data:await angelLtp(req.body||{})}); } catch(e){ res.status(401).json({ok:false,error:e?.message||"LTP failed"}); } });
 app.post("/api/angel/quote", async (req,res)=>{ try { res.json({ok:true,data:await angelQuote(req.body?.mode||"FULL", req.body?.exchangeTokens||{})}); } catch(e){ res.status(401).json({ok:false,error:e?.message||"Quote failed"}); } });
 app.post("/api/angel/candles", async (req,res)=>{ try { res.json({ok:true,data:await angelCandles(req.body||{})}); } catch(e){ res.status(401).json({ok:false,error:e?.message||"Candle request failed"}); } });
@@ -689,13 +695,42 @@ async function resolveIndexToken(symbol){
 }
 const candleCache=new Map();
 const candleInflight=new Map();
-function candleRows(raw){ return (raw?.data||[]).map(x=>({t:x[0],o:Number(x[1]),h:Number(x[2]),l:Number(x[3]),c:Number(x[4]),v:Number(x[5]||0)})).filter(x=>[x.o,x.h,x.l,x.c].every(Number.isFinite)); }
+function candleRows(raw){
+  return (raw?.data||[]).map(x=>({t:x[0],o:Number(x[1]),h:Number(x[2]),l:Number(x[3]),c:Number(x[4]),v:Number(x[5]||0)}))
+    .filter(x=>[x.o,x.h,x.l,x.c].every(Number.isFinite));
+}
 function bucketStart(ts, minutes){ return Math.floor(new Date(ts).getTime()/(minutes*60000))*minutes*60000; }
 function aggregateCandles(rows, minutes){
   if(!Array.isArray(rows)||!rows.length) return [];
   const out=[]; let cur=null, key=null;
-  for(const r of rows){ const k=bucketStart(r.t,minutes); if(k!==key){ if(cur) out.push(cur); key=k; cur={t:new Date(k).toISOString(),o:r.o,h:r.h,l:r.l,c:r.c,v:r.v||0}; } else { cur.h=Math.max(cur.h,r.h); cur.l=Math.min(cur.l,r.l); cur.c=r.c; cur.v+=r.v||0; } }
-  if(cur) out.push(cur); return out;
+  for(const r of rows){
+    const k=bucketStart(r.t,minutes);
+    if(k!==key){
+      if(cur) out.push(cur);
+      key=k;
+      cur={t:new Date(k).toISOString(),o:r.o,h:r.h,l:r.l,c:r.c,v:r.v||0};
+    }else{
+      cur.h=Math.max(cur.h,r.h); cur.l=Math.min(cur.l,r.l); cur.c=r.c; cur.v+=r.v||0;
+    }
+  }
+  if(cur) out.push(cur);
+  return out;
+}
+function yahooTicker(symbol){
+  const map={NIFTY:'^NSEI',BANKNIFTY:'^NSEBANK',FINNIFTY:'NIFTY_FIN_SERVICE.NS',MIDCPNIFTY:'NIFTY_MID_SELECT.NS',VIX:'^INDIAVIX',SENSEX:'^BSESN'};
+  return map[String(symbol||'NIFTY').toUpperCase()]||'^NSEI';
+}
+async function loadYahoo5m(symbol){
+  const ticker=encodeURIComponent(yahooTicker(symbol));
+  const url=`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=5m&range=5d`;
+  const r=await fetch(url,{headers:{accept:'application/json','user-agent':'PARTHAVI-TRADE-DESK-PRO/1.0'},signal:AbortSignal.timeout(10000)});
+  if(!r.ok) throw new Error(`Yahoo candle HTTP ${r.status}`);
+  const j=await r.json();
+  const result=j?.chart?.result?.[0], ts=result?.timestamp||[], q=result?.indicators?.quote?.[0]||{};
+  const rows=ts.map((t,i)=>({t:new Date(Number(t)*1000).toISOString(),o:Number(q.open?.[i]),h:Number(q.high?.[i]),l:Number(q.low?.[i]),c:Number(q.close?.[i]),v:Number(q.volume?.[i]||0)}))
+    .filter(x=>[x.o,x.h,x.l,x.c].every(Number.isFinite));
+  if(!rows.length) throw new Error('Yahoo returned no usable 5M candles');
+  return rows;
 }
 async function loadBase5m(symbol){
   const key=String(symbol||'NIFTY').toUpperCase(), now=Date.now(), cached=candleCache.get(key);
@@ -703,9 +738,16 @@ async function loadBase5m(symbol){
   if(candleInflight.has(key)) return await candleInflight.get(key);
   const job=(async()=>{
     const ins=await resolveIndexToken(key), end=new Date(), from=new Date(end.getTime()-7*86400000);
-  const f=x=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(x)).replace(', ',' ').replace(/\//g,'-');
-    const raw=await angelCandles({exchange:'NSE',symboltoken:ins.token,interval:'FIVE_MINUTE',fromdate:f(from),todate:f(end)});
-    const rows=candleRows(raw); candleCache.set(key,{at:Date.now(),rows}); return rows;
+    const f=x=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false})
+      .format(new Date(x)).replace(', ',' ').replace(/\\//g,'-');
+    try{
+      const raw=await angelCandles({exchange:'NSE',symboltoken:ins.token,interval:'FIVE_MINUTE',fromdate:f(from),todate:f(end)});
+      const rows=candleRows(raw);
+      if(rows.length){ candleCache.set(key,{at:Date.now(),rows,source:'ANGEL'}); return rows; }
+    }catch{}
+    const fallback=await loadYahoo5m(key);
+    candleCache.set(key,{at:Date.now(),rows:fallback,source:'YAHOO_FALLBACK'});
+    return fallback;
   })();
   candleInflight.set(key,job);
   try{return await job;}finally{candleInflight.delete(key);}
@@ -715,11 +757,18 @@ async function loadTfSummary(symbol, interval, days){
   if(interval==='FIVE_MINUTE') rows=await loadBase5m(symbol);
   else if(interval==='FIFTEEN_MINUTE') rows=aggregateCandles(await loadBase5m(symbol),15);
   else if(interval==='ONE_HOUR') rows=aggregateCandles(await loadBase5m(symbol),60);
-  else { const end=new Date(), from=new Date(end.getTime()-Math.min(days||1,1)*86400000); const f=x=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(x)).replace(', ',' ').replace(/\//g,'-'); rows=candleRows(await angelCandles({exchange:'NSE',symboltoken:ins.token,interval,fromdate:f(from),todate:f(end)})); }
-  const wanted=interval==='ONE_HOUR'?Math.max(30,Math.ceil((days||10)*5)):interval==='FIFTEEN_MINUTE'?Math.max(20,Math.ceil((days||10)*26)):Math.max(60,Math.ceil((days||10)*75));
-  const trimmed=rows.slice(-wanted); return {ins,rows:trimmed,summary:summarize(trimmed)};
+  else {
+    const end=new Date(), from=new Date(end.getTime()-Math.min(days||1,1)*86400000);
+    const f=x=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false})
+      .format(new Date(x)).replace(', ',' ').replace(/\\//g,'-');
+    rows=candleRows(await angelCandles({exchange:'NSE',symboltoken:ins.token,interval,fromdate:f(from),todate:f(end)}));
+  }
+  const wanted=interval==='ONE_HOUR'?Math.max(30,Math.ceil((days||10)*5))
+    :interval==='FIFTEEN_MINUTE'?Math.max(20,Math.ceil((days||10)*26))
+    :Math.max(60,Math.ceil((days||10)*75));
+  const trimmed=rows.slice(-wanted);
+  return {ins,rows:trimmed,summary:summarize(trimmed)};
 }
-
 
 // PHASE 10 — advanced prediction, confirmation and transparent historical target-hit analysis.
 app.get('/api/phase10/prediction',async(req,res)=>{
