@@ -276,14 +276,26 @@ async function news(symbol){
   }
 }
 async function yahooLastChange(ticker){
-  const url=`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5d`;
+  const url=`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=5m&range=2d`;
   const r=await fetch(url,{headers:{accept:'application/json','user-agent':'PARTHAVI-TRADE-DESK-PRO/1.0'},signal:AbortSignal.timeout(8000)});
   if(!r.ok) throw new Error(`Yahoo market HTTP ${r.status}`);
-  const j=await r.json(), result=j?.chart?.result?.[0], q=result?.indicators?.quote?.[0]||{}, closes=(q.close||[]).map(Number).filter(Number.isFinite);
-  const price=Number(result?.meta?.regularMarketPrice??closes.at(-1)); if(!Number.isFinite(price)) throw new Error('No Yahoo price');
+  const j=await r.json(), result=j?.chart?.result?.[0], meta=result?.meta||{}, q=result?.indicators?.quote?.[0]||{};
+  const closes=(q.close||[]).map(Number).filter(Number.isFinite);
+  const price=Number(meta.regularMarketPrice??closes.at(-1)); if(!Number.isFinite(price)) throw new Error('No Yahoo price');
   const prev=closes.length>1?closes.at(-2):null;
   const change=Number.isFinite(prev)&&prev!==0?((price-prev)/prev)*100:null;
-  return {value:Number(price.toFixed(4)),change:change==null?null:Number(change.toFixed(3))};
+  const rawTs=Number(meta.regularMarketTime||0)*1000;
+  const asOf=Number.isFinite(rawTs)&&rawTs>0?new Date(rawTs).toISOString():null;
+  const ageSec=asOf?Math.max(0,(Date.now()-rawTs)/1000):null;
+  const status=ageSec==null?'UNVERIFIED':ageSec<=600?'LIVE':ageSec<=14400?'DELAYED':'UNVERIFIED';
+  return {
+    value:Number(price.toFixed(4)),
+    change:change==null?null:Number(change.toFixed(3)),
+    source:'YAHOO_FINANCE',
+    asOf,
+    ageSec:ageSec==null?null:Number(ageSec.toFixed(0)),
+    status
+  };
 }
 async function globalData(){
   const now=Date.now();
@@ -297,10 +309,27 @@ async function globalData(){
   if(raw.SPX||raw.US_FUTURES) raw.US_FUTURES=raw.US_FUTURES||raw.SPX;
   if(raw.NIKKEI||raw.HSI){
     const a=[raw.NIKKEI?.change,raw.HSI?.change].filter(Number.isFinite);
-    if(a.length) raw.ASIA={value:'Nikkei/HSI',change:a.reduce((x,y)=>x+y,0)/a.length};
+    if(a.length){
+      const refs=[raw.NIKKEI,raw.HSI].filter(Boolean);
+      const latestAsOf=refs.map(x=>x.asOf).filter(Boolean).sort().at(-1)||null;
+      const ageSec=latestAsOf?Math.max(0,(Date.now()-Date.parse(latestAsOf))/1000):null;
+      raw.ASIA={
+        value:'Nikkei/HSI',
+        change:Number((a.reduce((x,y)=>x+y,0)/a.length).toFixed(3)),
+        source:'YAHOO_FINANCE',
+        asOf:latestAsOf,
+        ageSec:ageSec==null?null:Number(ageSec.toFixed(0)),
+        status:ageSec==null?'UNVERIFIED':ageSec<=600?'LIVE':ageSec<=14400?'DELAYED':'UNVERIFIED'
+      };
+    }
+  }
+  // GIFT NIFTY stays explicitly UNVERIFIED until a verified provider is configured.
+  if(!raw.GIFT_NIFTY){
+    raw.GIFT_NIFTY={value:null,change:null,source:'NOT_CONFIGURED',asOf:null,ageSec:null,status:'UNVERIFIED',reason:'GIFT NIFTY provider not configured'};
   }
   const out=normalizeGlobal(raw);
-  globalCache.at=now; globalCache.data=out; return out;
+  globalCache.at=now; globalCache.data=out;
+  return out;
 }
 async function events(){
   const raw=await fetchProviderJson(process.env.EVENTS_PROVIDER_URL,process.env.EVENTS_PROVIDER_TOKEN,{country:"IN",region:"global",days:2});
@@ -661,8 +690,16 @@ app.get("/api/news",async(req,res)=>{
   catch(e){ state.connected.news=false; res.json({connected:false,items:[],strategy:analyzeNews([]),error:e?.message||"News provider unavailable"}); }
 });
 app.get("/api/global",async(req,res)=>{
-  try{ const data=await globalData(); const strategy=analyzeGlobal(data); state.connected.global=strategy.connected; if(strategy.connected) state.last.global=Date.now(); res.json({connected:strategy.connected,data,strategy}); }
-  catch(e){ state.connected.global=false; res.json({connected:false,data:{},strategy:analyzeGlobal({}),error:e?.message||"Global provider unavailable"}); }
+  try{
+    const data=await globalData();
+    const strategy=analyzeGlobal(data);
+    state.connected.global=strategy.connected;
+    if(strategy.connected) state.last.global=Date.now();
+    res.json({connected:strategy.connected,data,strategy,checkedAt:nowISO()});
+  }catch(e){
+    state.connected.global=false;
+    res.json({connected:false,data:{},strategy:analyzeGlobal({}),checkedAt:nowISO(),error:e?.message||"Global provider unavailable"});
+  }
 });
 app.get("/api/events",async(req,res)=>{ try{ const raw=await events(); const strategy=analyzeEvents(raw); res.json({connected:strategy.connected,items:strategy.events,strategy}); }catch(e){res.json({connected:false,items:[],strategy:analyzeEvents([]),error:e?.message||"Event provider unavailable"});} });
 app.get("/api/fusion",async(req,res)=>{
