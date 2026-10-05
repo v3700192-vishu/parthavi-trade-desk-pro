@@ -267,7 +267,7 @@ async function news(symbol){
     if(!rr.ok) throw new Error(`News RSS HTTP ${rr.status}`);
     const xml=await rr.text();
     const tag=(body,name)=>{const m=body.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`,'i')); return m?m[1].replace(/<!\\[CDATA\\[|\\]\\]>/g,'').trim():'';};
-    const rawItems=[...xml.matchAll(/<item>([\\s\\S]*?)<\\/item>/gi)].map(m=>{const b=m[1];return {title:tag(b,'title'),source:tag(b,'source'),pubDate:tag(b,'pubDate'),link:tag(b,'link')};}).filter(x=>x.title);
+    const rawItems=[...xml.matchAll(/<item>([\s\S]*?)<\/item>/gi)].map(m=>{const b=m[1];return {title:tag(b,'title'),source:tag(b,'source'),pubDate:tag(b,'pubDate'),link:tag(b,'link')};}).filter(x=>x.title);
     const items=normalizeNews(rawItems,symbol);
     newsCache.set(key,{at:now,items});
     return items;
