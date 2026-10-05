@@ -301,10 +301,18 @@ app.get("/api/angel/expiries", async (req,res)=>{
     const underlying=String(req.query.underlying||"").trim().toUpperCase();
     const items=await loadMaster();
     const segMap={NSE:{OPTIDX:"nse_fo",OPTSTK:"nse_fo",FUTIDX:"nse_fo",FUTSTK:"nse_fo"},BSE:{OPTIDX:"bse_fo",OPTSTK:"bse_fo",FUTIDX:"bse_fo",FUTSTK:"bse_fo"}};
-    const target=segMap[exchange]?.[segment];
-    const dates=[...new Set(items.filter(x=>String(x.exch_seg||'').toLowerCase()===String(target||'').toLowerCase())
-      .filter(x=>!underlying || String(x.name||'').toUpperCase()===underlying || String(x.symbol||'').toUpperCase().includes(underlying))
-      .map(x=>String(x.expiry||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+    const target=String(segMap[exchange]?.[segment]||'').toLowerCase();
+    const q=underlying;
+    const dates=[...new Set(items.filter(x=>{
+      if(String(x.exch_seg||'').toLowerCase()!==target) return false;
+      const sym=String(x.symbol||'').toUpperCase(), name=String(x.name||'').toUpperCase();
+      if((segment==='OPTIDX'||segment==='OPTSTK') && !/(CE|PE)$/.test(sym)) return false;
+      return !q || name===q || name.startsWith(q) || sym.startsWith(q);
+    }).map(x=>String(x.expiry||'').trim().toUpperCase()).filter(Boolean))].sort((a,b)=>{
+      const pa=String(a).match(/^(\\d{2})([A-Z]{3})(\\d{4})$/), pb=String(b).match(/^(\\d{2})([A-Z]{3})(\\d{4})$/);
+      if(pa&&pb){ const mo={JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11}; return new Date(+pa[3],mo[pa[2]],+pa[1])-new Date(+pb[3],mo[pb[2]],+pb[1]); }
+      return String(a).localeCompare(String(b));
+    });
     res.json({ok:true,connected:angelStatus().connected,exchange,segment,underlying,expiries:dates.slice(0,24)});
   }catch(e){res.status(502).json({ok:false,error:e?.message||"Expiry lookup failed"});}
 });
@@ -312,7 +320,8 @@ app.get("/api/angel/contracts", async (req,res)=>{
   try{
     if(!angelStatus().connected) return res.json({ok:true,connected:false,count:0,contracts:[],message:"Connect Angel One first."});
     const base=await findContracts(req.query);
-    const rows=await quoteInstruments(base.slice(0,50));
+    let rows=[];
+    try{ rows=await quoteInstruments(base.slice(0,10)); }catch{}
     const qmap=new Map(rows.map(x=>[String(x.symbolToken),x]));
     const contracts=base.slice(0,50).map(x=>{
       const q=qmap.get(String(x.token))||{};
