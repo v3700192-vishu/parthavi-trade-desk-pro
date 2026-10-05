@@ -3,7 +3,7 @@ import express from "express";
 import path from "path";
 import crypto from "crypto";
 import { fileURLToPath } from "url";
-import { angelStatus, loginAngel, logoutAngel, ltp as angelLtp, quote as angelQuote, candles as angelCandles, searchScrip as angelSearchScrip, loadMaster, findContracts, findInstrumentByToken, subscribe as angelSubscribe, quoteInstruments, optionGreeks, getLatestTicks, rms as angelRms, orderBook as angelOrderBook, placeOrder as angelPlaceOrder, cancelOrder as angelCancelOrder, holdings as angelHoldings, allHoldings as angelAllHoldings, positions as angelPositions, tradeBook as angelTradeBook, modifyOrder as angelModifyOrder } from "./angelone.js";
+import { angelStatus, loginAngel, logoutAngel, ltp as angelLtp, quote as angelQuote, candles as angelCandles, searchScrip as angelSearchScrip, loadMaster, findContracts, findInstrumentByToken, subscribe as angelSubscribe, reconnectWebSocket as angelReconnectWebSocket, quoteInstruments, optionGreeks, getLatestTicks, rms as angelRms, orderBook as angelOrderBook, placeOrder as angelPlaceOrder, cancelOrder as angelCancelOrder, holdings as angelHoldings, allHoldings as angelAllHoldings, positions as angelPositions, tradeBook as angelTradeBook, modifyOrder as angelModifyOrder } from "./angelone.js";
 import { normalizeNews, analyzeNews, normalizeGlobal, analyzeGlobal, analyzeEvents, fuse } from "./fusion.js";
 import { buildPrediction, backtestFiveMinute } from "./prediction.js";
 import { productionReadiness } from "./phase12.js";
@@ -266,6 +266,14 @@ async function events(){
 
 // Angel One SmartAPI connection layer. Credentials/tokens never enter public/index.html.
 app.get("/api/angel/status", (req,res)=>res.json(angelStatus()));
+app.post("/api/angel/reconnect", async (req,res)=>{
+  try{
+    const out=await angelReconnectWebSocket();
+    res.json({ok:true,...out});
+  }catch(e){
+    res.status(502).json({ok:false,connected:angelStatus().connected,websocket:angelStatus().websocket,error:e?.message||"WebSocket reconnect failed"});
+  }
+});
 app.post("/api/angel/login", async (req,res)=>{
   try {
     const {clientCode,pin,totp}=req.body||{};
