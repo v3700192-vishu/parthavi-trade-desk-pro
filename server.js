@@ -916,10 +916,10 @@ app.get("/api/analyze",async(req,res)=>{
   const vix=Number(packs.md?.VIX?.ltp);
   const volumeRatio10d=Number(s15?.volumeRatio10d||s5?.volumeRatio10d);
   const noTradeReasons=[];
-  if(Number.isFinite(vix) && (vix<12||vix>22)) noTradeReasons.push('No Trade: Market is too slow or too volatile.');
+  if(!Number.isFinite(vix)) noTradeReasons.push('No Trade: India VIX is not verified live.'); else if(vix<12||vix>22) noTradeReasons.push('No Trade: Market is too slow or too volatile.');
   if(Number.isFinite(s5?.adx) && s5.adx<20) noTradeReasons.push('No Trade: ADX below 20 — market is choppy/sideways.');
-  if(Number.isFinite(volumeRatio10d) && volumeRatio10d<1.5) noTradeReasons.push(`No Trade: breakout volume ${volumeRatio10d.toFixed(2)}x is below the 1.5x 10-day requirement.`);
-  if(eventStrat.eventDayBlock||eventStrat.hardBlock) noTradeReasons.push(eventStrat.reason);
+  if(!Number.isFinite(volumeRatio10d)) noTradeReasons.push('No Trade: 10-day breakout volume benchmark is not verified.'); else if(volumeRatio10d<1.5) noTradeReasons.push(`No Trade: breakout volume ${volumeRatio10d.toFixed(2)}x is below the 1.5x 10-day requirement.`);
+  if(!eventStrat.connected) noTradeReasons.push('No Trade: economic-event calendar is not verified live.'); else if(eventStrat.eventDayBlock||eventStrat.hardBlock) noTradeReasons.push(eventStrat.reason);
   let action='NO TRADE',reason='Live Angel One connection is required before indicator analysis can run.',score=0,confidence='LOCKED';
   let trend=s1?.trend||'WAIT',setup=s15?.trend||'WAIT',trigger=s5?.candle||'WAIT';
   const bullishVotes=[trend==='BULLISH',setup==='BULLISH',s5?.rsi>50,s5?.macd?.hist>0,s5?.last>s5?.vwap,s5?.adx>=20].filter(Boolean).length;
