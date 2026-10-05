@@ -275,12 +275,18 @@ app.post("/api/angel/reconnect", async (req,res)=>{
   }
 });
 app.post("/api/angel/login", async (req,res)=>{
+  const started=Date.now();
   try {
     const {clientCode,pin,totp}=req.body||{};
+    console.log(`[ANGEL_LOGIN] start client=${String(clientCode||process.env.ANGEL_CLIENT_CODE||"").slice(0,24)} pin=${pin?"present":"missing"} totp=${totp?"present":"missing"}`);
     const out=await loginAngel({clientCode,pin,totp});
     state.connected.market=true;
+    console.log(`[ANGEL_LOGIN] success websocket=${!!out.websocket} ms=${Date.now()-started}`);
     res.json(out);
-  } catch(e) { res.status(401).json({connected:false,error:e?.message||"Angel One login failed"}); }
+  } catch(e) {
+    console.error(`[ANGEL_LOGIN] failed ms=${Date.now()-started}: ${e?.message||"Angel One login failed"}`);
+    res.status(401).json({connected:false,error:e?.message||"Angel One login failed"});
+  }
 });
 app.post("/api/angel/logout", async (req,res)=>{ try { res.json(await logoutAngel()); } catch(e){ res.status(500).json({error:e?.message||"Logout failed"}); } });
 app.post("/api/angel/ltp", async (req,res)=>{ try { res.json({ok:true,data:await angelLtp(req.body||{})}); } catch(e){ res.status(401).json({ok:false,error:e?.message||"LTP failed"}); } });
