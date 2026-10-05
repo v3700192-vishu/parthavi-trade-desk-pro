@@ -47,50 +47,106 @@ function normalizeNews(raw, symbol='NIFTY'){
     const fresh=pctToFreshness(age, 45);
     const rel=relevance(title,symbol);
     const impact=String(x.impact||x.importance||'').toUpperCase() || (Math.abs(lex)>=1?'HIGH':'MEDIUM');
+    const status=age===Infinity?'UNVERIFIED':age<=15?'LIVE':age<=180?'DELAYED':'UNVERIFIED';
     const score=clamp(lex*sourceWeight(source)*fresh*rel*50,-100,100);
-    return {id:x.id||`${i}-${title.slice(0,24)}`,title,source,publishedAt,ageMin:Number.isFinite(age)?Number(age.toFixed(1)):null,bias:score>15?'BULLISH':score<-15?'BEARISH':'NEUTRAL',score:Number(score.toFixed(1)),relevance:Number(rel.toFixed(2)),freshness:Number(fresh.toFixed(2)),impact};
+    return {id:x.id||`${i}-${title.slice(0,24)}`,title,source,publishedAt,ageMin:Number.isFinite(age)?Number(age.toFixed(1)):null,status,bias:score>15?'BULLISH':score<-15?'BEARISH':'NEUTRAL',score:Number(score.toFixed(1)),relevance:Number(rel.toFixed(2)),freshness:Number(fresh.toFixed(2)),impact};
   }).filter(x=>x.title).sort((a,b)=>Math.abs(b.score)-Math.abs(a.score));
 }
 function analyzeNews(items){
-  const xs=items||[]; if(!xs.length) return {connected:false,score:0,bias:'WAIT',confidence:0,highImpact:false,hardBlock:false,reason:'News feed not connected or no relevant fresh headlines.'};
+  const all=items||[];
+  const xs=all.filter(x=>(x.status==='LIVE'||x.status==='DELAYED') && Number.isFinite(Number(x.ageMin)) && Number(x.ageMin)<=180);
+  if(!xs.length) return {connected:false,score:0,bias:'WAIT',confidence:0,highImpact:false,hardBlock:false,reason:'No fresh verified news headlines available.',freshCount:0,totalCount:all.length};
   const top=xs.slice(0,12);
   const pos=top.filter(x=>x.score>10).reduce((a,x)=>a+x.score,0);
   const neg=top.filter(x=>x.score<-10).reduce((a,x)=>a+Math.abs(x.score),0);
   const gross=pos+neg; const score=gross?clamp(((pos-neg)/gross)*100,-100,100):0;
   const conflict=pos>25&&neg>25&&Math.abs(score)<25;
   const highImpact=top.some(x=>x.impact==='HIGH'&&x.freshness>=0.35);
-  return {connected:true,score:Number(score.toFixed(1)),bias:conflict?'MIXED':score>20?'BULLISH':score<-20?'BEARISH':'NEUTRAL',confidence:Number(clamp(gross/2,0,100).toFixed(0)),highImpact,hardBlock:false,conflict,top:top.slice(0,6),reason:conflict?'Fresh headlines are materially conflicting; news bias is neutralized.':highImpact?'Fresh high-impact news is present; the engine applies a caution modifier.':'Fresh market-relevant headlines were scored by source, relevance and recency.'};
+  const liveCount=top.filter(x=>x.status==='LIVE').length;
+  const delayedCount=top.filter(x=>x.status==='DELAYED').length;
+  return {
+    connected:true,
+    score:Number(score.toFixed(1)),
+    bias:conflict?'MIXED':score>20?'BULLISH':score<-20?'BEARISH':'NEUTRAL',
+    confidence:Number(clamp(gross/2,0,100).toFixed(0)),
+    highImpact,
+    hardBlock:false,
+    conflict,
+    top:top.slice(0,6),
+    freshCount:xs.length,
+    liveCount,
+    delayedCount,
+    reason:conflict?'Fresh headlines are materially conflicting; news bias is neutralized.':highImpact?'Fresh high-impact news is present; the engine applies a caution modifier.':'Fresh market-relevant headlines were scored by source, relevance and recency.'
+  };
 }
 
 const GLOBAL_RULES={
   GIFT_NIFTY:{sign:1,weight:1.0}, US_FUTURES:{sign:1,weight:.8}, ASIA:{sign:1,weight:.6}, USDINR:{sign:-1,weight:.45}, US10Y:{sign:-1,weight:.35}, BRENT:{sign:-1,weight:.3}, GOLD:{sign:-1,weight:.15}, VIX:{sign:-1,weight:.8}
 };
 function normalizeGlobal(raw){
-  const x=raw||{}; const aliases={GIFT_NIFTY:['GIFT_NIFTY','GIFT NIFTY'],US_FUTURES:['US_FUTURES','US FUTURES','SPX_FUT','NASDAQ_FUT'],ASIA:['ASIA'],USDINR:['USDINR','USD/INR'],US10Y:['US10Y','US 10Y'],BRENT:['BRENT'],GOLD:['GOLD'],VIX:['VIX','VIX / RISK']};
+  const x=raw||{};
+  const aliases={GIFT_NIFTY:['GIFT_NIFTY','GIFT NIFTY'],US_FUTURES:['US_FUTURES','US FUTURES','SPX_FUT','NASDAQ_FUT'],ASIA:['ASIA'],USDINR:['USDINR','USD/INR'],US10Y:['US10Y','US 10Y'],BRENT:['BRENT'],GOLD:['GOLD'],VIX:['VIX','VIX / RISK']};
   const out={};
   for(const [k,keys] of Object.entries(aliases)){
     let v=null; for(const key of keys){ if(x[key]!=null){v=x[key];break;} }
-    const value=typeof v==='object' && v!==null ? (v.value??v.ltp??v.price) : v;
-    const change=typeof v==='object' && v!==null ? n(v.changePct??v.changePercent??v.pct??v.change) : null;
+    const obj=typeof v==='object' && v!==null ? v : {value:v};
+    const value=obj.value??obj.ltp??obj.price;
+    const change=n(obj.changePct??obj.changePercent??obj.pct??obj.change);
+    const asOf=obj.asOf??obj.timestamp??obj.time??null;
+    const ageMin=Number.isFinite(Number(obj.ageSec))
+      ? Math.max(0,Number(obj.ageSec))/60
+      : ageMinutes(asOf);
+    const status=String(obj.status||'').toUpperCase() || (ageMin===Infinity?'UNVERIFIED':ageMin<=10?'LIVE':ageMin<=240?'DELAYED':'UNVERIFIED');
     const usableValue=value!==null && value!==undefined && value!=='WAIT' && value!=='';
     const usableChange=Number.isFinite(Number(change));
-    out[k]=usableValue||usableChange
-      ? {value:value??'WAIT',change:usableChange?Number(change):null,tone:usableChange?(Number(change)>0.1?'up':Number(change)<-0.1?'down':'flat'):'flat'}
-      : {value:'WAIT',change:null,tone:'flat'};
+    out[k]={
+      value:usableValue?value:'WAIT',
+      change:usableChange?Number(change):null,
+      tone:usableChange?(Number(change)>0.1?'up':Number(change)<-0.1?'down':'flat'):'flat',
+      source:obj.source??'UNKNOWN',
+      asOf,
+      ageMin:ageMin===Infinity?null:Number(ageMin.toFixed(1)),
+      status,
+      reason:obj.reason??null
+    };
   }
   return out;
 }
 function analyzeGlobal(global){
   const parts=[]; let weighted=0,wsum=0;
+  const freshKeys=[];
   for(const [k,r] of Object.entries(global||{})){
     const c=n(r.change); const rule=GLOBAL_RULES[k];
-    if(c==null||!rule||r.value==='WAIT') continue;
-    const contribution=clamp(c,-5,5)*rule.sign*rule.weight; weighted+=contribution; wsum+=rule.weight*5;
-    parts.push({key:k,change:c,contribution:Number(contribution.toFixed(2))});
+    const age=Number(r.ageMin);
+    const status=String(r.status||'UNVERIFIED').toUpperCase();
+    const fresh=(status==='LIVE'||status==='DELAYED') && Number.isFinite(age) && age<=240;
+    if(!fresh||c==null||!rule||r.value==='WAIT') continue;
+    const contribution=clamp(c,-5,5)*rule.sign*rule.weight;
+    weighted+=contribution; wsum+=rule.weight*5;
+    freshKeys.push(k);
+    parts.push({key:k,change:c,contribution:Number(contribution.toFixed(2)),status,ageMin:Number(age.toFixed(1)),source:r.source||'UNKNOWN'});
   }
-  if(!parts.length) return {connected:false,score:0,bias:'WAIT',confidence:0,hardRisk:false,reason:'Global market feeds not connected or no fresh changes verified.'};
-  const score=clamp((weighted/wsum)*100,-100,100); const hardRisk=Math.abs(score)>=70;
-  return {connected:true,score:Number(score.toFixed(1)),bias:score>18?'RISK-ON':score<-18?'RISK-OFF':'MIXED',confidence:Math.round(clamp(parts.length/8*100,0,100)),hardRisk,parts,reason:hardRisk?'Global risk is extreme; the engine tightens trade gates.':'Global conditions are incorporated as a secondary risk modifier.'};
+  if(!parts.length) return {
+    connected:false,score:0,bias:'WAIT',confidence:0,hardRisk:false,parts:[],
+    freshInputs:0,liveInputs:0,delayedInputs:0,
+    reason:'No fresh verified global market changes are available. Stale/unverified inputs are excluded from the trade gate.'
+  };
+  const score=clamp((weighted/wsum)*100,-100,100);
+  const hardRisk=Math.abs(score)>=70;
+  const liveInputs=parts.filter(x=>x.status==='LIVE').length;
+  const delayedInputs=parts.filter(x=>x.status==='DELAYED').length;
+  return {
+    connected:true,
+    score:Number(score.toFixed(1)),
+    bias:score>18?'RISK-ON':score<-18?'RISK-OFF':'MIXED',
+    confidence:Math.round(clamp(parts.length/8*100,0,100)),
+    hardRisk,
+    parts,
+    freshInputs:parts.length,
+    liveInputs,
+    delayedInputs,
+    reason:hardRisk?'Global risk is extreme; the engine tightens trade gates.':'Global conditions are incorporated as a secondary risk modifier. Only fresh LIVE/DELAYED inputs are scored.'
+  };
 }
 function analyzeEvents(raw){
   const arr=Array.isArray(raw)?raw:(raw?.items||raw?.events||raw?.data||[]);
