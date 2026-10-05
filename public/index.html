@@ -215,12 +215,13 @@ button,input,select{font:inherit} button{cursor:pointer}
     <label>Client Code<input id="angelClient" placeholder="Your Angel One client code"></label>
     <label>PIN<input id="angelPin" type="password" inputmode="numeric" autocomplete="off" placeholder="Enter only when connecting"></label>
     <label>TOTP<input id="angelTotp" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="Authenticator code"></label>
-    <button class="btn primary" onclick="angelConnect()">Connect Angel One</button>
+    <button id="angelConnectBtn" class="btn primary" onclick="angelConnect()">Connect Angel One</button>
     <button class="btn" onclick="angelDisconnect()">Disconnect</button>
   </div>
   <div class="finder-note">API key stays on the server. PIN/TOTP are used only for the login request and are not written to the journal or localStorage. Live order execution remains separately locked until the broker/static-IP and final-confirmation gates are verified.</div>
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
     <button class="btn primary" onclick="testAngelFeed()">⚡ Test Live Feed</button>
+    <button class="btn" onclick="angelReconnect()">↻ Reconnect Stream</button>
     <button class="btn" onclick="refreshExpiries()">↻ Load Expiries</button>
     <span class="badge warn" id="angelTestBadge">NOT TESTED</span>
   </div>
@@ -701,24 +702,63 @@ async function angelStatus(){
     setGate('cxLogin',!!d.connected,d.connected?'ON':'OFF');
     setGate('cxWs',!!d.websocket,d.websocket?'LIVE':(d.connected?'READY':'OFF'));
     if(!d.connected){ $('feed').textContent='DISCONNECTED'; setGate('cxQuote',false,'OFF'); setGate('cxWs',false,'OFF'); }
-    if(d.websocketError && !d.websocket) $('angelTestNote').textContent='WebSocket: '+d.websocketError;
+    if(d.websocketError && !d.websocket) $('angelTestNote').textContent='WebSocket error: '+d.websocketError;
     return d;
-  }catch(e){ setGate('cxLogin',false,'OFF'); setGate('cxWs',false,'OFF'); return {connected:false}; }
+  }catch(e){
+    setGate('cxLogin',false,'OFF'); setGate('cxWs',false,'OFF');
+    $('angelTestBadge').textContent='STATUS ERROR'; $('angelTestBadge').className='badge danger';
+    $('angelTestNote').textContent='Angel One status check failed: '+(e?.message||'Unknown error');
+    return {connected:false,error:e?.message||'Status check failed'};
+  }
 }
 async function angelConnect(){
-  const clientCode=document.getElementById('angelClient').value.trim();
-  const pin=document.getElementById('angelPin').value;
-  const totp=document.getElementById('angelTotp').value.trim();
-  if(!pin||!totp){toast('PIN + TOTP required');return;}
+  const btn=$('angelConnectBtn'), note=$('angelTestNote'), badge=$('angelTestBadge');
+  const clientCode=$('angelClient').value.trim();
+  const pin=$('angelPin').value;
+  const totp=$('angelTotp').value.trim();
+  if(!pin||!totp){toast('PIN + TOTP required'); note.textContent='Connection blocked: PIN + TOTP are required.'; badge.textContent='LOGIN INPUT MISSING'; badge.className='badge danger'; return;}
+  if(btn){btn.disabled=true;btn.textContent='Connecting…';}
+  note.textContent='Connecting to Angel One… waiting for login response.';
+  badge.textContent='CONNECTING'; badge.className='badge warn';
+  const controller=new AbortController(); const timer=setTimeout(()=>controller.abort(),20000);
   try{
-    const r=await fetch(API_BASE+'/api/angel/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientCode,pin,totp})});
-    const d=await r.json();
-    if(!r.ok) throw new Error(d.error||'Connection failed');
-    document.getElementById('angelPin').value=''; document.getElementById('angelTotp').value='';
-    toast('Angel One connected'); await angelStatus(); await loadBrokerAccount();
-  }catch(e){toast(e.message||'Connection failed');}
-}
-async function angelReconnect(){
+    const r=await fetch(API_BASE+'/api/angel/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientCode,pin,totp}),signal:controller.signal});
+    const d=await r.json().catch(()=>({error:'Server returned an invalid response'}));
+    if(!r.ok){
+      const msg=d.error||('Connection failed (HTTP '+r.status+')');
+      badge.textContent='LOGIN FAILED'; badge.className='badge danger'; note.textContent='Angel One connection failed: '+msg; throw new Error(msg);
+    }
+    $('angelPin').value=''; $('angelTotp').value='';
+    const st=await angelStatus();
+    try{
+      const q=await getJSON('/api/angel/diagnostics?symbol='+encodeURIComponent(symbol));
+      if(q.ok){
+        badge.textContent='LIVE CONNECTED'; badge.className='badge ok';
+        note.textContent='Angel One connected • LIVE LTP verified: '+q.symbol+' '+(q.data?.ltp??'—')+(q.websocket?' • STREAM LIVE':' • REST OK, stream reconnecting');
+        toast('Angel One connected • live quote verified');
+        setGate('cxQuote',true,'LIVE');
+      }else{
+        badge.textContent='LOGIN OK • QUOTE FAILED'; badge.className='badge danger';
+        note.textContent='Angel session connected, but live quote test failed: '+(q.error||'Unknown quote error')+(q.websocketError?' • WebSocket: '+q.websocketError:'');
+        toast('Angel login OK, but live quote failed');
+      }
+    }catch(e){
+      badge.textContent='LOGIN OK • TEST FAILED'; badge.className='badge danger';
+      note.textContent='Angel session connected, but verification failed: '+(e.message||'Unknown error');
+      toast('Angel login OK, verification failed');
+    }
+    if(st.websocketError && !st.websocket) note.textContent += ' • WebSocket: '+st.websocketError;
+    await loadBrokerAccount();
+  }catch(e){
+    const msg=e?.name==='AbortError'?'Connection timed out after 20 seconds.':(e?.message||'Connection failed');
+    badge.textContent='CONNECTION ERROR'; badge.className='badge danger';
+    note.textContent='Angel One connection error: '+msg;
+    toast(msg);
+  }finally{
+    clearTimeout(timer);
+    if(btn){btn.disabled=false;btn.textContent='Connect Angel One';}
+  }
+}async function angelReconnect(){
   try{
     const r=await fetch(API_BASE+'/api/angel/reconnect',{method:'POST'});
     const d=await r.json().catch(()=>({}));
