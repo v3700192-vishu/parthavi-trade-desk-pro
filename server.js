@@ -255,7 +255,7 @@ async function news(symbol){
   try{
     const raw=await fetchProviderJson(process.env.NEWS_PROVIDER_URL,process.env.NEWS_PROVIDER_TOKEN,{symbol,limit:30,country:"IN"});
     if(raw!=null){
-      const items=normalizeNews(raw,symbol);
+      const items=normalizeNews(raw,symbol).filter(x=>x.ageMin!=null&&x.ageMin<=1440);
       newsCache.set(key,{at:now,items});
       return items;
     }
@@ -268,7 +268,7 @@ async function news(symbol){
     const xml=await rr.text();
     const tag=(body,name)=>{const m=body.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`,'i')); return m?m[1].replace(/<!\\[CDATA\\[|\\]\\]>/g,'').trim():'';};
     const rawItems=[...xml.matchAll(/<item>([\s\S]*?)<\/item>/gi)].map(m=>{const b=m[1];return {title:tag(b,'title'),source:tag(b,'source'),pubDate:tag(b,'pubDate'),link:tag(b,'link')};}).filter(x=>x.title);
-    const items=normalizeNews(rawItems,symbol);
+    const items=normalizeNews(rawItems,symbol).filter(x=>x.ageMin!=null&&x.ageMin<=1440);
     newsCache.set(key,{at:now,items});
     return items;
   }catch{
