@@ -684,9 +684,18 @@ button,input,select{font:inherit} button{cursor:pointer}
       document.getElementById('angelPin').value='';
       document.getElementById('angelTotp').value='';
       note(d.websocket
-        ? 'Angel One connected • REST + WebSocket stream LIVE.'
+        ? 'Angel One connected • REST + WebSocket stream LIVE. Loading dashboard data…'
         : ('Angel One login accepted • WebSocket starting…'+(d.websocketError?' '+d.websocketError:'')));
-      if(typeof window.loadBrokerAccount==='function') await window.loadBrokerAccount().catch(()=>{});
+      await window.loadBrokerAccount().catch(()=>{});
+      setTimeout(async()=>{
+        try{
+          if(typeof window.loadAll==='function') await window.loadAll();
+          if(typeof window.loadPrediction==='function') await window.loadPrediction(false);
+          if(typeof window.loadPhase11Shield==='function') await window.loadPhase11Shield();
+          if(typeof window.loadPhase12Readiness==='function') await window.loadPhase12Readiness();
+          if(typeof window.PTD?.refreshExpiries==='function') await window.PTD.refreshExpiries();
+        }catch(e){ note('Dashboard data load error: '+(e.message||'Unknown error')); }
+      },350);
       setTimeout(async()=>{
         try{
           const sr=await fetch((location.origin||'')+'/api/angel/status',{cache:'no-store'});
@@ -750,13 +759,55 @@ button,input,select{font:inherit} button{cursor:pointer}
       if(noteEl) noteEl.textContent=(d.expiries||[]).length?'Expiries loaded • '+d.expiries.length+' available':'No expiry data found';
     }catch(e){ if(noteEl) noteEl.textContent='Expiry error: '+(e.message||'Unknown error'); }
   };
+
+  window.loadBrokerAccount = window.loadBrokerAccount || async function(){
+    try{
+      const r=await fetch((location.origin||'')+'/api/angel/status',{cache:'no-store'});
+      const d=await r.json();
+      const el=document.getElementById('p9BrokerStatus');
+      if(el) el.textContent=d.connected?'CONNECTED':'LOCKED';
+      const checked=document.getElementById('p9Checked');
+      if(checked) checked.textContent='Last broker sync: '+new Date().toLocaleString('en-IN',{timeZone:'Asia/Kolkata'});
+      return d;
+    }catch(e){ return {connected:false}; }
+  };
+  window.loadPhase12Readiness = async function(){
+    const note=document.getElementById('p12Checks');
+    try{
+      if(note) note.textContent='Checking Go-Live readiness…';
+      const r=await fetch((location.origin||'')+'/api/phase12/readiness?exchange=NSE',{cache:'no-store'});
+      const d=await r.json().catch(()=>({}));
+      const checks=Array.isArray(d.checks)?d.checks:[];
+      const find=id=>checks.find(x=>x.id===id);
+      const set=(id,ok,good='PASS',bad='WAIT')=>{const el=document.getElementById(id);if(el){el.textContent=ok?good:bad;el.className=ok?'bullish':'neutral';}};
+      set('p12Angel',!!find('ANGEL_SESSION')?.ok, 'CONNECTED','WAIT');
+      set('p12Static',!!find('STATIC_IP')?.ok, 'VERIFIED','WAIT');
+      set('p12Market',!!find('MARKET_SESSION')?.ok, 'OPEN','WAIT');
+      set('p12Exec',!!d.liveReady,'READY','LOCKED');
+      if(note) note.textContent=checks.map(x=>x.label+': '+(x.ok?'PASS':'WAIT')).join(' • ') || (d.mode||'LOCKED');
+      return d;
+    }catch(e){ if(note) note.textContent='Readiness error: '+(e.message||'Unknown error'); return null; }
+  };
   function boot(){
     const btn=document.getElementById('angelConnectBtn');
     if(btn) btn.addEventListener('click',function(ev){ev.preventDefault();ev.stopImmediatePropagation();connect();},true);
     /* Surface JavaScript/runtime errors instead of silently doing nothing. */
     window.addEventListener('error',e=>note('Dashboard script error: '+(e.message||'Unknown JavaScript error')));
     window.addEventListener('unhandledrejection',e=>note('Dashboard promise error: '+(e.reason?.message||String(e.reason||'Unknown error'))));
-    fetch((location.origin||'')+'/api/angel/status',{cache:'no-store'}).then(r=>r.json()).then(statusText).catch(()=>{});
+    fetch((location.origin||'')+'/api/angel/status',{cache:'no-store'}).then(r=>r.json()).then(async d=>{
+      statusText(d);
+      if(d.connected){
+        setTimeout(async()=>{
+          try{
+            if(typeof window.loadAll==='function') await window.loadAll();
+            if(typeof window.loadPrediction==='function') await window.loadPrediction(false);
+            if(typeof window.loadPhase11Shield==='function') await window.loadPhase11Shield();
+            if(typeof window.loadPhase12Readiness==='function') await window.loadPhase12Readiness();
+            if(typeof window.PTD?.refreshExpiries==='function') await window.PTD.refreshExpiries();
+          }catch(e){ note('Dashboard data load error: '+(e.message||'Unknown error')); }
+        },350);
+      }
+    }).catch(()=>{});
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot); else boot();
 })();
