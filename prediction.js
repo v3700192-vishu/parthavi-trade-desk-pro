@@ -103,14 +103,14 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
   if(global?.connected) score += dirScore(globalBull,globalBear,weights.global);
 
   const noTradeReasons=[];
-  if(vix!=null && Number.isFinite(Number(vix)) && (Number(vix)<12 || Number(vix)>22))
-    noTradeReasons.push('No Trade: Market is too slow or too volatile.');
+  if(vix==null || !Number.isFinite(Number(vix))) noTradeReasons.push('No Trade: India VIX is not verified live.');
+  else if(Number(vix)<12 || Number(vix)>22) noTradeReasons.push('No Trade: Market is too slow or too volatile.');
   if(adx!=null && Number.isFinite(adx) && adx<20)
     noTradeReasons.push('No Trade: ADX below 20 — market is choppy/sideways.');
-  if(vr10!=null && Number.isFinite(vr10) && vr10<1.5)
-    noTradeReasons.push(`No Trade: breakout volume is only ${vr10.toFixed(2)}x the 10-day same-slot average (<1.5x).`);
-  if(events?.eventDayBlock)
-    noTradeReasons.push('No Trade: high-impact event day gate is active.');
+  if(vr10==null || !Number.isFinite(vr10)) noTradeReasons.push('No Trade: 10-day breakout volume benchmark is not verified.');
+  else if(vr10<1.5) noTradeReasons.push(`No Trade: breakout volume is only ${vr10.toFixed(2)}x the 10-day same-slot average (<1.5x).`);
+  if(!events?.connected) noTradeReasons.push('No Trade: economic-event calendar is not verified live.');
+  else if(events?.eventDayBlock) noTradeReasons.push('No Trade: high-impact event day gate is active.');
   if(events?.hardBlock)
     noTradeReasons.push('No Trade: high-impact event window is active.');
 
@@ -145,7 +145,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
     + backtestBonus,
     50,95
   ));
-  const feedComplete=!!marketOpen && !!news?.connected && !!global?.connected && !!options?.connected && !events?.hardBlock && !events?.eventDayBlock;
+  const feedComplete=!!marketOpen && !!news?.connected && !!global?.connected && !!options?.connected && !!events?.connected && !events?.hardBlock && !events?.eventDayBlock;
   const hardNoTrade=noTradeReasons.length>0;
   // Strict quality gate: all critical filters + high confirmation are required before an entry signal.
   const eliteSetup=prediction!=='NEUTRAL' && confirmedCount>=9 && confirmationPct>=90 && modelConfidence>=85 && !hardNoTrade && feedComplete;
