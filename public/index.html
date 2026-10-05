@@ -957,30 +957,37 @@ async function loadAll(){
    renderGates(a.health||{});
    renderDecision(a.decision||{});
    processAlerts(a);
-   if(Array.isArray(a.candles)&&a.candles.length){
+
+   // HARD FRESHNESS GATE: never render an old local/session candle cache as LIVE.
+   const candleMaxAgeMs = tf==='1D' ? 48*60*60*1000 : tf==='1H' ? 2*60*60*1000 : 30*60*1000;
+   const candleFresh = rows => {
+     if(!Array.isArray(rows)||!rows.length) return false;
+     const lastMs=Date.parse(rows.at(-1)?.t);
+     return Number.isFinite(lastMs) && (Date.now()-lastMs)>=0 && (Date.now()-lastMs)<=candleMaxAgeMs;
+   };
+   liveData=null; window.__chartCacheAt=null;
+   if(candleFresh(a.candles)){
      liveData=a.candles;
-     try{window.__chartCacheAt=Date.now();localStorage.setItem('PTD_LAST_CANDLES_'+symbol,JSON.stringify({savedAt:window.__chartCacheAt,rows:a.candles.slice(-500)}));}catch{}
+     window.__chartCacheAt=Date.now();
+     try{localStorage.setItem('PTD_LAST_CANDLES_'+symbol,JSON.stringify({savedAt:window.__chartCacheAt,rows:a.candles.slice(-500)}));}catch{}
    }else{
-     liveData=null;
+     // Fetch directly from the authenticated Angel One candle endpoint.
      try{
-       const cached=JSON.parse(localStorage.getItem('PTD_LAST_CANDLES_'+symbol)||'null');
-       if(Array.isArray(cached?.rows)&&cached.rows.length){liveData=cached.rows;window.__chartCacheAt=cached.savedAt||null;}
+       const end=new Date();
+       const days=tf==='1D'?365:tf==='4H'?60:tf==='1H'?45:15;
+       const from=new Date(end.getTime()-days*86400000);
+       const fmt=x=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(x).replace(', ',' ').replace(/\\//g,'-');
+       const tokenMap={NIFTY:'99926000',BANKNIFTY:'99926009',FINNIFTY:'99926037',MIDCPNIFTY:'99926074',SENSEX:'99919000'};
+       const intervalMap={'1M':'ONE_MINUTE','5M':'FIVE_MINUTE','15M':'FIFTEEN_MINUTE','30M':'THIRTY_MINUTE','1H':'ONE_HOUR','4H':'ONE_HOUR','1D':'ONE_DAY'};
+       const cr=await fetch(API_BASE+'/api/angel/candles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({exchange:'NSE',symboltoken:tokenMap[symbol]||'99926000',interval:intervalMap[tf]||'FIFTEEN_MINUTE',fromdate:fmt(from),todate:fmt(end)})});
+       const cd=await cr.json();
+       const raw=cd?.data?.data||cd?.data||[];
+       const rows=Array.isArray(raw)?raw.map(x=>({t:x[0],o:Number(x[1]),h:Number(x[2]),l:Number(x[3]),c:Number(x[4]),v:Number(x[5]||0)})).filter(x=>[x.o,x.h,x.l,x.c].every(Number.isFinite)):[];
+       if(candleFresh(rows)){
+         liveData=rows; window.__chartCacheAt=Date.now();
+         try{localStorage.setItem('PTD_LAST_CANDLES_'+symbol,JSON.stringify({savedAt:window.__chartCacheAt,rows:rows.slice(-500)}));}catch{}
+       }
      }catch{}
-     if(!liveData){
-       try{
-         const end=new Date();
-         const days=tf==='1D'?365:tf==='4H'?60:tf==='1H'?45:15;
-         const from=new Date(end.getTime()-days*86400000);
-         const fmt=x=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(x).replace(', ',' ').replace(/\\//g,'-');
-         const tokenMap={NIFTY:'99926000',BANKNIFTY:'99926009',FINNIFTY:'99926037',MIDCPNIFTY:'99926074',SENSEX:'99919000'};
-         const intervalMap={'1M':'ONE_MINUTE','5M':'FIVE_MINUTE','15M':'FIFTEEN_MINUTE','30M':'THIRTY_MINUTE','1H':'ONE_HOUR','4H':'ONE_HOUR','1D':'ONE_DAY'};
-         const cr=await fetch(API_BASE+'/api/angel/candles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({exchange:'NSE',symboltoken:tokenMap[symbol]||'99926000',interval:intervalMap[tf]||'FIFTEEN_MINUTE',fromdate:fmt(from),todate:fmt(end)})});
-         const cd=await cr.json();
-         const raw=cd?.data?.data||cd?.data||[];
-         const rows=Array.isArray(raw)?raw.map(x=>({t:x[0],o:Number(x[1]),h:Number(x[2]),l:Number(x[3]),c:Number(x[4]),v:Number(x[5]||0)})).filter(x=>[x.o,x.h,x.l,x.c].every(Number.isFinite)):[];;
-         if(rows.length){liveData=rows;window.__chartCacheAt=Date.now();try{localStorage.setItem('PTD_LAST_CANDLES_'+symbol,JSON.stringify({savedAt:window.__chartCacheAt,rows:rows.slice(-500)}));}catch{}}
-       }catch{}
-     }
    }
    drawChart();
    if(m?.connected) await loadBrokerAccount();
