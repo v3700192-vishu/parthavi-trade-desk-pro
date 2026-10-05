@@ -692,6 +692,78 @@ button,input,select{font:inherit} button{cursor:pointer}
 <div class="toast" id="toast"></div>
 
 <script>
+/* Connection-safe bootstrap: captures the Angel button before the rest of the dashboard,
+   so a separate dashboard runtime error cannot make broker login appear to do nothing. */
+(function(){
+  const el=id=>document.getElementById(id);
+  const sameOrigin=()=>location.origin&&/^https?:$/.test(location.protocol)?location.origin:'';
+  function note(v){const x=el('angelTestNote');if(x)x.textContent=v;}
+  function badge(v,cls){const x=el('angelTestBadge');if(x){x.textContent=v;x.className='badge '+cls;}}
+  function statusText(d){
+    const x=el('angelStatusText');
+    if(x)x.textContent=d?.connected?('CONNECTED • '+(d.clientCode||'')+(d.websocket?' • STREAM LIVE':' • REST ONLY')):'DISCONNECTED';
+    if(typeof window.setGate==='function'){
+      window.setGate('cxLogin',!!d?.connected,d?.connected?'ON':'OFF');
+      window.setGate('cxWs',!!d?.websocket,d?.websocket?'LIVE':(d?.connected?'READY':'OFF'));
+    }
+  }
+  async function connect(ev){
+    ev?.preventDefault?.(); ev?.stopImmediatePropagation?.();
+    const btn=el('angelConnectBtn');
+    const clientCode=(el('angelClient')?.value||'').trim();
+    const pin=el('angelPin')?.value||'';
+    const totp=(el('angelTotp')?.value||'').trim();
+    if(!pin||!totp){badge('LOGIN INPUT MISSING','danger');note('Connection blocked: PIN + TOTP are required.');return false;}
+    if(btn){btn.disabled=true;btn.textContent='Connecting…';}
+    badge('CONNECTING','warn');note('Connecting to Angel One… waiting for login response.');
+    const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),25000);
+    try{
+      const r=await fetch(sameOrigin()+'/api/angel/login',{
+        method:'POST',headers:{'Content-Type':'application/json','Cache-Control':'no-cache'},
+        cache:'no-store',body:JSON.stringify({clientCode,pin,totp}),signal:controller.signal
+      });
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(d.error||('Connection failed (HTTP '+r.status+')'));
+      el('angelPin').value='';el('angelTotp').value='';
+      statusText(d);
+      badge('LOGIN OK','ok');note('Angel One login accepted. Verifying live NIFTY quote and stream…');
+      try{
+        const qr=await fetch(sameOrigin()+'/api/angel/connection-test?symbol=NIFTY',{cache:'no-store'});
+        const q=await qr.json().catch(()=>({}));
+        if(q.ok){
+          badge('LIVE CONNECTED','ok');
+          note('Angel One connected • LIVE NIFTY LTP '+(q.data?.ltp??'—')+(q.websocket?' • STREAM LIVE':' • REST OK, stream reconnecting'));
+          if(typeof window.setGate==='function')window.setGate('cxQuote',true,'LIVE');
+        }else{
+          badge('LOGIN OK • QUOTE FAILED','danger');
+          note('Angel session connected, but live quote failed: '+(q.error||'Unknown error'));
+        }
+      }catch(e){
+        badge('LOGIN OK • TEST FAILED','danger');note('Angel session connected, but quote verification failed: '+(e?.message||'Unknown error'));
+      }
+      if(typeof window.loadBrokerAccount==='function')await window.loadBrokerAccount().catch(()=>{});
+      if(typeof window.loadAll==='function')setTimeout(()=>window.loadAll().catch(()=>{}),250);
+      if(typeof window.loadPrediction==='function')setTimeout(()=>window.loadPrediction(false).catch(()=>{}),350);
+      if(typeof window.loadPhase11Shield==='function')setTimeout(()=>window.loadPhase11Shield().catch(()=>{}),450);
+      if(typeof window.loadPhase12Readiness==='function')setTimeout(()=>window.loadPhase12Readiness().catch(()=>{}),550);
+      if(typeof window.refreshExpiries==='function')setTimeout(()=>window.refreshExpiries().catch(()=>{}),650);
+    }catch(e){
+      const msg=e?.name==='AbortError'?'Connection timed out after 25 seconds.':(e?.message||'Connection failed');
+      badge('CONNECTION ERROR','danger');note('Angel One connection error: '+msg);
+    }finally{
+      clearTimeout(timer);if(btn){btn.disabled=false;btn.textContent='Connect Angel One';}
+    }
+    return false;
+  }
+  function boot(){
+    const btn=el('angelConnectBtn');
+    if(btn)btn.addEventListener('click',connect,true);
+    fetch(sameOrigin()+'/api/angel/status',{cache:'no-store'}).then(r=>r.json()).then(statusText).catch(()=>{});
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+})();
+</script>
+<script>
 async function angelStatus(){
   try{
     const r=await fetch(API_BASE+'/api/angel/status',{cache:'no-store'});
