@@ -211,8 +211,8 @@ button,input,select{font:inherit} button{cursor:pointer}
   </div>
   <div class="finder-note">API key stays on the server. PIN/TOTP are used only for the login request and are not written to the journal or localStorage. Live order execution remains separately locked until the broker/static-IP and final-confirmation gates are verified.</div>
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-    <button class="btn primary" onclick="testAngelFeed()">⚡ Test Live Feed</button><button class="btn" onclick="angelReconnect()">↻ Reconnect Stream</button>
-    <button class="btn" onclick="refreshExpiries()">↻ Load Expiries</button>
+    <button class="btn primary" onclick="PTD.testAngelFeed()">⚡ Test Live Feed</button><button class="btn" onclick="PTD.angelReconnect()">↻ Reconnect Stream</button>
+    <button class="btn" onclick="PTD.refreshExpiries()">↻ Load Expiries</button>
     <span class="badge warn" id="angelTestBadge">NOT TESTED</span>
   </div>
   <div class="finder-note" id="angelTestNote">Phase 2: login → instrument master → live quote → option contract lookup. WebSocket streaming can be enabled after the REST quote test passes.</div>
@@ -705,6 +705,51 @@ button,input,select{font:inherit} button{cursor:pointer}
       if(btn){btn.disabled=false;btn.textContent=btn.dataset.prev||'Connect Angel One';}
     }
   }
+  window.PTD = window.PTD || {};
+  window.PTD.angelReconnect = async function(){
+    const noteEl=document.getElementById('angelTestNote');
+    try{
+      if(noteEl) noteEl.textContent='Reconnecting Angel One WebSocket…';
+      const r=await fetch((location.origin||'')+'/api/angel/reconnect',{method:'POST',cache:'no-store'});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(d.error||('WebSocket reconnect failed (HTTP '+r.status+')'));
+      statusText(d);
+      if(noteEl) noteEl.textContent=d.websocket?'Angel One WebSocket STREAM LIVE.':('WebSocket not live yet.'+(d.error?' '+d.error:''));
+    }catch(e){ if(noteEl) noteEl.textContent='Reconnect error: '+(e.message||'Unknown error'); }
+  };
+  window.PTD.testAngelFeed = async function(){
+    const noteEl=document.getElementById('angelTestNote'), badge=document.getElementById('angelTestBadge');
+    try{
+      if(noteEl) noteEl.textContent='Testing Angel One live quote…';
+      const sr=await fetch((location.origin||'')+'/api/angel/status',{cache:'no-store'});
+      const st=await sr.json();
+      statusText(st);
+      if(!st.connected) throw new Error('Angel One session is not connected');
+      const r=await fetch((location.origin||'')+'/api/angel/connection-test?symbol=NIFTY',{cache:'no-store'});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(d.error||('Live quote test failed (HTTP '+r.status+')'));
+      if(badge){badge.textContent='LIVE QUOTE OK';badge.className='badge ok';}
+      if(noteEl) noteEl.textContent='LIVE QUOTE OK • '+(d.symbol||'NIFTY')+' • LTP '+(d.data?.ltp??'—')+' • token '+(d.token||'—');
+      const latest=await (await fetch((location.origin||'')+'/api/angel/status',{cache:'no-store'})).json();
+      statusText(latest);
+    }catch(e){
+      if(badge){badge.textContent='TEST FAILED';badge.className='badge danger';}
+      if(noteEl) noteEl.textContent='Live feed test error: '+(e.message||'Unknown error');
+    }
+  };
+  window.PTD.refreshExpiries = async function(){
+    const noteEl=document.getElementById('angelTestNote');
+    const underlying=(document.getElementById('cfUnderlying')?.value||'NIFTY').trim().toUpperCase();
+    try{
+      if(noteEl) noteEl.textContent='Loading live expiries…';
+      const r=await fetch((location.origin||'')+'/api/angel/expiries?exchange=NSE&segment=OPTIDX&underlying='+encodeURIComponent(underlying),{cache:'no-store'});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(d.error||('Expiry lookup failed (HTTP '+r.status+')'));
+      const sel=document.getElementById('cfExpiry');
+      if(sel) sel.innerHTML=(d.expiries||[]).map(x=>'<option value="'+String(x).replace(/"/g,'&quot;')+'">'+String(x)+'</option>').join('')||'<option value="">No expiry</option>';
+      if(noteEl) noteEl.textContent=(d.expiries||[]).length?'Expiries loaded • '+d.expiries.length+' available':'No expiry data found';
+    }catch(e){ if(noteEl) noteEl.textContent='Expiry error: '+(e.message||'Unknown error'); }
+  };
   function boot(){
     const btn=document.getElementById('angelConnectBtn');
     if(btn) btn.addEventListener('click',function(ev){ev.preventDefault();ev.stopImmediatePropagation();connect();},true);
