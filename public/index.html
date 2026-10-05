@@ -777,18 +777,53 @@ async function angelStatus(){
     return d;
   }catch(e){ setGate('cxLogin',false,'OFF'); setGate('cxWs',false,'OFF'); return {connected:false}; }
 }
-async function angelConnect(){
-  const clientCode=document.getElementById('angelClient').value.trim();
-  const pin=document.getElementById('angelPin').value;
-  const totp=document.getElementById('angelTotp').value.trim();
-  if(!pin||!totp){toast('PIN + TOTP required');return;}
+async function angelConnect(ev){
+  ev?.preventDefault?.(); ev?.stopImmediatePropagation?.();
+  const btn=document.querySelector('button[onclick*="angelConnect"]');
+  const noteEl=document.getElementById('angelTestNote');
+  const badgeEl=document.getElementById('angelTestBadge');
+  const statusEl=document.getElementById('angelStatusText');
+  const setUi=(badge,note,cls)=>{
+    if(badgeEl){badgeEl.textContent=badge;badgeEl.className='badge '+(cls||'warn');}
+    if(noteEl)noteEl.textContent=note;
+    if(statusEl && badge==='CONNECTING')statusEl.textContent='CONNECTING…';
+  };
+  const clientCode=document.getElementById('angelClient')?.value.trim()||'';
+  const pin=document.getElementById('angelPin')?.value||'';
+  const totp=document.getElementById('angelTotp')?.value.trim()||'';
+  if(!clientCode){setUi('LOGIN INPUT MISSING','Connection blocked: Angel One Client Code is required.','danger');toast('Client Code required');return false;}
+  if(!pin||!totp){setUi('LOGIN INPUT MISSING','Connection blocked: PIN + TOTP are required.','danger');toast('PIN + TOTP required');return false;}
+  if(btn){btn.disabled=true;btn.textContent='Connecting…';}
+  setUi('CONNECTING','Connecting to Angel One… waiting for login response.','warn');
   try{
-    const r=await fetch(API_BASE+'/api/angel/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientCode,pin,totp})});
-    const d=await r.json();
-    if(!r.ok) throw new Error(d.error||'Connection failed');
-    document.getElementById('angelPin').value=''; document.getElementById('angelTotp').value='';
-    toast('Angel One connected'); await angelStatus(); await loadBrokerAccount();
-  }catch(e){toast(e.message||'Connection failed');}
+    const controller=new AbortController();
+    const timer=setTimeout(()=>controller.abort(),25000);
+    let r;
+    try{
+      r=await fetch(API_BASE+'/api/angel/login',{method:'POST',headers:{'Content-Type':'application/json','Cache-Control':'no-cache'},cache:'no-store',body:JSON.stringify({clientCode,pin,totp}),signal:controller.signal});
+    }finally{clearTimeout(timer);}
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(d.error||('Connection failed (HTTP '+r.status+')'));
+    document.getElementById('angelPin').value='';document.getElementById('angelTotp').value='';
+    await angelStatus();
+    setUi('LOGIN OK','Angel One login accepted. Verifying live NIFTY quote…','ok');
+    const qr=await fetch(API_BASE+'/api/angel/connection-test?symbol=NIFTY',{cache:'no-store'});
+    const q=await qr.json().catch(()=>({}));
+    if(!qr.ok||!q.ok)throw new Error(q.error||('Live quote verification failed (HTTP '+qr.status+')'));
+    setUi('LIVE CONNECTED','Angel One connected • LIVE NIFTY LTP '+(q.data?.ltp??'—')+(q.websocket?' • STREAM LIVE':' • REST OK, stream reconnecting'),'ok');
+    if(typeof window.setGate==='function'){window.setGate('cxLogin',true,'ON');window.setGate('cxQuote',true,'LIVE');window.setGate('cxWs',!!q.websocket,q.websocket?'LIVE':'READY');}
+    toast('Angel One LIVE connected');
+    if(typeof loadBrokerAccount==='function')await loadBrokerAccount();
+    return true;
+  }catch(e){
+    const msg=e?.name==='AbortError'?'Connection timed out after 25 seconds.':(e?.message||'Connection failed');
+    setUi('CONNECTION ERROR','Angel One connection error: '+msg,'danger');
+    if(typeof window.setGate==='function'){window.setGate('cxLogin',false,'OFF');window.setGate('cxQuote',false,'OFF');window.setGate('cxWs',false,'OFF');}
+    toast(msg);
+    return false;
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent='Connect Angel One';}
+  }
 }
 async function angelReconnect(){
   try{
