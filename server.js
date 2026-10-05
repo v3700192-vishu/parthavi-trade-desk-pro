@@ -402,6 +402,17 @@ async function events(){
 
 // Angel One SmartAPI connection layer. Credentials/tokens never enter public/index.html.
 app.get("/api/angel/status", (req,res)=>res.json(angelStatus()));
+app.get("/api/angel/config-status", (req,res)=>{
+  const hasApiKey=Boolean(String(process.env.ANGEL_API_KEY||process.env.ANGELONE_API_KEY||"").trim());
+  const hasClientCode=Boolean(String(process.env.ANGEL_CLIENT_CODE||process.env.ANGELONE_CLIENT_CODE||"").trim());
+  res.json({
+    ok:true,
+    configured:hasApiKey && hasClientCode,
+    apiKeyConfigured:hasApiKey,
+    clientCodeConfigured:hasClientCode,
+    note:"PIN and TOTP are supplied only at login time and are never stored by this endpoint."
+  });
+});
 app.post("/api/angel/reconnect", async (req,res)=>{
   try{
     const out=await angelReconnectWebSocket();
