@@ -675,7 +675,32 @@ async function resolveIndexToken(symbol){
  if(!x) throw new Error('Index instrument not found');
  return {token:String(x.token),symbol:x.symbol,exchange:String(x.exch_seg||'NSE').toUpperCase()};
 }
-async function loadTfSummary(symbol, interval, days){ const ins=await resolveIndexToken(symbol); const end=new Date(); const from=new Date(end.getTime()-days*86400000); const f=x=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(x)).replace(', ',' ').replace(/\//g,'-'); const raw=await angelCandles({exchange:'NSE',symboltoken:ins.token,interval,fromdate:f(from),todate:f(end)}); const rows=(raw?.data||[]).map(x=>({t:x[0],o:Number(x[1]),h:Number(x[2]),l:Number(x[3]),c:Number(x[4]),v:Number(x[5]||0)})).filter(x=>[x.o,x.h,x.l,x.c].every(Number.isFinite)); return {ins,rows,summary:summarize(rows)}; }
+const candleCache=new Map();
+function candleRows(raw){ return (raw?.data||[]).map(x=>({t:x[0],o:Number(x[1]),h:Number(x[2]),l:Number(x[3]),c:Number(x[4]),v:Number(x[5]||0)})).filter(x=>[x.o,x.h,x.l,x.c].every(Number.isFinite)); }
+function bucketStart(ts, minutes){ return Math.floor(new Date(ts).getTime()/(minutes*60000))*minutes*60000; }
+function aggregateCandles(rows, minutes){
+  if(!Array.isArray(rows)||!rows.length) return [];
+  const out=[]; let cur=null, key=null;
+  for(const r of rows){ const k=bucketStart(r.t,minutes); if(k!==key){ if(cur) out.push(cur); key=k; cur={t:new Date(k).toISOString(),o:r.o,h:r.h,l:r.l,c:r.c,v:r.v||0}; } else { cur.h=Math.max(cur.h,r.h); cur.l=Math.min(cur.l,r.l); cur.c=r.c; cur.v+=r.v||0; } }
+  if(cur) out.push(cur); return out;
+}
+async function loadBase5m(symbol){
+  const key=String(symbol||'NIFTY').toUpperCase(), now=Date.now(), cached=candleCache.get(key);
+  if(cached && now-cached.at<15000) return cached.rows;
+  const ins=await resolveIndexToken(key), end=new Date(), from=new Date(end.getTime()-10*86400000);
+  const f=x=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(x)).replace(', ',' ').replace(/\//g,'-');
+  const raw=await angelCandles({exchange:'NSE',symboltoken:ins.token,interval:'FIVE_MINUTE',fromdate:f(from),todate:f(end)});
+  const rows=candleRows(raw); candleCache.set(key,{at:now,rows}); return rows;
+}
+async function loadTfSummary(symbol, interval, days){
+  const ins=await resolveIndexToken(symbol); let rows=[];
+  if(interval==='FIVE_MINUTE') rows=await loadBase5m(symbol);
+  else if(interval==='FIFTEEN_MINUTE') rows=aggregateCandles(await loadBase5m(symbol),15);
+  else if(interval==='ONE_HOUR') rows=aggregateCandles(await loadBase5m(symbol),60);
+  else { const end=new Date(), from=new Date(end.getTime()-Math.min(days||1,1)*86400000); const f=x=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(x)).replace(', ',' ').replace(/\//g,'-'); rows=candleRows(await angelCandles({exchange:'NSE',symboltoken:ins.token,interval,fromdate:f(from),todate:f(end)})); }
+  const wanted=interval==='ONE_HOUR'?Math.max(30,Math.ceil((days||10)*5)):interval==='FIFTEEN_MINUTE'?Math.max(20,Math.ceil((days||10)*26)):Math.max(60,Math.ceil((days||10)*75));
+  const trimmed=rows.slice(-wanted); return {ins,rows:trimmed,summary:summarize(trimmed)};
+}
 
 
 // PHASE 10 — advanced prediction, confirmation and transparent historical target-hit analysis.
@@ -703,8 +728,13 @@ app.get("/api/analyze",async(req,res)=>{
   let h={market:false,options:false,news:false,global:false}, packs={};
   try{
     if(angelStatus().connected){
-      const [h1,m15,m5]=await Promise.all([loadTfSummary(symbol,'ONE_HOUR',30),loadTfSummary(symbol,'FIFTEEN_MINUTE',20),loadTfSummary(symbol,'FIVE_MINUTE',10)]);
-      packs={h1,m15,m5}; h.market=true;
+      const [h1,m15,m5,opt]=await Promise.all([
+        loadTfSummary(symbol,'ONE_HOUR',10),
+        loadTfSummary(symbol,'FIFTEEN_MINUTE',10),
+        loadTfSummary(symbol,'FIVE_MINUTE',10),
+        options(symbol)
+      ]);
+      packs={h1,m15,m5,opt}; h.market=!!(m5?.rows?.length); h.options=!!opt?.connected;
     }
   }catch(e){ packs.error=e.message; }
   const s1=packs.h1?.summary,s15=packs.m15?.summary,s5=packs.m5?.summary;
@@ -716,7 +746,7 @@ app.get("/api/analyze",async(req,res)=>{
   const bullishVotes=[trend==='BULLISH',setup==='BULLISH',s5?.rsi>50,s5?.macd?.hist>0,s5?.last>s5?.vwap,s5?.adx>=20].filter(Boolean).length;
   const bearishVotes=[trend==='BEARISH',setup==='BEARISH',s5?.rsi<50,s5?.macd?.hist<0,s5?.last<s5?.vwap,s5?.adx>=20].filter(Boolean).length;
   const techSigned = h.market ? ((bullishVotes-bearishVotes)/6)*100 : 0;
-  const fused=fuse({technicalScore:techSigned,newsScore:newsStrat.score,globalScore:globalStrat.score,eventRisk:eventStrat.hardBlock,marketOpen:marketSession(),feeds:{market:h.market,options:false,news:newsStrat.connected,global:globalStrat.connected}});
+  const fused=fuse({technicalScore:techSigned,newsScore:newsStrat.score,globalScore:globalStrat.score,eventRisk:eventStrat.hardBlock,marketOpen:marketSession(),feeds:{market:h.market,options:h.options,news:newsStrat.connected,global:globalStrat.connected}});
   score=Math.round(Math.abs(fused.score)); confidence=h.market?(score>=67?'SETUP':score>=45?'WATCH':'WAIT'):'LOCKED';
   if(h.market) reason=`Technical confluence ${Math.round(Math.abs(techSigned))} • News ${newsStrat.bias} • Global ${globalStrat.bias}. ${eventStrat.reason}`;
   const complete=marketSession()&&h.market&&h.options&&newsStrat.connected&&globalStrat.connected&&!eventStrat.hardBlock;
@@ -724,7 +754,7 @@ app.get("/api/analyze",async(req,res)=>{
   else {action='NO TRADE'; if(!marketSession()) reason='Exchange session is closed. No live trade is permitted.'; else if(eventStrat.hardBlock) reason=eventStrat.reason; else if(!newsStrat.connected||!globalStrat.connected) reason='News/global feeds are not verified fresh. Final decision stays locked.'; else if(!h.options) reason='Option positioning feed is not verified. Final options decision stays locked.';}
   const last=s5?.last||s15?.last||s1?.last; const atr=s5?.atr; const levels={r2:s15?.last&&s15?.atr?(s15.last+s15.atr*2).toFixed(2):'—',r1:s15?.last&&s15?.atr?(s15.last+s15.atr).toFixed(2):'—',vwap:s15?.vwap?.toFixed?.(2)||'—',s1:s15?.last&&s15?.atr?(s15.last-s15.atr).toFixed(2):'—',s2:s15?.last&&s15?.atr?(s15.last-s15.atr*2).toFixed(2):'—'};
   const bp=action==='CALL'?{direction:'CALL',strike:'',entry:last||'',sl:atr&&last?(last-atr*1.2).toFixed(2):'',t1:atr&&last?(last+atr*1.5).toFixed(2):'',t2:atr&&last?(last+atr*2.5).toFixed(2):''}:action==='PUT'?{direction:'PUT',strike:'',entry:last||'',sl:atr&&last?(last+atr*1.2).toFixed(2):'',t1:atr&&last?(last-atr*1.5).toFixed(2):'',t2:atr&&last?(last-atr*2.5).toFixed(2):''}:{direction:'CALL',strike:'',entry:'',sl:'',t1:'',t2:''};
-  res.json({health:{...h,news:newsStrat.connected,global:globalStrat.connected},decision:{action,score,confidence,rr:action==='CALL'||action==='PUT'?'1:1.25':'—',reason,trend1h:trend,setup15m:setup,trigger5m:trigger,ema:s5?`20 ${s5.ema20?.toFixed(2)||'—'} / 50 ${s5.ema50?.toFixed(2)||'—'} / 200 ${s5.ema200?.toFixed(2)||'—'}`:'WAIT',rsi:s5?.rsi?.toFixed?.(1)||'—',macd:s5?`${s5.macd?.hist>0?'BULLISH':'BEARISH'} ${s5.macd?.hist?.toFixed?.(2)||'—'}`:'WAIT',adx:s5?.adx?.toFixed?.(1)||'—',vwap:s5?.vwap?.toFixed?.(2)||'—',priceAction:s5?.candle||'WAIT',volume:s5?'LIVE':'WAIT',atr:s5?.atr?.toFixed?.(2)||'—',momentum:s5?.rsi>50?'BULLISH':s5?.rsi<50?'BEARISH':'WAIT',options:'WAIT',news:newsStrat.bias,global:globalStrat.bias,event:eventStrat.hardBlock?'HIGH RISK':'WATCH',levels,blueprint:bp,newsStrategy:newsStrat,globalStrategy:globalStrat,eventStrategy:eventStrat,fusion:{score:fused.score,direction:fused.direction,hardGate:fused.hardGate}},candles:s5?.rows||null,multiTf:{h1:s1||null,m15:s15||null,m5:s5||null}});
+  res.json({health:{...h,news:newsStrat.connected,global:globalStrat.connected},decision:{action,score,confidence,rr:action==='CALL'||action==='PUT'?'1:1.25':'—',reason,trend1h:trend,setup15m:setup,trigger5m:trigger,ema:s5?`20 ${s5.ema20?.toFixed(2)||'—'} / 50 ${s5.ema50?.toFixed(2)||'—'} / 200 ${s5.ema200?.toFixed(2)||'—'}`:'WAIT',rsi:s5?.rsi?.toFixed?.(1)||'—',macd:s5?`${s5.macd?.hist>0?'BULLISH':'BEARISH'} ${s5.macd?.hist?.toFixed?.(2)||'—'}`:'WAIT',adx:s5?.adx?.toFixed?.(1)||'—',vwap:s5?.vwap?.toFixed?.(2)||'—',priceAction:s5?.candle||'WAIT',volume:s5?'LIVE':'WAIT',atr:s5?.atr?.toFixed?.(2)||'—',momentum:s5?.rsi>50?'BULLISH':s5?.rsi<50?'BEARISH':'WAIT',options:h.options?'LIVE':'WAIT',news:newsStrat.bias,global:globalStrat.bias,event:eventStrat.hardBlock?'HIGH RISK':'WATCH',levels,blueprint:bp,newsStrategy:newsStrat,globalStrategy:globalStrat,eventStrategy:eventStrat,fusion:{score:fused.score,direction:fused.direction,hardGate:fused.hardGate}},candles:s5?.rows||null,multiTf:{h1:s1||null,m15:s15||null,m5:s5||null}});
 });
 
 app.post("/api/order",(req,res)=>res.status(423).json({ok:false,error:"USE_PHASE5_PREVIEW",message:"Phase 5 uses /api/order/preview then explicit /api/order/execute confirmation."}));
