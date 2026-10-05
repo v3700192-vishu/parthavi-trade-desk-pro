@@ -35,7 +35,9 @@ export async function loginAngel({clientCode, pin, totp}){
   if(!data?.status) throw new Error(data?.message || "Angel One login failed");
   session = {connected:true, clientCode:cc, loginAt:new Date().toISOString(), jwtToken:data.data?.jwtToken||null, feedToken:data.data?.feedToken||null, profile:null};
   try { session.profile = await api.getProfile(); } catch {}
-  try { await connectMarketWebSocket(); } catch (e) { wsError = e?.message || "WebSocket connection failed"; }
+  // Do not block REST login on the streaming socket. Angel One login succeeds first;
+  // WebSocket connection is established in the background and can retry independently.
+  void connectMarketWebSocket().catch(e=>{ wsError=e?.message || "WebSocket connection failed"; scheduleReconnect(); });
   return {connected:true, clientCode:cc, loginAt:session.loginAt, profile:session.profile, websocket:angelStatus().websocket, websocketError:wsError};
 }
 
@@ -350,6 +352,11 @@ async function connectMarketWebSocket(){
   wsError=null;
   await subscribeOnSocket(["99926000","99926009","99926017","99926037","99926074"],1,1);
   return angelStatus();
+}
+
+export async function reconnectWebSocket(){
+  if(!session.connected) throw new Error("Angel One is not connected");
+  return await connectMarketWebSocket();
 }
 
 export async function subscribe(tokens, exchangeType=2, mode=1){
