@@ -718,7 +718,7 @@ button,input,select{font:inherit} button{cursor:pointer}
 </script>
 
 <script>
-async function angelStatus(){
+async async function angelStatus(){
   try{
     const r=await fetch(API_BASE+'/api/angel/status',{cache:'no-store'});
     const d=await r.json();
@@ -730,7 +730,7 @@ async function angelStatus(){
     return d;
   }catch(e){ setGate('cxLogin',false,'OFF'); setGate('cxWs',false,'OFF'); return {connected:false}; }
 }
-async function angelConnect(){
+async async function angelConnect(){
   const clientCode=document.getElementById('angelClient').value.trim();
   const pin=document.getElementById('angelPin').value;
   const totp=document.getElementById('angelTotp').value.trim();
@@ -846,7 +846,7 @@ async function analyseContract(x){
 $('cfUnderlying')?.addEventListener('change',()=>{ $('cfExpiry').innerHTML='<option value="">Load expiries</option>'; refreshExpiries(); });
 
 
-async function refreshExpiries(){
+async async function refreshExpiries(){
   const exchange=$('cfExchange').value,segment=$('cfSegment').value,underlying=$('cfUnderlying').value.trim().toUpperCase();
   if(!underlying){toast('Enter an underlying symbol first');return}
   try{
@@ -856,7 +856,7 @@ async function refreshExpiries(){
     setGate('cxMaster',!!r.expiries?.length,'ON');
   }catch(e){ toast('Expiry load failed'); }
 }
-async function testAngelFeed(){
+async async function testAngelFeed(){
   try{
     const health=await getJSON('/api/health');
     setGate('cxBackend',!!health.ok,'ON');
