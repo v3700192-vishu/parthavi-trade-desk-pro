@@ -247,15 +247,60 @@ async function options(symbol){
     return {connected:true,atm,ceoi:Number.isFinite(ceoi)?ceoi:null,cedoi,peoi:Number.isFinite(peoi)?peoi:null,pedoi,iv:null,pcr:Number.isFinite(ceoi)&&Number.isFinite(peoi)&&ceoi?Number((peoi/ceoi).toFixed(3)):null};
   }catch{return {connected:false,atm:null,ceoi:null,cedoi:null,peoi:null,pedoi:null,iv:null,pcr:null};}
 }
+const newsCache=new Map();
+const globalCache={at:0,data:null};
 async function news(symbol){
-  const raw=await fetchProviderJson(process.env.NEWS_PROVIDER_URL,process.env.NEWS_PROVIDER_TOKEN,{symbol,limit:30,country:"IN"});
-  if(raw==null) return DEMO?[]:[];
-  return normalizeNews(raw,symbol);
+  const key=String(symbol||'NIFTY').toUpperCase(), now=Date.now(), cached=newsCache.get(key);
+  if(cached && now-cached.at<60000) return cached.items;
+  try{
+    const raw=await fetchProviderJson(process.env.NEWS_PROVIDER_URL,process.env.NEWS_PROVIDER_TOKEN,{symbol,limit:30,country:"IN"});
+    if(raw!=null){
+      const items=normalizeNews(raw,symbol);
+      newsCache.set(key,{at:now,items});
+      return items;
+    }
+  }catch{}
+  try{
+    const q=encodeURIComponent(`${key} NSE India stock market`);
+    const url=`https://news.google.com/rss/search?q=${q}&hl=en-IN&gl=IN&ceid=IN:en`;
+    const rr=await fetch(url,{headers:{accept:'application/rss+xml,application/xml,text/xml','user-agent':'PARTHAVI-TRADE-DESK-PRO/1.0'},signal:AbortSignal.timeout(10000)});
+    if(!rr.ok) throw new Error(`News RSS HTTP ${rr.status}`);
+    const xml=await rr.text();
+    const tag=(body,name)=>{const m=body.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`,'i')); return m?m[1].replace(/<!\\[CDATA\\[|\\]\\]>/g,'').trim():'';};
+    const rawItems=[...xml.matchAll(/<item>([\\s\\S]*?)<\\/item>/gi)].map(m=>{const b=m[1];return {title:tag(b,'title'),source:tag(b,'source'),pubDate:tag(b,'pubDate'),link:tag(b,'link')};}).filter(x=>x.title);
+    const items=normalizeNews(rawItems,symbol);
+    newsCache.set(key,{at:now,items});
+    return items;
+  }catch{
+    return [];
+  }
+}
+async function yahooLastChange(ticker){
+  const url=`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5d`;
+  const r=await fetch(url,{headers:{accept:'application/json','user-agent':'PARTHAVI-TRADE-DESK-PRO/1.0'},signal:AbortSignal.timeout(8000)});
+  if(!r.ok) throw new Error(`Yahoo market HTTP ${r.status}`);
+  const j=await r.json(), result=j?.chart?.result?.[0], q=result?.indicators?.quote?.[0]||{}, closes=(q.close||[]).map(Number).filter(Number.isFinite);
+  const price=Number(result?.meta?.regularMarketPrice??closes.at(-1)); if(!Number.isFinite(price)) throw new Error('No Yahoo price');
+  const prev=closes.length>1?closes.at(-2):null;
+  const change=Number.isFinite(prev)&&prev!==0?((price-prev)/prev)*100:null;
+  return {value:Number(price.toFixed(4)),change:change==null?null:Number(change.toFixed(3))};
 }
 async function globalData(){
-  const raw=await fetchProviderJson(process.env.GLOBAL_PROVIDER_URL,process.env.GLOBAL_PROVIDER_TOKEN,{region:"global",symbols:"GIFT_NIFTY,US_FUTURES,ASIA,USDINR,US10Y,BRENT,GOLD,VIX"});
-  if(raw==null) return DEMO?{}:{};
-  return normalizeGlobal(raw.data||raw);
+  const now=Date.now();
+  if(globalCache.data && now-globalCache.at<60000) return globalCache.data;
+  const symbols={
+    US_FUTURES:'NQ=F',SPX:'^GSPC',NIKKEI:'^N225',HSI:'^HSI',USDINR:'INR=X',US10Y:'^TNX',BRENT:'BZ=F',GOLD:'GC=F',VIX:'^VIX'
+  };
+  const entries=await Promise.all(Object.entries(symbols).map(async([k,ticker])=>{try{return [k,await yahooLastChange(ticker)];}catch{return [k,null];}}));
+  const raw={};
+  for(const [k,v] of entries) if(v) raw[k]=v;
+  if(raw.SPX||raw.US_FUTURES) raw.US_FUTURES=raw.US_FUTURES||raw.SPX;
+  if(raw.NIKKEI||raw.HSI){
+    const a=[raw.NIKKEI?.change,raw.HSI?.change].filter(Number.isFinite);
+    if(a.length) raw.ASIA={value:'Nikkei/HSI',change:a.reduce((x,y)=>x+y,0)/a.length};
+  }
+  const out=normalizeGlobal(raw);
+  globalCache.at=now; globalCache.data=out; return out;
 }
 async function events(){
   const raw=await fetchProviderJson(process.env.EVENTS_PROVIDER_URL,process.env.EVENTS_PROVIDER_TOKEN,{country:"IN",region:"global",days:2});
