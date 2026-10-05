@@ -98,7 +98,7 @@ function phase11PolicyForOrder({p,instrument,signalSnapshot=null,openPositions=0
     modelConfidence:signalSnapshot?.modelConfidence,confirmationPct:signalSnapshot?.confirmationPct,
     spreadPct:Number.isFinite(spreadPct)?spreadPct:null,openPositions,side:orderType,
     signalAction:signalSnapshot?.action||'',isOption,hasStopLoss:sl>0,
-    vix:signalSnapshot?.vix,adx:signalSnapshot?.adx,volumeRatio10d:signalSnapshot?.volumeRatio10d,eventDayBlock:!!signalSnapshot?.eventDayBlock
+    vix:signalSnapshot?.vix,adx:signalSnapshot?.adx,volumeRatio10d:signalSnapshot?.volumeRatio10d,eventDayBlock:!!signalSnapshot?.eventDayBlock,theta:signalSnapshot?.theta,delta:signalSnapshot?.delta
   });
 }
 function modelSafe(x){return Number.isFinite(x)&&x>0?x:0;}
@@ -538,7 +538,7 @@ app.get('/api/phase11/signal-token',async(req,res)=>{
     const vix=Number(md?.VIX?.ltp);
     const prediction=buildPrediction({h1:h1.summary,m15:m15.summary,m5:m5.summary,rows5:m5.rows,news:ns,global:gs,events:es,options:opt,marketOpen:true,backtest:historical,vix:Number.isFinite(vix)?vix:null,oi:opt});
     if(prediction.signalState!=='CONFIRMED') return res.status(409).json({ok:false,error:'SIGNAL_NOT_CONFIRMED',prediction});
-    const payload={version:2,symbol,prediction:prediction.prediction,action:prediction.action,modelConfidence:prediction.modelConfidence,confirmationPct:prediction.confirmationPct,vix:prediction.vix,adx:prediction.adx,volumeRatio10d:prediction.volumeRatio10d,eventDayBlock:prediction.eventBlocked||prediction.noTradeReasons?.some(x=>String(x).includes('event')),rrGate:'1:2+',createdAt:Date.now(),expiresAt:Date.now()+60000};
+    const payload={version:2,symbol,prediction:prediction.prediction,action:prediction.action,modelConfidence:prediction.modelConfidence,confirmationPct:prediction.confirmationPct,vix:prediction.vix,adx:prediction.adx,volumeRatio10d:prediction.volumeRatio10d,eventDayBlock:prediction.eventBlocked||prediction.noTradeReasons?.some(x=>String(x).includes('event')),theta:prediction.theta,delta:prediction.delta,rrGate:'1:2+',createdAt:Date.now(),expiresAt:Date.now()+60000};
     res.json({ok:true,phase:11,token:signedPayload(payload),snapshot:payload,prediction});
   }catch(e){res.status(502).json({ok:false,error:e?.message||'Phase 11 signal unavailable'});}
 });
