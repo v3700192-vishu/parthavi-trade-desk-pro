@@ -692,7 +692,7 @@ async function angelReconnect(){
   }catch(e){$('angelTestNote').textContent='WebSocket error: '+(e.message||'Unknown error'); toast(e.message||'Reconnect failed');}
 }
 async function angelDisconnect(){ try{await fetch(API_BASE+'/api/angel/logout',{method:'POST'}); await angelStatus(); toast('Disconnected');}catch(e){toast('Disconnect failed');} }
-const API_BASE = localStorage.getItem('PTD_API_BASE') || '';
+const API_BASE = (location.origin && /^https?:$/.test(location.protocol)) ? location.origin : '';
 let symbol='NIFTY', tf='15M', scale=1, crosshair=false, drawing=false, liveData=null;
 const $=id=>document.getElementById(id);
 function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800)}
