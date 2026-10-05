@@ -12,6 +12,21 @@ import { status as phase11ProtectionStatus, evaluate as phase11Evaluate, onOrder
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const app = express();
+
+// Cross-origin access for the static GitHub Pages frontend and configured production frontend.
+const allowedOrigins = new Set(String(process.env.FRONTEND_ORIGINS || "https://v3700192-vishu.github.io,https://parthavi-trade-desk-pro.onrender.com").split(",").map(x=>x.trim()).filter(Boolean));
+app.use((req,res,next)=>{
+  const origin=String(req.headers.origin||"");
+  if(origin && allowedOrigins.has(origin)){
+    res.setHeader("Access-Control-Allow-Origin",origin);
+    res.setHeader("Vary","Origin");
+    res.setHeader("Access-Control-Allow-Credentials","true");
+    res.setHeader("Access-Control-Allow-Headers","Content-Type, Authorization");
+    res.setHeader("Access-Control-Allow-Methods","GET,POST,OPTIONS");
+  }
+  if(req.method==="OPTIONS") return res.sendStatus(204);
+  next();
+});
 app.use(express.json({limit:"64kb"}));
 
 // Phase 11 security middleware: conservative headers + lightweight per-IP rate limiting.
