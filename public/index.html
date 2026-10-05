@@ -668,7 +668,7 @@ async function angelConnect(){
   const clientCode=document.getElementById('angelClient').value.trim();
   const pin=document.getElementById('angelPin').value;
   const totp=document.getElementById('angelTotp').value.trim();
-  if(!clientCode||!pin||!totp){toast('Client Code + PIN + TOTP required');return;}
+  if(!pin||!totp){toast('PIN + TOTP required');return;}
   try{
     const r=await fetch(API_BASE+'/api/angel/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientCode,pin,totp})});
     const d=await r.json().catch(()=>({}));
