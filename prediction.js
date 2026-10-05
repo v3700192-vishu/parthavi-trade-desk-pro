@@ -111,6 +111,10 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
   else if(vr10<1.5) noTradeReasons.push(`No Trade: breakout volume is only ${vr10.toFixed(2)}x the 10-day same-slot average (<1.5x).`);
   if(!events?.connected) noTradeReasons.push('No Trade: economic-event calendar is not verified live.');
   else if(events?.eventDayBlock) noTradeReasons.push('No Trade: high-impact event day gate is active.');
+  const theta=Math.abs(Number(options?.theta)), delta=Math.abs(Number(options?.delta));
+  if(!Number.isFinite(theta)||!Number.isFinite(delta)) noTradeReasons.push('No Trade: live option Theta/Delta is not verified.');
+  else if(theta>=10 || delta<0.20) noTradeReasons.push('No Trade: Theta Decay is too high or Delta is too low. Option buying is risky today.');
+  else if(theta>=6 || delta<0.35) noTradeReasons.push('Caution: Theta/Delta profile is unfavorable for option buying.');
   if(events?.hardBlock)
     noTradeReasons.push('No Trade: high-impact event window is active.');
 
@@ -125,11 +129,12 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
     volume: vr10!=null&&vr10>=1.5,
     strength: adx!=null&&adx>=20,
     options: !!options?.connected && ((prediction==='BULLISH'&&optBull)||(prediction==='BEARISH'&&optBear)),
+    greeks: Number.isFinite(theta)&&Number.isFinite(delta)&&theta<6&&delta>=0.35,
     news: !!news?.connected,
     global: !!global?.connected,
     eventSafe: !events?.hardBlock
   };
-  const required=['trend','setup','trigger','momentum','volume','strength','options','news','global','eventSafe'];
+  const required=['trend','setup','trigger','momentum','volume','strength','options','greeks','news','global','eventSafe'];
   const confirmedCount=required.filter(k=>confirmations[k]).length;
   const confirmationPct=Math.round(confirmedCount/required.length*100);
   // Conservative confidence: high scores are earned only when confirmations and feed quality agree.
@@ -145,7 +150,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
     + backtestBonus,
     50,95
   ));
-  const feedComplete=!!marketOpen && !!news?.connected && !!global?.connected && !!options?.connected && !!events?.connected && !events?.hardBlock && !events?.eventDayBlock;
+  const feedComplete=!!marketOpen && !!news?.connected && !!global?.connected && !!options?.connected && !!events?.connected && Number.isFinite(theta) && Number.isFinite(delta) && !events?.hardBlock && !events?.eventDayBlock;
   const hardNoTrade=noTradeReasons.length>0;
   // Strict quality gate: all critical filters + high confirmation are required before an entry signal.
   const eliteSetup=prediction!=='NEUTRAL' && confirmedCount>=9 && confirmationPct>=90 && modelConfidence>=85 && !hardNoTrade && feedComplete;
@@ -164,7 +169,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
     prediction, action, signalState, score,
     modelConfidence, confirmationPct, confirmedCount, confirmationTotal:required.length,
     confirmations, trend1h:h1d, setup15m:m15d, trigger5m:String(m5?.candle||'WAIT'),
-    volumeRatio:vr, volumeRatio10d:vr10, volumeBreakout:!!x5.volumeBreakout, rsi, adx, atr, vwap, last, vix:Number.isFinite(Number(vix))?Number(vix):null, oi:oi||null, noTradeReasons, rrGate:'1:2 MINIMUM',
+    volumeRatio:vr, volumeRatio10d:vr10, volumeBreakout:!!x5.volumeBreakout, rsi, adx, atr, vwap, last, vix:Number.isFinite(Number(vix))?Number(vix):null, delta:Number.isFinite(delta)?delta:null, theta:Number.isFinite(theta)?theta:null, greekRisk:options?.greekRisk||null, oi:oi||null, noTradeReasons, rrGate:'1:2 MINIMUM',
     finalPlan:plan,
     signalBarTime:rows5?.at?.(-1)?.t||null,
     historical:backtest||{available:false,reason:'Historical backtest not available.'},
