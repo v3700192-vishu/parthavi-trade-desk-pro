@@ -359,6 +359,7 @@ button,input,select{font:inherit} button{cursor:pointer}
     <div class="check"><span>Market feed freshness</span><span class="badge danger" id="gMarket">OFF</span></div>
     <div class="check"><span>Options / OI feed</span><span class="badge danger" id="gOptions">OFF</span></div>
     <div class="check"><span>News + macro feed</span><span class="badge danger" id="gNews">OFF</span></div>
+    <div class="check"><span>Global risk freshness</span><span class="badge danger" id="gGlobal">OFF</span></div>
     <div class="check"><span>Risk / SL validation</span><span class="badge ok">ON</span></div>
     <div class="check"><span>Final user confirmation</span><span class="badge ok">ON</span></div>
   </div>
@@ -433,7 +434,7 @@ button,input,select{font:inherit} button{cursor:pointer}
     <div class="strategy-grid">
       <div class="strategy-box"><small>Headline Bias</small><b id="newsBias" class="neutral">WAIT</b><span id="newsReason">Feed not connected</span></div>
       <div class="strategy-box"><small>News Score</small><b id="newsScore">—</b><span>−100 to +100</span></div>
-      <div class="strategy-box"><small>Confidence</small><b id="newsConfidence">—</b><span>Source + freshness</span></div>
+      <div class="strategy-box"><small>Confidence</small><b id="newsConfidence">—</b><span id="newsMeta">Source + freshness</span></div>
       <div class="strategy-box"><small>High Impact</small><b id="newsImpact" class="neutral">WAIT</b><span id="newsBlock">No freeze</span></div>
     </div>
     <div class="news" id="newsList"><div class="news-item"><b>Feed not connected</b><span>Connect a compliant news provider on the server. Headlines are never hard-coded into the decision engine.</span></div></div>
@@ -444,8 +445,8 @@ button,input,select{font:inherit} button{cursor:pointer}
     <div class="strategy-grid">
       <div class="strategy-box"><small>Risk Bias</small><b id="globalBias" class="neutral">WAIT</b><span id="globalReason">Feed not connected</span></div>
       <div class="strategy-box"><small>Risk Score</small><b id="globalScore">—</b><span>−100 = risk-off</span></div>
-      <div class="strategy-box"><small>Confidence</small><b id="globalConfidence">—</b><span>Available inputs</span></div>
-      <div class="strategy-box"><small>Hard Risk</small><b id="globalHard" class="neutral">WAIT</b><span>Extreme conditions</span></div>
+      <div class="strategy-box"><small>Confidence</small><b id="globalConfidence">—</b><span id="globalMeta">Available inputs</span></div>
+      <div class="strategy-box"><small>Hard Risk</small><b id="globalHard" class="neutral">WAIT</b><span id="globalChecked">Checked: —</span></div>
     </div>
     <div class="riskbar"><i id="globalBar"></i></div>
     <div class="global" id="globalGrid">
@@ -464,7 +465,8 @@ button,input,select{font:inherit} button{cursor:pointer}
       <div class="strategy-box"><small>Freeze</small><b id="eventFreeze" class="neutral">WAIT</b><span>High-impact ≤15m</span></div>
       <div class="strategy-box"><small>Method</small><b>HARD GATE</b><span>Event risk can block trade</span></div>
     </div>
-    <div class="eventlist" id="events"><div class="event"><span>Calendar feed</span><b>WAIT</b></div><div class="event"><span>High-impact events</span><b>WAIT</b></div></div>
+    <div class="finder-note" id="eventFeedMeta">Feed status: WAIT • stale events never pass the trade gate.</div>
+    <div class="eventlist> id="events"><div class="event"><span>Calendar feed</span><b>WAIT</b></div><div class="event"><span>High-impact events</span><b>WAIT</b></div></div>
   </div>
 </section>
 
@@ -728,7 +730,7 @@ function renderDecision(d){
  $('rrOut').textContent=d.rr||'—'; $('execState').textContent=action==='CALL'||action==='PUT'?'READY':'LOCKED'; $('execState').className=action==='CALL'?'bullish':action==='PUT'?'bearish':'neutral';
 }
 function renderGates(h){
- setGate('gMarket',!!h.market,'ON'); setGate('gOptions',!!h.options,'ON'); setGate('gNews',!!h.news,'ON');
+ setGate('gMarket',!!h.market,'ON'); setGate('gOptions',!!h.options,'ON'); setGate('gNews',!!h.news,'ON'); setGate('gGlobal',!!h.global,'ON');
  setGate('dhPrice',!!h.market,'ON'); setGate('dhOpt',!!h.options,'ON'); setGate('dhNews',!!h.news,'ON'); setGate('dhGlobal',!!h.global,'ON');
  $('feed').textContent=(h.market&&h.options&&h.news&&h.global)?'LIVE':'PARTIAL/OFFLINE';
 }
@@ -740,19 +742,45 @@ function renderTicker(m){
 function toneClass(v){return v==='BULLISH'||v==='RISK-ON'||v==='POSITIVE'||v==='UP'?'bullish':v==='BEARISH'||v==='RISK-OFF'||v==='NEGATIVE'||v==='DOWN'?'bearish':'neutral'}
 function setToneText(id,v){const el=$(id);if(!el)return;el.textContent=v??'WAIT';el.className=toneClass(v)}
 function renderNews(items,strategy){
- const st=strategy||{}; setToneText('newsBias',st.bias||'WAIT'); $('newsScore').textContent=st.connected?String(st.score):'—'; $('newsConfidence').textContent=st.connected?String(st.confidence)+'%':'—'; setToneText('newsImpact',st.highImpact?'HIGH IMPACT':'NORMAL'); $('newsBlock').textContent=st.highImpact?'Caution modifier active':'No freeze'; $('newsReason').textContent=st.reason||'Feed not connected';
- $('newsList').innerHTML=(items&&items.length?items:[]).map(x=>`<div class="news-item"><b>${escapeHtml(x.title||'Headline')}</b><span>${escapeHtml(x.source||'Source')} • ${escapeHtml(x.bias||'NEUTRAL')} • score ${escapeHtml(x.score??'—')} • ${escapeHtml(x.impact||'UNASSESSED')} • ${escapeHtml(x.ageMin!=null?(x.ageMin+'m'):(x.publishedAt||''))}</span></div>`).join('')||'<div class="news-item"><b>Feed not connected</b><span>Waiting for server feed.</span></div>'
+ const st=strategy||{};
+ setToneText('newsBias',st.bias||'WAIT');
+ $('newsScore').textContent=st.connected?String(st.score):'—';
+ $('newsConfidence').textContent=st.connected?String(st.confidence)+'%':'—';
+ $('newsMeta').textContent=st.connected?(`LIVE ${st.liveCount||0} • DELAYED ${st.delayedCount||0} • fresh ${st.freshCount||0}`):'No verified fresh headlines';
+ setToneText('newsImpact',st.highImpact?'HIGH IMPACT':'NORMAL');
+ $('newsBlock').textContent=st.highImpact?'Caution modifier active':'No freeze';
+ $('newsReason').textContent=st.reason||'Feed not connected';
+ $('newsList').innerHTML=(items&&items.length?items:[]).map(x=>`<div class="news-item"><b>${escapeHtml(x.title||'Headline')}</b><span>${escapeHtml(x.source||'Source')} • ${escapeHtml(x.status||'UNVERIFIED')} • ${escapeHtml(x.bias||'NEUTRAL')} • score ${escapeHtml(x.score??'—')} • ${escapeHtml(x.impact||'UNASSESSED')} • ${escapeHtml(x.ageMin!=null?(x.ageMin+'m'):(x.publishedAt||''))}</span></div>`).join('')||'<div class="news-item"><b>Feed not connected</b><span>Waiting for verified fresh headlines.</span></div>'
 }
 function renderGlobal(g,strategy){
- const st=strategy||{}; setToneText('globalBias',st.bias||'WAIT'); $('globalScore').textContent=st.connected?String(st.score):'—'; $('globalConfidence').textContent=st.connected?String(st.confidence)+'%':'—'; setToneText('globalHard',st.hardRisk?'HIGH RISK':'NORMAL'); $('globalReason').textContent=st.reason||'Feed not connected'; $('globalBar').style.width=st.connected?Math.min(100,Math.round(Math.abs(st.score)))+'%':'0%';
+ const st=strategy||{};
+ setToneText('globalBias',st.bias||'WAIT');
+ $('globalScore').textContent=st.connected?String(st.score):'—';
+ $('globalConfidence').textContent=st.connected?String(st.confidence)+'%':'—';
+ $('globalMeta').textContent=st.connected?(`LIVE ${st.liveInputs||0} • DELAYED ${st.delayedInputs||0} • fresh ${st.freshInputs||0}`):'No fresh verified inputs';
+ setToneText('globalHard',st.hardRisk?'HIGH RISK':'NORMAL');
+ $('globalReason').textContent=st.reason||'Feed not connected';
+ $('globalChecked').textContent='Checked: '+indiaNow();
+ $('globalBar').style.width=st.connected?Math.min(100,Math.round(Math.abs(st.score)))+'%':'0%';
  const items=[['GIFT NIFTY','GIFT_NIFTY'],['US FUTURES','US_FUTURES'],['ASIA','ASIA'],['USD/INR','USDINR'],['US 10Y','US10Y'],['BRENT','BRENT'],['GOLD','GOLD'],['VIX / RISK','VIX']];
- $('globalGrid').innerHTML=items.map(([label,k])=>`<div class="global-item"><small>${label}</small><b class="${g[k]?.tone==='up'?'up':g[k]?.tone==='down'?'down':''}">${escapeHtml(g[k]?.value??'WAIT')}</b><span style="display:block;color:#65738a;font-size:7px;margin-top:2px">${escapeHtml(g[k]?.change!=null?(g[k].change+'%'):'—')}</span></div>`).join('');
+ $('globalGrid').innerHTML=items.map(([label,k])=>{
+   const x=g[k]||{};
+   const status=String(x.status||'UNVERIFIED').toUpperCase();
+   const statusTone=status==='LIVE'?'bullish':status==='DELAYED'?'neutral':'bearish';
+   const age=x.ageMin!=null?(` • ${Number(x.ageMin).toFixed(1)}m ago`):'';
+   const val=x.value??'WAIT', ch=x.change!=null?x.change+'%':'—';
+   return `<div class="global-item"><small>${label}</small><b class="${x.tone==='up'?'up':x.tone==='down'?'down':''}">${escapeHtml(val)}</b><span style="display:block;color:#dfe7f5;font-size:7px;margin-top:2px">${escapeHtml(ch)} • <span class="${statusTone}">${escapeHtml(status)}</span>${escapeHtml(age)}</span><span style="display:block;color:#65738a;font-size:7px;margin-top:2px">${escapeHtml(x.source||'UNKNOWN')}</span></div>`;
+ }).join('');
 }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 function renderOptions(o){$('ceoi').textContent=o?.ceoi??'—';$('cedoi').textContent=o?.cedoi??'—';$('atm').textContent=o?.atm??'—';$('pedoi').textContent=o?.pedoi??'—';$('peoi').textContent=o?.peoi??'—';$('iv').textContent=o?.iv??'—';$('pcr').textContent=o?.pcr??'—'}
 function renderEvents(es){
- const arr=es||[]; $('events').innerHTML=arr.map(e=>`<div class="event"><span>${escapeHtml(e.label||'Event')}<br><span style="color:#65738a">${escapeHtml(e.time||'')}</span></span><b>${escapeHtml(e.risk||'WATCH')}</b></div>`).join('')||'<div class="event"><span>No event feed</span><b>WAIT</b></div>';
- const high=arr.filter(e=>['HIGH','RED','CRITICAL'].includes(String(e.risk||'').toUpperCase())).length; setToneText('eventGate', high?'WATCH':'NORMAL'); setToneText('eventWatch', high?'ACTIVE':'NONE'); setToneText('eventFreeze', 'WAIT'); $('eventReason').textContent=high?'Connected calendar contains high-impact events.':'No high-impact event detected from connected feed.';
+ const arr=es||[];
+ $('events').innerHTML=arr.map(e=>`<div class="event"><span>${escapeHtml(e.label||'Event')}<br><span style="color:#65738a">${escapeHtml(e.time||'')}</span></span><b>${escapeHtml(e.risk||'WATCH')}</b></div>`).join('')||'<div class="event"><span>No event feed</span><b>WAIT</b></div>';
+ const high=arr.filter(e=>['HIGH','RED','CRITICAL'].includes(String(e.risk||'').toUpperCase())).length;
+ setToneText('eventGate', high?'WATCH':'NORMAL'); setToneText('eventWatch', high?'ACTIVE':'NONE'); setToneText('eventFreeze', 'WAIT');
+ $('eventReason').textContent=high?'Connected calendar contains high-impact events.':'No high-impact event detected from connected feed.';
+ $('eventFeedMeta').textContent=arr.length?`Feed status: CONNECTED • ${arr.length} event(s)`:'Feed status: UNVERIFIED • no usable event calendar data';
 }
 function renderEventStrategy(st){ const x=st||{}; setToneText('eventGate',x.hardBlock?'NO TRADE':'NORMAL'); setToneText('eventWatch',x.watch?'ACTIVE':'NONE'); setToneText('eventFreeze',x.hardBlock?'ACTIVE':'NONE'); $('eventReason').textContent=x.reason||'Calendar feed not connected'; }
 async function getJSON(path){
