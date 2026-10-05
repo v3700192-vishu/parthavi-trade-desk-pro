@@ -149,19 +149,56 @@ function analyzeGlobal(global){
     reason:hardRisk?'Global risk is extreme; the engine tightens trade gates.':'Global conditions are incorporated as a secondary risk modifier. Only fresh LIVE/DELAYED inputs are scored.'
   };
 }
+function istDateKey(ts){
+  const d=new Date(ts);
+  if(Number.isNaN(d.getTime())) return null;
+  return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);
+}
 function analyzeEvents(raw){
   const arr=Array.isArray(raw)?raw:(raw?.items||raw?.events||raw?.data||[]);
-  const events=arr.map(x=>({label:String(x.label||x.title||x.name||'Event'),time:x.time||x.datetime||x.timestamp||x.start||'',risk:String(x.risk||x.impact||x.importance||'WATCH').toUpperCase()})).filter(x=>x.label);
-  const now=Date.now(); let hardBlock=false,watch=false;
-  for(const e of events){ const t=new Date(e.time).getTime(); if(!Number.isFinite(t)) continue; const mins=(t-now)/60000; const hi=['HIGH','RED','CRITICAL'].includes(e.risk); if(hi&&mins>=0&&mins<=15) hardBlock=true; else if(hi&&mins>=0&&mins<=60) watch=true; }
-  return {connected:events.length>0,events,hardBlock,watch,reason:hardBlock?'High-impact event inside 15 minutes: NO TRADE gate.':watch?'High-impact event inside 60 minutes: caution modifier.':'No imminent high-impact event detected from the connected calendar.'};
+  const events=arr.map(x=>({
+    label:String(x.label||x.title||x.name||'Event'),
+    time:x.time||x.datetime||x.timestamp||x.start||'',
+    risk:String(x.risk||x.impact||x.importance||'WATCH').toUpperCase()
+  })).filter(x=>x.label);
+  const now=Date.now();
+  const today=istDateKey(now);
+  let hardBlock=false,watch=false,eventDayBlock=false;
+  const highImpact=[];
+  for(const e of events){
+    const t=new Date(e.time).getTime();
+    const hi=['HIGH','RED','CRITICAL'].includes(e.risk);
+    if(!hi || !Number.isFinite(t)) continue;
+    highImpact.push(e);
+    const eventDate=istDateKey(t);
+    const mins=(t-now)/60000;
+    if(eventDate && eventDate===today) eventDayBlock=true;
+    if(mins>=0&&mins<=15) hardBlock=true;
+    else if(mins>=0&&mins<=60) watch=true;
+  }
+  return {
+    connected:events.length>0,
+    events,
+    hardBlock,
+    watch,
+    eventDayBlock,
+    highImpactCount:highImpact.length,
+    reason:eventDayBlock
+      ? 'High-impact event day detected (e.g. RBI/Fed/Budget-type event): NO TRADE for the session.'
+      : hardBlock
+        ? 'High-impact event inside 15 minutes: NO TRADE gate.'
+        : watch
+          ? 'High-impact event inside 60 minutes: caution modifier.'
+          : 'No imminent high-impact event detected from the connected calendar.'
+  };
 }
+
 function fuse({technicalScore=0,newsScore=0,globalScore=0,eventRisk=false,marketOpen=true,feeds={}}={}){
   // Phase 4 modifies, never overrides, the existing technical model.
   // News +8%, global +6%, technical retains 86%; event risk is a hard gate when imminent.
   const tech=clamp(technicalScore,-100,100);
   const raw=clamp(tech*.86+clamp(newsScore,-100,100)*.08+clamp(globalScore,-100,100)*.06,-100,100);
-  const gate=!marketOpen||eventRisk||!feeds.market||!feeds.options||!feeds.news||!feeds.global;
+  const gate=!marketOpen||eventRisk||feeds.eventDayBlock||!feeds.market||!feeds.options||!feeds.news||!feeds.global;
   return {score:Number(raw.toFixed(1)),direction:raw>20?'BULLISH':raw<-20?'BEARISH':'NEUTRAL',hardGate:gate};
 }
 
