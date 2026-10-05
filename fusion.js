@@ -91,11 +91,12 @@ function normalizeGlobal(raw){
     let v=null; for(const key of keys){ if(x[key]!=null){v=x[key];break;} }
     const obj=typeof v==='object' && v!==null ? v : {value:v};
     const value=obj.value??obj.ltp??obj.price;
-    const change=n(obj.changePct??obj.changePercent??obj.pct??obj.change);
+    const rawChange=obj.changePct??obj.changePercent??obj.pct??obj.change;
+    const change=(rawChange===null||rawChange===undefined||rawChange==='')?null:n(rawChange);
     const asOf=obj.asOf??obj.timestamp??obj.time??null;
-    const ageMin=Number.isFinite(Number(obj.ageSec))
-      ? Math.max(0,Number(obj.ageSec))/60
-      : ageMinutes(asOf);
+    const rawAgeSec=obj.ageSec;
+    const ageMin=(rawAgeSec===null||rawAgeSec===undefined||rawAgeSec==='')?ageMinutes(asOf)
+      : (Number.isFinite(Number(rawAgeSec))?Math.max(0,Number(rawAgeSec))/60:ageMinutes(asOf));
     const status=String(obj.status||'').toUpperCase() || (ageMin===Infinity?'UNVERIFIED':ageMin<=10?'LIVE':ageMin<=240?'DELAYED':'UNVERIFIED');
     const usableValue=value!==null && value!==undefined && value!=='WAIT' && value!=='';
     const usableChange=Number.isFinite(Number(change));
