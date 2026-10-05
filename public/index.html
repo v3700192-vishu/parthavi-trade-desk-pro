@@ -284,7 +284,7 @@ button,input,select{font:inherit} button{cursor:pointer}
     <div class="shield-metric"><small>Confirmation gate</small><b id="p11ConfirmGate">80%</b></div>
   </div>
   <div class="shield-rules">
-    <div class="shield-rule"><span>Min R:R</span><b id="p11RR">1.25R</b></div>
+    <div class="shield-rule"><span>Min R:R</span><b id="p11RR">2R</b></div>
     <div class="shield-rule"><span>Max open positions</span><b id="p11MaxPos">3</b></div>
     <div class="shield-rule"><span>Max spread</span><b id="p11Spread">1.25%</b></div>
     <div class="shield-rule"><span>Cooldown</span><b id="p11Cooldown">15m</b></div>
@@ -307,8 +307,8 @@ button,input,select{font:inherit} button{cursor:pointer}
     <div class="plan-card main"><small>Action</small><b id="finalPlanDirection" class="neutral">NO TRADE</b><span>Only shown as a usable plan when the confirmation engine approves the setup.</span></div>
     <div class="plan-card"><small>Entry / Trigger</small><b id="finalPlanEntry">—</b><span>Underlying index level</span></div>
     <div class="plan-card"><small>Stop Loss</small><b id="finalPlanSL">—</b><span>1.0 × ATR planning risk</span></div>
-    <div class="plan-card"><small>Target 1</small><b id="finalPlanT1">—</b><span>1.5R planning level</span></div>
-    <div class="plan-card"><small>Target 2</small><b id="finalPlanT2">—</b><span>2.25R planning level</span></div>
+    <div class="plan-card"><small>Target 1</small><b id="finalPlanT1">—</b><span>2.0R minimum planning level</span></div>
+    <div class="plan-card"><small>Target 2</small><b id="finalPlanT2">—</b><span>2.5R planning level</span></div>
     <div class="plan-card"><small>R:R</small><b id="finalPlanRR">—</b><span>T1 / T2</span></div>
     <div class="plan-foot" id="finalPlanNote">No trade plan loaded. Wait for a confirmed setup. The plan is based on the underlying index; the actual option premium entry/SL/targets must be checked against the selected live option contract and its Greeks.</div>
   </div>
@@ -1002,7 +1002,7 @@ function renderPredictionPanel(r){
   $('finalPlanSL').textContent=usable?(plan.sl??'—'):'—';
   $('finalPlanT1').textContent=usable?(plan.target1??'—'):'—';
   $('finalPlanT2').textContent=usable?(plan.target2??'—'):'—';
-  $('finalPlanRR').textContent=usable?\`1:\${plan.rr1||'1.5'} / 1:\${plan.rr2||'2.25'}\`:'—';
+  $('finalPlanRR').textContent=usable?\`1:\${plan.rr1||'2.0'} / 1:\${plan.rr2||'2.5'}\`:'—';
   $('finalPlanBar').textContent=p.signalState==='CONFIRMED'?\`CONFIRMED • \${p.signalBarTime?chartTime(p.signalBarTime):'CLOSED 5M'}\`:(p.signalState||'WAIT')+' • CLOSED 5M';
   $('finalPlanNote').textContent=usable
     ? \`\${plan.mode||'UNDERLYING TRIGGER'} • \${plan.invalidation||'Wait for invalidation/SL hit.'}. Final SL and targets are shown separately so they are not confused with the entry signal. Option premium levels still require the selected live contract.\`
