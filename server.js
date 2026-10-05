@@ -400,9 +400,12 @@ app.post("/api/angel/login", async (req,res)=>{
   try {
     const {clientCode,pin,totp}=req.body||{};
     console.log(`[ANGEL_LOGIN] start client=${String(clientCode||process.env.ANGEL_CLIENT_CODE||"").slice(0,24)} pin=${pin?"present":"missing"} totp=${totp?"present":"missing"}`);
-    const out=await loginAngel({clientCode,pin,totp});
+    const out=await Promise.race([
+      loginAngel({clientCode,pin,totp}),
+      new Promise((_,reject)=>setTimeout(()=>reject(new Error("Angel One login timed out after 15 seconds. Please retry.")),15000))
+    ]);
     state.connected.market=true;
-    console.log(`[ANGEL_LOGIN] success websocket=${!!out.websocket} ms=${Date.now()-started}`);
+    console.log(`[ANGEL_LOGIN] success websocket=${!!out.websocket} wsError=${out.websocketError||"none"} ms=${Date.now()-started}`);
     res.json(out);
   } catch(e) {
     console.error(`[ANGEL_LOGIN] failed ms=${Date.now()-started}: ${e?.message||"Angel One login failed"}`);
@@ -410,6 +413,23 @@ app.post("/api/angel/login", async (req,res)=>{
   }
 });
 app.post("/api/angel/logout", async (req,res)=>{ try { res.json(await logoutAngel()); } catch(e){ res.status(500).json({error:e?.message||"Logout failed"}); } });
+app.get("/api/angel/diagnostics", async (req,res)=>{
+  const session=angelStatus();
+  if(!session.connected) return res.status(401).json({ok:false,connected:false,error:"Angel One session is not connected",session});
+  try{
+    const symbol=String(req.query.symbol||"NIFTY").toUpperCase();
+    const known={NIFTY:["Nifty 50","99926000"],BANKNIFTY:["Nifty Bank","99926009"],FINNIFTY:["Nifty Fin Service","99926037"],MIDCPNIFTY:["NIFTY MID SELECT","99926074"],VIX:["India VIX","99926017"]};
+    const [tradingsymbol,symboltoken]=known[symbol]||known.NIFTY;
+    const out=await angelLtp({exchange:"NSE",tradingsymbol,symboltoken});
+    const d=out?.data||out;
+    const latest=angelStatus();
+    return res.json({ok:true,connected:true,websocket:latest.websocket,websocketError:latest.websocketError||null,symbol:tradingsymbol,token:symboltoken,data:d});
+  }catch(e){
+    const s=angelStatus();
+    return res.status(502).json({ok:false,connected:s.connected,websocket:s.websocket,websocketError:s.websocketError||null,error:e?.message||"Angel One live quote test failed",session:s});
+  }
+});
+
 app.get("/api/angel/ltp", async (req,res)=>{
   try{
     const {exchange='NSE',tradingsymbol='Nifty 50',symboltoken='99926000'}=req.query||{};
