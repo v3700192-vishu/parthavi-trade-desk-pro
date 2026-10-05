@@ -15,10 +15,10 @@ function istDate(){
 const cfg={
   enabled:bool(process.env.PHASE11_PROTECTION_ENABLED,true),
   maxDailyLoss:num(process.env.MAX_DAILY_LOSS_RUPEES,1000),
-  maxConsecutiveLosses:Math.max(1,Math.floor(num(process.env.MAX_CONSECUTIVE_LOSSES,3))),
+  maxConsecutiveLosses:Math.max(1,Math.floor(num(process.env.MAX_CONSECUTIVE_LOSSES,2))),
   maxTradesPerDay:Math.max(1,Math.floor(num(process.env.MAX_TRADES_PER_DAY,8))),
   cooldownMinutes:Math.max(0,Math.floor(num(process.env.COOLDOWN_MINUTES,15))),
-  minRR:Math.max(1,num(process.env.MIN_RR,1.25)),
+  minRR:Math.max(1,num(process.env.MIN_RR,2.0)),
   maxOpenPositions:Math.max(1,Math.floor(num(process.env.MAX_OPEN_POSITIONS,3))),
   minModelConfidence:Math.max(0,Math.floor(num(process.env.MIN_MODEL_CONFIDENCE,70))),
   minConfirmationPct:Math.max(0,Math.floor(num(process.env.MIN_CONFIRMATION_PCT,80))),
@@ -49,7 +49,7 @@ function status(){
     requireSignalToken:cfg.requireSignalToken,breachReasons:[...state.breachReasons],asOf:new Date().toISOString()
   };
 }
-function evaluate({maxLoss=0,rr=0,modelConfidence=null,confirmationPct=null,spreadPct=null,openPositions=0,side='BUY',signalAction='',isOption=false,hasStopLoss=true}={}){
+function evaluate({maxLoss=0,rr=0,modelConfidence=null,confirmationPct=null,spreadPct=null,openPositions=0,side='BUY',signalAction='',isOption=false,hasStopLoss=true,vix=null,adx=null,volumeRatio10d=null,eventDayBlock=false}={}){
   rollDay(); const errors=[]; const now=Date.now();
   if(!cfg.enabled) return {ok:true,errors:[],status:status()};
   if(state.dailyLoss>=cfg.maxDailyLoss) errors.push('DAILY_LOSS_CAP_REACHED');
@@ -57,6 +57,10 @@ function evaluate({maxLoss=0,rr=0,modelConfidence=null,confirmationPct=null,spre
   if(state.trades>=cfg.maxTradesPerDay) errors.push('MAX_TRADES_PER_DAY_REACHED');
   if(state.lockedUntil>now) errors.push(`COOLDOWN_ACTIVE_${Math.ceil((state.lockedUntil-now)/60000)}M`);
   if(openPositions>=cfg.maxOpenPositions) errors.push('MAX_OPEN_POSITIONS_REACHED');
+  if(Number.isFinite(Number(vix)) && (Number(vix)<12 || Number(vix)>22)) errors.push('VIX_NO_TRADE_ZONE');
+  if(Number.isFinite(Number(adx)) && Number(adx)<20) errors.push('ADX_BELOW_20');
+  if(Number.isFinite(Number(volumeRatio10d)) && Number(volumeRatio10d)<1.5) errors.push('BREAKOUT_VOLUME_BELOW_1_5X_10D');
+  if(eventDayBlock) errors.push('HIGH_IMPACT_EVENT_DAY');
   if(cfg.requireStopLoss&&!hasStopLoss) errors.push('STOP_LOSS_REQUIRED');
   if(maxLoss>0 && maxLoss>Math.max(0,cfg.maxDailyLoss-state.dailyLoss)) errors.push('TRADE_RISK_EXCEEDS_DAILY_PROTECTION_BUDGET');
   if(rr>0 && rr<cfg.minRR) errors.push(`MIN_RR_${cfg.minRR}_REQUIRED`);
