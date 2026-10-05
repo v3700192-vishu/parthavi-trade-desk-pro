@@ -206,7 +206,7 @@ button,input,select{font:inherit} button{cursor:pointer}
     <label>Client Code<input id="angelClient" placeholder="Your Angel One client code"></label>
     <label>PIN<input id="angelPin" type="password" inputmode="numeric" autocomplete="off" placeholder="Enter only when connecting"></label>
     <label>TOTP<input id="angelTotp" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="Authenticator code"></label>
-    <button class="btn primary" onclick="angelConnect()">Connect Angel One</button>
+    <button class="btn primary" id="angelConnectBtn" type="button">Connect Angel One</button>
     <button class="btn" onclick="angelDisconnect()">Disconnect</button>
   </div>
   <div class="finder-note">API key stays on the server. PIN/TOTP are used only for the login request and are not written to the journal or localStorage. Live order execution remains separately locked until the broker/static-IP and final-confirmation gates are verified.</div>
@@ -650,6 +650,72 @@ button,input,select{font:inherit} button{cursor:pointer}
   </div>
 </div>
 <div class="toast" id="toast"></div>
+
+<script>
+/* Hardened Angel One connection bootstrap: this runs before the main dashboard script,
+   reports every network stage visibly, and still works if a later UI script has an error. */
+(function(){
+  function note(msg){ const el=document.getElementById('angelTestNote'); if(el) el.textContent=msg; }
+  function statusText(d){
+    const el=document.getElementById('angelStatusText');
+    if(el) el.textContent=d.connected ? ('CONNECTED • '+(d.clientCode||'')+(d.websocket?' • STREAM LIVE':' • REST ONLY')) : 'DISCONNECTED';
+  }
+  async function connect(){
+    const btn=document.getElementById('angelConnectBtn');
+    const pin=document.getElementById('angelPin')?.value||'';
+    const totp=document.getElementById('angelTotp')?.value.trim()||'';
+    const clientCode=document.getElementById('angelClient')?.value.trim()||'';
+    if(!pin || !totp){ note('Connection stopped: PIN + TOTP required.'); return; }
+    if(btn){btn.disabled=true;btn.dataset.prev=btn.textContent;btn.textContent='Connecting…';}
+    note('Connecting to Angel One • sending secure login request…');
+    const controller=new AbortController();
+    const timer=setTimeout(()=>controller.abort(),20000);
+    try{
+      const r=await fetch((location.origin||'')+'/api/angel/login',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Cache-Control':'no-cache'},
+        body:JSON.stringify({clientCode,pin,totp}),
+        cache:'no-store',
+        signal:controller.signal
+      });
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error((d&&d.error)||('Login failed (HTTP '+r.status+')'));
+      statusText(d);
+      document.getElementById('angelPin').value='';
+      document.getElementById('angelTotp').value='';
+      note(d.websocket
+        ? 'Angel One connected • REST + WebSocket stream LIVE.'
+        : ('Angel One login accepted • WebSocket starting…'+(d.websocketError?' '+d.websocketError:'')));
+      if(typeof window.loadBrokerAccount==='function') await window.loadBrokerAccount().catch(()=>{});
+      setTimeout(async()=>{
+        try{
+          const sr=await fetch((location.origin||'')+'/api/angel/status',{cache:'no-store'});
+          const sd=await sr.json();
+          statusText(sd);
+          if(sd.connected && sd.websocket) note('Angel One connected • WebSocket stream LIVE.');
+          else if(sd.connected) note('Angel One REST connected • WebSocket not live yet.'+(sd.websocketError?' Error: '+sd.websocketError:''));
+          else note('Angel One session is not connected.');
+        }catch(e){ note('Status check failed: '+(e.message||'network error')); }
+      },2500);
+    }catch(e){
+      const msg=e.name==='AbortError' ? 'Login request timed out after 20 seconds.' : (e.message||'Unknown connection error');
+      note('Connection error: '+msg);
+    }finally{
+      clearTimeout(timer);
+      if(btn){btn.disabled=false;btn.textContent=btn.dataset.prev||'Connect Angel One';}
+    }
+  }
+  function boot(){
+    const btn=document.getElementById('angelConnectBtn');
+    if(btn) btn.addEventListener('click',function(ev){ev.preventDefault();ev.stopImmediatePropagation();connect();},true);
+    /* Surface JavaScript/runtime errors instead of silently doing nothing. */
+    window.addEventListener('error',e=>note('Dashboard script error: '+(e.message||'Unknown JavaScript error')));
+    window.addEventListener('unhandledrejection',e=>note('Dashboard promise error: '+(e.reason?.message||String(e.reason||'Unknown error'))));
+    fetch((location.origin||'')+'/api/angel/status',{cache:'no-store'}).then(r=>r.json()).then(statusText).catch(()=>{});
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot); else boot();
+})();
+</script>
 
 <script>
 async function angelStatus(){
