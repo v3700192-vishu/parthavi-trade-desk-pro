@@ -92,9 +92,23 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
   const required=['trend','setup','trigger','momentum','volume','strength','options','news','global','eventSafe'];
   const confirmedCount=required.filter(k=>confirmations[k]).length;
   const confirmationPct=Math.round(confirmedCount/required.length*100);
-  const modelConfidence=Math.round(clamp(50+Math.abs(score)*0.42 + Math.max(0,confirmationPct-50)*0.18,50,95));
+  // Conservative confidence: high scores are earned only when confirmations and feed quality agree.
+  const backtestRate=n(backtest?.targetHitRate);
+  const backtestBonus=backtest?.available&&backtestRate!=null
+    ? clamp((backtestRate-55)*0.20,0,8)
+    : 0;
+  const modelConfidence=Math.round(clamp(
+    52
+    + Math.abs(score)*0.28
+    + Math.max(0,confirmationPct-50)*0.34
+    + (confirmedCount>=9?5:0)
+    + backtestBonus,
+    50,95
+  ));
   const feedComplete=!!marketOpen && !!news?.connected && !!global?.connected && !!options?.connected && !events?.hardBlock;
-  const signalState=(!marketOpen||events?.hardBlock)?'NO TRADE':(prediction!=='NEUTRAL'&&confirmedCount>=8&&feedComplete)?'CONFIRMED':(prediction!=='NEUTRAL'&&confirmedCount>=5)?'WATCH':'NO TRADE';
+  // 85% is a strict QUALITY THRESHOLD, not a hard-coded profit probability.
+  const eliteSetup=prediction!=='NEUTRAL' && confirmedCount>=9 && confirmationPct>=90 && modelConfidence>=85;
+  const signalState=(!marketOpen||events?.hardBlock)?'NO TRADE':(eliteSetup&&feedComplete)?'CONFIRMED':(prediction!=='NEUTRAL'&&confirmedCount>=6)?'WATCH':'NO TRADE';
   const action=signalState==='CONFIRMED'?(prediction==='BULLISH'?'CALL':'PUT'):'NO TRADE';
   const reasoning = signalState==='CONFIRMED'
     ? `${prediction} structure aligns across 1H/15M/5M with ${confirmedCount}/${required.length} confirmation checks.`
@@ -112,7 +126,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
     signalBarTime:rows5?.at?.(-1)?.t||null,
     historical:backtest||{available:false,reason:'Historical backtest not available.'},
     feedComplete, eventBlocked:!!events?.hardBlock,
-    note:'Model confidence is a rule-based confluence estimate, not a guaranteed probability of profit. Final SL/targets are volatility-based planning levels on the underlying index; option premium SL/targets must be verified from the selected live contract and its Greeks.',
+    note:'85% is a strict model-quality gate earned only by strong multi-timeframe, options, news, global and event confirmation. It is not a guaranteed or calibrated probability of profit. Final SL/targets are volatility-based planning levels on the underlying index; option premium SL/targets must be verified from the selected live contract and its Greeks.',
     reasoning
   };
 }
