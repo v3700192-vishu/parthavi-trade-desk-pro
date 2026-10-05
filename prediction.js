@@ -31,6 +31,19 @@ function tfDirection(tf){
   return bull?'BULLISH':bear?'BEARISH':'NEUTRAL';
 }
 
+function finalTradePlan(prediction, last, atr){
+  if(!['BULLISH','BEARISH'].includes(prediction) || !Number.isFinite(last) || !Number.isFinite(atr) || atr<=0){
+    return {available:false,direction:'NO TRADE',entry:null,sl:null,target1:null,target2:null,riskPerUnit:null,rr1:null,rr2:null,mode:'WAIT'};
+  }
+  const riskPerUnit=Number(atr.toFixed(2));
+  if(prediction==='BULLISH'){
+    const entry=Number(last.toFixed(2)), sl=Number((last-1.0*atr).toFixed(2)), target1=Number((last+1.5*atr).toFixed(2)), target2=Number((last+2.25*atr).toFixed(2));
+    return {available:true,direction:'CALL',mode:'UNDERLYING TRIGGER',entry,sl,target1,target2,riskPerUnit,rr1:1.5,rr2:2.25,invalidation:`5M close below SL ${sl}`};
+  }
+  const entry=Number(last.toFixed(2)), sl=Number((last+1.0*atr).toFixed(2)), target1=Number((last-1.5*atr).toFixed(2)), target2=Number((last-2.25*atr).toFixed(2));
+  return {available:true,direction:'PUT',mode:'UNDERLYING TRIGGER',entry,sl,target1,target2,riskPerUnit,rr1:1.5,rr2:2.25,invalidation:`5M close above SL ${sl}`};
+}
+
 export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},options={},marketOpen=false,backtest=null}={}){
   const x5={...(m5||{}),...summarizeLatest(rows5)};
   const h1d=tfDirection(h1), m15d=tfDirection(m15);
@@ -89,14 +102,17 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
     : events?.hardBlock ? 'High-impact event gate is active; no new trade is permitted.'
     : `${prediction==='NEUTRAL'?'Directional edge is weak.':prediction+' setup detected, but confirmation is incomplete.'} ${confirmedCount}/${required.length} checks currently pass.`;
 
+  const plan=action!=='NO TRADE'?finalTradePlan(prediction,last,atr):finalTradePlan('NEUTRAL',last,atr);
   return {
     prediction, action, signalState, score,
     modelConfidence, confirmationPct, confirmedCount, confirmationTotal:required.length,
     confirmations, trend1h:h1d, setup15m:m15d, trigger5m:String(m5?.candle||'WAIT'),
     volumeRatio:vr, rsi, adx, atr, vwap, last,
+    finalPlan:plan,
+    signalBarTime:rows5?.at?.(-1)?.t||null,
     historical:backtest||{available:false,reason:'Historical backtest not available.'},
     feedComplete, eventBlocked:!!events?.hardBlock,
-    note:'Model confidence is a rule-based confluence estimate, not a guaranteed probability of profit. Historical target-hit rate is based on the transparent backtest shown below and excludes fees, slippage and execution effects.',
+    note:'Model confidence is a rule-based confluence estimate, not a guaranteed probability of profit. Final SL/targets are volatility-based planning levels on the underlying index; option premium SL/targets must be verified from the selected live contract and its Greeks.',
     reasoning
   };
 }
