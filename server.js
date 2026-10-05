@@ -300,16 +300,19 @@ app.get("/api/angel/expiries", async (req,res)=>{
     const segment=(req.query.segment||"OPTIDX").toUpperCase();
     const underlying=String(req.query.underlying||"").trim().toUpperCase();
     const items=await loadMaster();
-    const segMap={NSE:{OPTIDX:"nse_fo",OPTSTK:"nse_fo",FUTIDX:"nse_fo",FUTSTK:"nse_fo"},BSE:{OPTIDX:"bse_fo",OPTSTK:"bse_fo",FUTIDX:"bse_fo",FUTSTK:"bse_fo"}};
-    const target=String(segMap[exchange]?.[segment]||'').toLowerCase();
     const q=underlying;
+    const optionLike=segment==='OPTIDX'||segment==='OPTSTK';
+    const normalizeSeg=(x)=>{const s=String(x||'').toLowerCase(); if(s==='nse_fo'||s==='nfo') return 'nse_fo'; if(s==='bse_fo'||s==='bfo') return 'bse_fo'; if(s==='nse_cm'||s==='nse') return 'nse_cm'; if(s==='bse_cm'||s==='bse') return 'bse_cm'; return s;};
+    const target=exchange==='BSE'?'bse_fo':'nse_fo';
     const dates=[...new Set(items.filter(x=>{
-      if(String(x.exch_seg||'').toLowerCase()!==target) return false;
       const sym=String(x.symbol||'').toUpperCase(), name=String(x.name||'').toUpperCase();
-      if((segment==='OPTIDX'||segment==='OPTSTK') && !/(CE|PE)$/.test(sym)) return false;
-      return !q || name===q || name.startsWith(q) || sym.startsWith(q);
+      const seg=normalizeSeg(x.exch_seg||x.exchange);
+      const segOk=seg===target || (optionLike && (/(CE|PE)$/.test(sym)) && exchange==='NSE');
+      if(!segOk) return false;
+      if(optionLike && !/(CE|PE)$/.test(sym)) return false;
+      return !q || name===q || name.startsWith(q) || sym.startsWith(q) || sym.replace(/^(NIFTY|BANKNIFTY|FINNIFTY|MIDCPNIFTY|SENSEX)/,'').includes(q);
     }).map(x=>String(x.expiry||'').trim().toUpperCase()).filter(Boolean))].sort((a,b)=>{
-      const pa=String(a).match(/^(\\d{2})([A-Z]{3})(\\d{4})$/), pb=String(b).match(/^(\\d{2})([A-Z]{3})(\\d{4})$/);
+      const pa=String(a).match(/^(\\d{1,2})([A-Z]{3})(\\d{4})$/), pb=String(b).match(/^(\\d{1,2})([A-Z]{3})(\\d{4})$/);
       if(pa&&pb){ const mo={JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11}; return new Date(+pa[3],mo[pa[2]],+pa[1])-new Date(+pb[3],mo[pb[2]],+pb[1]); }
       return String(a).localeCompare(String(b));
     });
@@ -685,6 +688,7 @@ async function resolveIndexToken(symbol){
  return {token:String(x.token),symbol:x.symbol,exchange:String(x.exch_seg||'NSE').toUpperCase()};
 }
 const candleCache=new Map();
+const candleInflight=new Map();
 function candleRows(raw){ return (raw?.data||[]).map(x=>({t:x[0],o:Number(x[1]),h:Number(x[2]),l:Number(x[3]),c:Number(x[4]),v:Number(x[5]||0)})).filter(x=>[x.o,x.h,x.l,x.c].every(Number.isFinite)); }
 function bucketStart(ts, minutes){ return Math.floor(new Date(ts).getTime()/(minutes*60000))*minutes*60000; }
 function aggregateCandles(rows, minutes){
@@ -696,10 +700,15 @@ function aggregateCandles(rows, minutes){
 async function loadBase5m(symbol){
   const key=String(symbol||'NIFTY').toUpperCase(), now=Date.now(), cached=candleCache.get(key);
   if(cached && now-cached.at<15000) return cached.rows;
-  const ins=await resolveIndexToken(key), end=new Date(), from=new Date(end.getTime()-10*86400000);
+  if(candleInflight.has(key)) return await candleInflight.get(key);
+  const job=(async()=>{
+    const ins=await resolveIndexToken(key), end=new Date(), from=new Date(end.getTime()-7*86400000);
   const f=x=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(x)).replace(', ',' ').replace(/\//g,'-');
-  const raw=await angelCandles({exchange:'NSE',symboltoken:ins.token,interval:'FIVE_MINUTE',fromdate:f(from),todate:f(end)});
-  const rows=candleRows(raw); candleCache.set(key,{at:now,rows}); return rows;
+    const raw=await angelCandles({exchange:'NSE',symboltoken:ins.token,interval:'FIVE_MINUTE',fromdate:f(from),todate:f(end)});
+    const rows=candleRows(raw); candleCache.set(key,{at:Date.now(),rows}); return rows;
+  })();
+  candleInflight.set(key,job);
+  try{return await job;}finally{candleInflight.delete(key);}
 }
 async function loadTfSummary(symbol, interval, days){
   const ins=await resolveIndexToken(symbol); let rows=[];
