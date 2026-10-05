@@ -469,15 +469,16 @@ app.get('/api/phase11/signal-token',async(req,res)=>{
   try{
     if(!angelStatus().connected) return res.status(401).json({ok:false,error:'ANGEL_NOT_CONNECTED'});
     if(!marketSession()) return res.status(409).json({ok:false,error:'EXCHANGE_CLOSED'});
-    const [h1,m15,m5,ni,gd,ev]=await Promise.all([
-      loadTfSummary(symbol,'ONE_HOUR',45),loadTfSummary(symbol,'FIFTEEN_MINUTE',30),loadTfSummary(symbol,'FIVE_MINUTE',15),news(symbol),globalData(),events()
+    const [h1,m15,m5,ni,gd,ev,md]=await Promise.all([
+      loadTfSummary(symbol,'ONE_HOUR',45),loadTfSummary(symbol,'FIFTEEN_MINUTE',30),loadTfSummary(symbol,'FIVE_MINUTE',15),news(symbol),globalData(),events(),market(symbol)
     ]);
     const ns=analyzeNews(ni),gs=analyzeGlobal(gd),es=analyzeEvents(ev); let opt={connected:false};
     try{ const od=await options(symbol); if(od) opt={connected:true,...od}; }catch{}
     const historical=backtestFiveMinute(m5.rows||[]);
-    const prediction=buildPrediction({h1:h1.summary,m15:m15.summary,m5:m5.summary,rows5:m5.rows,news:ns,global:gs,events:es,options:opt,marketOpen:true,backtest:historical});
+    const vix=Number(md?.VIX?.ltp);
+    const prediction=buildPrediction({h1:h1.summary,m15:m15.summary,m5:m5.summary,rows5:m5.rows,news:ns,global:gs,events:es,options:opt,marketOpen:true,backtest:historical,vix:Number.isFinite(vix)?vix:null,oi:opt});
     if(prediction.signalState!=='CONFIRMED') return res.status(409).json({ok:false,error:'SIGNAL_NOT_CONFIRMED',prediction});
-    const payload={version:1,symbol,prediction:prediction.prediction,action:prediction.action,modelConfidence:prediction.modelConfidence,confirmationPct:prediction.confirmationPct,createdAt:Date.now(),expiresAt:Date.now()+60000};
+    const payload={version:2,symbol,prediction:prediction.prediction,action:prediction.action,modelConfidence:prediction.modelConfidence,confirmationPct:prediction.confirmationPct,vix:prediction.vix,adx:prediction.adx,volumeRatio10d:prediction.volumeRatio10d,eventDayBlock:prediction.eventBlocked||prediction.noTradeReasons?.some(x=>String(x).includes('event')),rrGate:'1:2+',createdAt:Date.now(),expiresAt:Date.now()+60000};
     res.json({ok:true,phase:11,token:signedPayload(payload),snapshot:payload,prediction});
   }catch(e){res.status(502).json({ok:false,error:e?.message||'Phase 11 signal unavailable'});}
 });
@@ -877,18 +878,19 @@ app.get('/api/phase10/prediction',async(req,res)=>{
   const symbol=String(req.query.symbol||'NIFTY').toUpperCase();
   try{
     if(!angelStatus().connected) return res.json({ok:true,phase:10,locked:true,prediction:buildPrediction({marketOpen:false}),message:'Connect Angel One before running live prediction.'});
-    const [h1,m15,m5,ni,gd,ev]=await Promise.all([
+    const [h1,m15,m5,ni,gd,ev,md]=await Promise.all([
       loadTfSummary(symbol,'ONE_HOUR',45),
       loadTfSummary(symbol,'FIFTEEN_MINUTE',30),
       loadTfSummary(symbol,'FIVE_MINUTE',15),
-      news(symbol),globalData(),events()
+      news(symbol),globalData(),events(),market(symbol)
     ]);
     const ns=analyzeNews(ni), gs=analyzeGlobal(gd), es=analyzeEvents(ev);
     let opt={connected:false};
     try{ const od=await options(symbol); if(od) opt={connected:true,...od}; }catch{}
     const historical=backtestFiveMinute(m5.rows||[]);
-    const prediction=buildPrediction({h1:h1.summary,m15:m15.summary,m5:m5.summary,rows5:m5.rows,news:ns,global:gs,events:es,options:opt,marketOpen:marketSession(),backtest:historical});
-    res.json({ok:true,phase:10,symbol,prediction,health:{market:true,options:opt.connected,news:ns.connected,global:gs.connected,eventBlocked:es.hardBlock},backtest:historical,checkedAt:nowISO()});
+    const vix=Number(md?.VIX?.ltp);
+    const prediction=buildPrediction({h1:h1.summary,m15:m15.summary,m5:m5.summary,rows5:m5.rows,news:ns,global:gs,events:es,options:opt,marketOpen:marketSession(),backtest:historical,vix:Number.isFinite(vix)?vix:null,oi:opt});
+    res.json({ok:true,phase:10,symbol,prediction,health:{market:true,options:opt.connected,news:ns.connected,global:gs.connected,eventBlocked:es.hardBlock,eventDayBlock:es.eventDayBlock,vix:Number.isFinite(vix)?vix:null},backtest:historical,checkedAt:nowISO()});
   }catch(e){res.status(502).json({ok:false,phase:10,error:e?.message||'Phase 10 prediction unavailable'});}
 });
 
@@ -910,6 +912,13 @@ app.get("/api/analyze",async(req,res)=>{
   let newsItems=[], global={}; let eventItems=[];
   try{ [newsItems,global,eventItems]=await Promise.all([news(symbol),globalData(),events()]); }catch(e){ packs.fusionError=e.message; }
   const newsStrat=analyzeNews(newsItems),globalStrat=analyzeGlobal(global),eventStrat=analyzeEvents(eventItems);
+  const vix=Number(packs.md?.VIX?.ltp);
+  const volumeRatio10d=Number(s15?.volumeRatio10d||s5?.volumeRatio10d);
+  const noTradeReasons=[];
+  if(Number.isFinite(vix) && (vix<12||vix>22)) noTradeReasons.push('No Trade: Market is too slow or too volatile.');
+  if(Number.isFinite(s5?.adx) && s5.adx<20) noTradeReasons.push('No Trade: ADX below 20 — market is choppy/sideways.');
+  if(Number.isFinite(volumeRatio10d) && volumeRatio10d<1.5) noTradeReasons.push(`No Trade: breakout volume ${volumeRatio10d.toFixed(2)}x is below the 1.5x 10-day requirement.`);
+  if(eventStrat.eventDayBlock||eventStrat.hardBlock) noTradeReasons.push(eventStrat.reason);
   let action='NO TRADE',reason='Live Angel One connection is required before indicator analysis can run.',score=0,confidence='LOCKED';
   let trend=s1?.trend||'WAIT',setup=s15?.trend||'WAIT',trigger=s5?.candle||'WAIT';
   const bullishVotes=[trend==='BULLISH',setup==='BULLISH',s5?.rsi>50,s5?.macd?.hist>0,s5?.last>s5?.vwap,s5?.adx>=20].filter(Boolean).length;
@@ -919,11 +928,11 @@ app.get("/api/analyze",async(req,res)=>{
   score=Math.round(Math.abs(fused.score)); confidence=h.market?(score>=67?'SETUP':score>=45?'WATCH':'WAIT'):'LOCKED';
   if(h.market) reason=`Technical confluence ${Math.round(Math.abs(techSigned))} • News ${newsStrat.bias} • Global ${globalStrat.bias}. ${eventStrat.reason}`;
   const complete=marketSession()&&h.market&&h.options&&newsStrat.connected&&globalStrat.connected&&!eventStrat.hardBlock;
-  if(complete && score>=67){action=fused.direction==='BULLISH'?'CALL':fused.direction==='BEARISH'?'PUT':'NO TRADE';}
-  else {action='NO TRADE'; if(!marketSession()) reason='Exchange session is closed. No live trade is permitted.'; else if(eventStrat.hardBlock) reason=eventStrat.reason; else if(!newsStrat.connected||!globalStrat.connected) reason='News/global feeds are not verified fresh. Final decision stays locked.'; else if(!h.options) reason='Option positioning feed is not verified. Final options decision stays locked.';}
+  if(complete && score>=67 && noTradeReasons.length===0){action=fused.direction==='BULLISH'?'CALL':fused.direction==='BEARISH'?'PUT':'NO TRADE';}
+  else {action='NO TRADE'; if(noTradeReasons.length) reason=noTradeReasons.join(' • '); else if(!marketSession()) reason='Exchange session is closed. No live trade is permitted.'; else if(!newsStrat.connected||!globalStrat.connected) reason='News/global feeds are not verified fresh. Final decision stays locked.'; else if(!h.options) reason='Option positioning feed is not verified. Final options decision stays locked.';}
   const last=s5?.last||s15?.last||s1?.last; const atr=s5?.atr; const levels={r2:s15?.last&&s15?.atr?(s15.last+s15.atr*2).toFixed(2):'—',r1:s15?.last&&s15?.atr?(s15.last+s15.atr).toFixed(2):'—',vwap:s15?.vwap?.toFixed?.(2)||'—',s1:s15?.last&&s15?.atr?(s15.last-s15.atr).toFixed(2):'—',s2:s15?.last&&s15?.atr?(s15.last-s15.atr*2).toFixed(2):'—'};
   const bp=action==='CALL'?{direction:'CALL',strike:'',entry:last||'',sl:atr&&last?(last-atr*1.2).toFixed(2):'',t1:atr&&last?(last+atr*1.5).toFixed(2):'',t2:atr&&last?(last+atr*2.5).toFixed(2):''}:action==='PUT'?{direction:'PUT',strike:'',entry:last||'',sl:atr&&last?(last+atr*1.2).toFixed(2):'',t1:atr&&last?(last-atr*1.5).toFixed(2):'',t2:atr&&last?(last-atr*2.5).toFixed(2):''}:{direction:'CALL',strike:'',entry:'',sl:'',t1:'',t2:''};
-  res.json({health:{...h,news:newsStrat.connected,global:globalStrat.connected},decision:{action,score,confidence,rr:action==='CALL'||action==='PUT'?'1:1.25':'—',reason,trend1h:trend,setup15m:setup,trigger5m:trigger,ema:s5?`20 ${s5.ema20?.toFixed(2)||'—'} / 50 ${s5.ema50?.toFixed(2)||'—'} / 200 ${s5.ema200?.toFixed(2)||'—'}`:'WAIT',rsi:s5?.rsi?.toFixed?.(1)||'—',macd:s5?`${s5.macd?.hist>0?'BULLISH':'BEARISH'} ${s5.macd?.hist?.toFixed?.(2)||'—'}`:'WAIT',adx:s5?.adx?.toFixed?.(1)||'—',vwap:s5?.vwap?.toFixed?.(2)||'—',priceAction:s5?.candle||'WAIT',volume:s5?'LIVE':'WAIT',atr:s5?.atr?.toFixed?.(2)||'—',momentum:s5?.rsi>50?'BULLISH':s5?.rsi<50?'BEARISH':'WAIT',options:h.options?'LIVE':'WAIT',news:newsStrat.bias,global:globalStrat.bias,event:eventStrat.hardBlock?'HIGH RISK':'WATCH',levels,blueprint:bp,newsStrategy:newsStrat,globalStrategy:globalStrat,eventStrategy:eventStrat,fusion:{score:fused.score,direction:fused.direction,hardGate:fused.hardGate}},candles:s5?.rows||null,multiTf:{h1:s1||null,m15:s15||null,m5:s5||null}});
+  res.json({health:{...h,news:newsStrat.connected,global:globalStrat.connected},decision:{action,score,confidence,rr:action==='CALL'||action==='PUT'?'1:2+':'—',reason,trend1h:trend,setup15m:setup,trigger5m:trigger,ema:s5?`20 ${s5.ema20?.toFixed(2)||'—'} / 50 ${s5.ema50?.toFixed(2)||'—'} / 200 ${s5.ema200?.toFixed(2)||'—'}`:'WAIT',rsi:s5?.rsi?.toFixed?.(1)||'—',macd:s5?`${s5.macd?.hist>0?'BULLISH':'BEARISH'} ${s5.macd?.hist?.toFixed?.(2)||'—'}`:'WAIT',adx:s5?.adx?.toFixed?.(1)||'—',vwap:s5?.vwap?.toFixed?.(2)||'—',priceAction:s5?.candle||'WAIT',volume:s5?'LIVE':'WAIT',atr:s5?.atr?.toFixed?.(2)||'—',momentum:s5?.rsi>50?'BULLISH':s5?.rsi<50?'BEARISH':'WAIT',options:h.options?((opt.resistance&&opt.support)?`LIVE • R ${opt.resistance} / S ${opt.support}`:'LIVE'):'WAIT',news:newsStrat.bias,global:globalStrat.bias,event:(eventStrat.eventDayBlock||eventStrat.hardBlock)?'HIGH RISK':'WATCH',levels,blueprint:bp,newsStrategy:newsStrat,globalStrategy:globalStrat,eventStrategy:eventStrat,vix:Number.isFinite(vix)?vix:null,volumeRatio10d:Number.isFinite(volumeRatio10d)?volumeRatio10d:null,noTradeReasons,oi:{resistance:opt?.resistance??null,support:opt?.support??null,ceMaxOi:opt?.ceMaxOi??null,peMaxOi:opt?.peMaxOi??null,pcr:opt?.pcr??null},fusion:{score:fused.score,direction:fused.direction,hardGate:fused.hardGate}},candles:s5?.rows||null,multiTf:{h1:s1||null,m15:s15||null,m5:s5||null}});
 });
 
 app.post("/api/order",(req,res)=>res.status(423).json({ok:false,error:"USE_PHASE5_PREVIEW",message:"Phase 5 uses /api/order/preview then explicit /api/order/execute confirmation."}));
