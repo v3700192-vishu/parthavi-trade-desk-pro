@@ -188,7 +188,7 @@ function istParts(){
   const p=new Intl.DateTimeFormat('en-IN',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',weekday:'short',hour12:false}).formatToParts(new Date());
   return Object.fromEntries(p.map(z=>[z.type,z.value]));
 }
-function configuredHolidays(){ return new Set(String(process.env.EXTRA_HOLIDAYS_IST||'').split(',').map(x=>x.trim()).filter(/^\d{4}-\d{2}-\d{2}$/.test)); }
+function configuredHolidays(){ return new Set(String(process.env.EXTRA_HOLIDAYS_IST||'').split(',').map(x=>x.trim()).filter(x=>/^\d{4}-\d{2}-\d{2}$/.test(x))); }
 function exchangeSessionOpen(exchange='NSE'){
   const x=istParts(), date=`${x.year}-${x.month}-${x.day}`, day=x.weekday, mins=Number(x.hour)*60+Number(x.minute);
   if(['Sat','Sun'].includes(day) || mins<555 || mins>=940) return false;
@@ -196,7 +196,7 @@ function exchangeSessionOpen(exchange='NSE'){
   const extra=configuredHolidays();
   if(ex==='NSE' && (NSE_HOLIDAYS_2026.has(date)||extra.has(date))) return false;
   if(ex==='BSE'){
-    const bseExtra=new Set(String(process.env.BSE_HOLIDAYS_IST||'').split(',').map(x=>x.trim()).filter(/^\d{4}-\d{2}-\d{2}$/.test));
+    const bseExtra=new Set(String(process.env.BSE_HOLIDAYS_IST||'').split(',').map(x=>x.trim()).filter(x=>/^\d{4}-\d{2}-\d{2}$/.test(x)));
     // BSE execution is blocked unless its calendar has been explicitly supplied/verified.
     if(!boolEnv('BSE_SESSION_VERIFIED',false)) return false;
     if(bseExtra.has(date)||extra.has(date)) return false;
