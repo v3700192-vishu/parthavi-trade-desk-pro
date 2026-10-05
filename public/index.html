@@ -206,13 +206,13 @@ button,input,select{font:inherit} button{cursor:pointer}
     <label>Client Code<input id="angelClient" placeholder="Your Angel One client code"></label>
     <label>PIN<input id="angelPin" type="password" inputmode="numeric" autocomplete="off" placeholder="Enter only when connecting"></label>
     <label>TOTP<input id="angelTotp" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="Authenticator code"></label>
-    <button class="btn primary" id="angelConnectBtn" type="button">Connect Angel One</button>
+    <button class="btn primary" onclick="angelConnect()">Connect Angel One</button>
     <button class="btn" onclick="angelDisconnect()">Disconnect</button>
   </div>
   <div class="finder-note">API key stays on the server. PIN/TOTP are used only for the login request and are not written to the journal or localStorage. Live order execution remains separately locked until the broker/static-IP and final-confirmation gates are verified.</div>
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-    <button class="btn primary" onclick="PTD.testAngelFeed()">⚡ Test Live Feed</button><button class="btn" onclick="PTD.angelReconnect()">↻ Reconnect Stream</button>
-    <button class="btn" onclick="PTD.refreshExpiries()">↻ Load Expiries</button>
+    <button class="btn primary" onclick="testAngelFeed()">⚡ Test Live Feed</button>
+    <button class="btn" onclick="refreshExpiries()">↻ Load Expiries</button>
     <span class="badge warn" id="angelTestBadge">NOT TESTED</span>
   </div>
   <div class="finder-note" id="angelTestNote">Phase 2: login → instrument master → live quote → option contract lookup. WebSocket streaming can be enabled after the REST quote test passes.</div>
@@ -652,168 +652,6 @@ button,input,select{font:inherit} button{cursor:pointer}
 <div class="toast" id="toast"></div>
 
 <script>
-/* Hardened Angel One connection bootstrap: this runs before the main dashboard script,
-   reports every network stage visibly, and still works if a later UI script has an error. */
-(function(){
-  function note(msg){ const el=document.getElementById('angelTestNote'); if(el) el.textContent=msg; }
-  function statusText(d){
-    const el=document.getElementById('angelStatusText');
-    if(el) el.textContent=d.connected ? ('CONNECTED • '+(d.clientCode||'')+(d.websocket?' • STREAM LIVE':' • REST ONLY')) : 'DISCONNECTED';
-  }
-  async function connect(){
-    const btn=document.getElementById('angelConnectBtn');
-    const pin=document.getElementById('angelPin')?.value||'';
-    const totp=document.getElementById('angelTotp')?.value.trim()||'';
-    const clientCode=document.getElementById('angelClient')?.value.trim()||'';
-    if(!pin || !totp){ note('Connection stopped: PIN + TOTP required.'); return; }
-    if(btn){btn.disabled=true;btn.dataset.prev=btn.textContent;btn.textContent='Connecting…';}
-    note('Connecting to Angel One • sending secure login request…');
-    const controller=new AbortController();
-    const timer=setTimeout(()=>controller.abort(),20000);
-    try{
-      const r=await fetch((location.origin||'')+'/api/angel/login',{
-        method:'POST',
-        headers:{'Content-Type':'application/json','Cache-Control':'no-cache'},
-        body:JSON.stringify({clientCode,pin,totp}),
-        cache:'no-store',
-        signal:controller.signal
-      });
-      const d=await r.json().catch(()=>({}));
-      if(!r.ok) throw new Error((d&&d.error)||('Login failed (HTTP '+r.status+')'));
-      statusText(d);
-      document.getElementById('angelPin').value='';
-      document.getElementById('angelTotp').value='';
-      note(d.websocket
-        ? 'Angel One connected • REST + WebSocket stream LIVE. Loading dashboard data…'
-        : ('Angel One login accepted • WebSocket starting…'+(d.websocketError?' '+d.websocketError:'')));
-      await window.loadBrokerAccount().catch(()=>{});
-      setTimeout(async()=>{
-        try{
-          if(typeof window.loadAll==='function') await window.loadAll();
-          if(typeof window.loadPrediction==='function') await window.loadPrediction(false);
-          if(typeof window.loadPhase11Shield==='function') await window.loadPhase11Shield();
-          if(typeof window.loadPhase12Readiness==='function') await window.loadPhase12Readiness();
-          if(typeof window.PTD?.refreshExpiries==='function') await window.PTD.refreshExpiries();
-        }catch(e){ note('Dashboard data load error: '+(e.message||'Unknown error')); }
-      },350);
-      setTimeout(async()=>{
-        try{
-          const sr=await fetch((location.origin||'')+'/api/angel/status',{cache:'no-store'});
-          const sd=await sr.json();
-          statusText(sd);
-          if(sd.connected && sd.websocket) note('Angel One connected • WebSocket stream LIVE.');
-          else if(sd.connected) note('Angel One REST connected • WebSocket not live yet.'+(sd.websocketError?' Error: '+sd.websocketError:''));
-          else note('Angel One session is not connected.');
-        }catch(e){ note('Status check failed: '+(e.message||'network error')); }
-      },2500);
-    }catch(e){
-      const msg=e.name==='AbortError' ? 'Login request timed out after 20 seconds.' : (e.message||'Unknown connection error');
-      note('Connection error: '+msg);
-    }finally{
-      clearTimeout(timer);
-      if(btn){btn.disabled=false;btn.textContent=btn.dataset.prev||'Connect Angel One';}
-    }
-  }
-  window.PTD = window.PTD || {};
-  window.PTD.angelReconnect = async function(){
-    const noteEl=document.getElementById('angelTestNote');
-    try{
-      if(noteEl) noteEl.textContent='Reconnecting Angel One WebSocket…';
-      const r=await fetch((location.origin||'')+'/api/angel/reconnect',{method:'POST',cache:'no-store'});
-      const d=await r.json().catch(()=>({}));
-      if(!r.ok) throw new Error(d.error||('WebSocket reconnect failed (HTTP '+r.status+')'));
-      statusText(d);
-      if(noteEl) noteEl.textContent=d.websocket?'Angel One WebSocket STREAM LIVE.':('WebSocket not live yet.'+(d.error?' '+d.error:''));
-    }catch(e){ if(noteEl) noteEl.textContent='Reconnect error: '+(e.message||'Unknown error'); }
-  };
-  window.PTD.testAngelFeed = async function(){
-    const noteEl=document.getElementById('angelTestNote'), badge=document.getElementById('angelTestBadge');
-    try{
-      if(noteEl) noteEl.textContent='Testing Angel One live quote…';
-      const sr=await fetch((location.origin||'')+'/api/angel/status',{cache:'no-store'});
-      const st=await sr.json();
-      statusText(st);
-      if(!st.connected) throw new Error('Angel One session is not connected');
-      const r=await fetch((location.origin||'')+'/api/angel/connection-test?symbol=NIFTY',{cache:'no-store'});
-      const d=await r.json().catch(()=>({}));
-      if(!r.ok) throw new Error(d.error||('Live quote test failed (HTTP '+r.status+')'));
-      if(badge){badge.textContent='LIVE QUOTE OK';badge.className='badge ok';}
-      if(noteEl) noteEl.textContent='LIVE QUOTE OK • '+(d.symbol||'NIFTY')+' • LTP '+(d.data?.ltp??'—')+' • token '+(d.token||'—');
-      const latest=await (await fetch((location.origin||'')+'/api/angel/status',{cache:'no-store'})).json();
-      statusText(latest);
-    }catch(e){
-      if(badge){badge.textContent='TEST FAILED';badge.className='badge danger';}
-      if(noteEl) noteEl.textContent='Live feed test error: '+(e.message||'Unknown error');
-    }
-  };
-  window.PTD.refreshExpiries = async function(){
-    const noteEl=document.getElementById('angelTestNote');
-    const underlying=(document.getElementById('cfUnderlying')?.value||'NIFTY').trim().toUpperCase();
-    try{
-      if(noteEl) noteEl.textContent='Loading live expiries…';
-      const r=await fetch((location.origin||'')+'/api/angel/expiries?exchange=NSE&segment=OPTIDX&underlying='+encodeURIComponent(underlying),{cache:'no-store'});
-      const d=await r.json().catch(()=>({}));
-      if(!r.ok) throw new Error(d.error||('Expiry lookup failed (HTTP '+r.status+')'));
-      const sel=document.getElementById('cfExpiry');
-      if(sel) sel.innerHTML=(d.expiries||[]).map(x=>'<option value="'+String(x).replace(/"/g,'&quot;')+'">'+String(x)+'</option>').join('')||'<option value="">No expiry</option>';
-      if(noteEl) noteEl.textContent=(d.expiries||[]).length?'Expiries loaded • '+d.expiries.length+' available':'No expiry data found';
-    }catch(e){ if(noteEl) noteEl.textContent='Expiry error: '+(e.message||'Unknown error'); }
-  };
-
-  window.loadBrokerAccount = window.loadBrokerAccount || async function(){
-    try{
-      const r=await fetch((location.origin||'')+'/api/angel/status',{cache:'no-store'});
-      const d=await r.json();
-      const el=document.getElementById('p9BrokerStatus');
-      if(el) el.textContent=d.connected?'CONNECTED':'LOCKED';
-      const checked=document.getElementById('p9Checked');
-      if(checked) checked.textContent='Last broker sync: '+new Date().toLocaleString('en-IN',{timeZone:'Asia/Kolkata'});
-      return d;
-    }catch(e){ return {connected:false}; }
-  };
-  window.loadPhase12Readiness = async function(){
-    const note=document.getElementById('p12Checks');
-    try{
-      if(note) note.textContent='Checking Go-Live readiness…';
-      const r=await fetch((location.origin||'')+'/api/phase12/readiness?exchange=NSE',{cache:'no-store'});
-      const d=await r.json().catch(()=>({}));
-      const checks=Array.isArray(d.checks)?d.checks:[];
-      const find=id=>checks.find(x=>x.id===id);
-      const set=(id,ok,good='PASS',bad='WAIT')=>{const el=document.getElementById(id);if(el){el.textContent=ok?good:bad;el.className=ok?'bullish':'neutral';}};
-      set('p12Angel',!!find('ANGEL_SESSION')?.ok, 'CONNECTED','WAIT');
-      set('p12Static',!!find('STATIC_IP')?.ok, 'VERIFIED','WAIT');
-      set('p12Market',!!find('MARKET_SESSION')?.ok, 'OPEN','WAIT');
-      set('p12Exec',!!d.liveReady,'READY','LOCKED');
-      if(note) note.textContent=checks.map(x=>x.label+': '+(x.ok?'PASS':'WAIT')).join(' • ') || (d.mode||'LOCKED');
-      return d;
-    }catch(e){ if(note) note.textContent='Readiness error: '+(e.message||'Unknown error'); return null; }
-  };
-  function boot(){
-    const btn=document.getElementById('angelConnectBtn');
-    if(btn) btn.addEventListener('click',function(ev){ev.preventDefault();ev.stopImmediatePropagation();connect();},true);
-    /* Surface JavaScript/runtime errors instead of silently doing nothing. */
-    window.addEventListener('error',e=>note('Dashboard script error: '+(e.message||'Unknown JavaScript error')));
-    window.addEventListener('unhandledrejection',e=>note('Dashboard promise error: '+(e.reason?.message||String(e.reason||'Unknown error'))));
-    fetch((location.origin||'')+'/api/angel/status',{cache:'no-store'}).then(r=>r.json()).then(async d=>{
-      statusText(d);
-      if(d.connected){
-        setTimeout(async()=>{
-          try{
-            if(typeof window.loadAll==='function') await window.loadAll();
-            if(typeof window.loadPrediction==='function') await window.loadPrediction(false);
-            if(typeof window.loadPhase11Shield==='function') await window.loadPhase11Shield();
-            if(typeof window.loadPhase12Readiness==='function') await window.loadPhase12Readiness();
-            if(typeof window.PTD?.refreshExpiries==='function') await window.PTD.refreshExpiries();
-          }catch(e){ note('Dashboard data load error: '+(e.message||'Unknown error')); }
-        },350);
-      }
-    }).catch(()=>{});
-  }
-  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot); else boot();
-})();
-</script>
-
-<script>
 async function angelStatus(){
   try{
     const r=await fetch(API_BASE+'/api/angel/status',{cache:'no-store'});
@@ -821,7 +659,8 @@ async function angelStatus(){
     const el=document.getElementById('angelStatusText');
     if(el) el.textContent=d.connected?('CONNECTED • '+(d.clientCode||'')+(d.websocket?' • STREAM LIVE':' • REST ONLY')):'DISCONNECTED';
     setGate('cxLogin',!!d.connected,d.connected?'ON':'OFF');
-    setGate('cxWs',!!d.websocket,d.websocket?'LIVE':(d.connected?'WAIT':'OFF'));
+    setGate('cxWs',!!d.websocket,d.websocket?'LIVE':(d.connected?'READY':'OFF'));
+    if(!d.connected){ $('feed').textContent='DISCONNECTED'; setGate('cxQuote',false,'OFF'); setGate('cxWs',false,'OFF'); }
     if(d.websocketError && !d.websocket) $('angelTestNote').textContent='WebSocket: '+d.websocketError;
     return d;
   }catch(e){ setGate('cxLogin',false,'OFF'); setGate('cxWs',false,'OFF'); return {connected:false}; }
@@ -833,25 +672,21 @@ async function angelConnect(){
   if(!pin||!totp){toast('PIN + TOTP required');return;}
   try{
     const r=await fetch(API_BASE+'/api/angel/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientCode,pin,totp})});
-    const d=await r.json().catch(()=>({}));
-    if(!r.ok) throw new Error(d.error||('Connection failed (HTTP '+r.status+')'));
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.error||'Connection failed');
     document.getElementById('angelPin').value=''; document.getElementById('angelTotp').value='';
-    await angelStatus();
-    toast(d.websocket?'Angel One connected + live stream':'Angel One login connected; starting live stream');
-    await loadBrokerAccount();
-  }catch(e){
-    $('angelTestNote').textContent='Connection error: '+(e.message||'Unknown error');
-    toast(e.message||'Connection failed');
-  }
+    toast('Angel One connected'); await angelStatus(); await loadBrokerAccount();
+  }catch(e){toast(e.message||'Connection failed');}
 }
 async function angelReconnect(){
   try{
     const r=await fetch(API_BASE+'/api/angel/reconnect',{method:'POST'});
     const d=await r.json().catch(()=>({}));
-    if(!r.ok) throw new Error(d.error||'WebSocket reconnect failed');
+    if(!r.ok) throw new Error(d.error||('Reconnect failed (HTTP '+r.status+')'));
     await angelStatus();
-    toast(d.websocket?'Live stream connected':'Stream still not connected');
-  }catch(e){$('angelTestNote').textContent='WebSocket error: '+(e.message||'Unknown error'); toast(e.message||'Reconnect failed');}
+    toast(d.websocket?'Stream reconnected':'Reconnect requested');
+    await loadAll(); await loadPrediction(false);
+  }catch(e){ $('angelTestNote').textContent='Reconnect error: '+(e.message||'Unknown error'); toast(e.message||'Reconnect failed'); }
 }
 async function angelDisconnect(){ try{await fetch(API_BASE+'/api/angel/logout',{method:'POST'}); await angelStatus(); toast('Disconnected');}catch(e){toast('Disconnect failed');} }
 const API_BASE = (location.origin && /^https?:$/.test(location.protocol)) ? location.origin : '';
@@ -920,7 +755,12 @@ function renderEvents(es){
  const high=arr.filter(e=>['HIGH','RED','CRITICAL'].includes(String(e.risk||'').toUpperCase())).length; setToneText('eventGate', high?'WATCH':'NORMAL'); setToneText('eventWatch', high?'ACTIVE':'NONE'); setToneText('eventFreeze', 'WAIT'); $('eventReason').textContent=high?'Connected calendar contains high-impact events.':'No high-impact event detected from connected feed.';
 }
 function renderEventStrategy(st){ const x=st||{}; setToneText('eventGate',x.hardBlock?'NO TRADE':'NORMAL'); setToneText('eventWatch',x.watch?'ACTIVE':'NONE'); setToneText('eventFreeze',x.hardBlock?'ACTIVE':'NONE'); $('eventReason').textContent=x.reason||'Calendar feed not connected'; }
-async function getJSON(path){const r=await fetch(API_BASE+path);if(!r.ok)throw new Error('HTTP '+r.status);return await r.json()}
+async function getJSON(path){
+  const r=await fetch(API_BASE+path,{cache:'no-store'});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(d.error||d.message||('HTTP '+r.status));
+  return d;
+}
 
 async function findContracts(){
   const exchange=$('cfExchange').value,segment=$('cfSegment').value,underlying=$('cfUnderlying').value.trim().toUpperCase(),expiry=$('cfExpiry').value,optionType=$('cfType').value,strike=$('cfStrike').value.trim();
@@ -1183,3 +1023,92 @@ async function fullChart(){const el=$('chart');try{await el.requestFullscreen?.(
 let brokerAccountData=null; let pendingExitPreview=null; let pendingModify=null;
 function money(v){const n=Number(v);return Number.isFinite(n)?'₹ '+n.toLocaleString('en-IN',{maximumFractionDigits:2}):'₹ —'}
 function pnlClass(v){const n=Number(v);return Number.isFinite(n)&&n<0?'account-negative':'account-positive'}
+function showBrokerTab(tab){for(const id of ['positions','holdings','orders','trades']) $('broker'+id[0].toUpperCase()+id.slice(1)).classList.remove('active'); $('broker'+tab[0].toUpperCase()+tab.slice(1)).classList.add('active');}
+function setBrokerText(id,v,cls=''){const el=$(id);if(!el)return;el.textContent=v;el.className=cls||''}
+function qContractSync(){const x=window.selectedContract;if(x){$('qSymbol').value=x.contract||x.symbol||''; if(x.exchange) $('qSide').dataset.exchange=x.exchange;}}
+function renderBrokerAccount(d){
+  brokerAccountData=d||null;
+  const rms=d?.rms||{}; const h=d?.allHoldings?.totalholding||d?.allHoldings?.totalHolding||{};
+  setBrokerText('acNet',money(rms.net)); setBrokerText('acCash',money(rms.availablecash)); setBrokerText('acCollateral',money(rms.collateral)); setBrokerText('acUsed',money(Number(rms.utilisedspan||0)+Number(rms.utilisedexposure||0)+Number(rms.utiliseddebits||0)));
+  const realised=Number(rms.m2mrealized); const unreal=Number(rms.m2munrealized); setBrokerText('acRealised',money(realised),pnlClass(realised)); setBrokerText('acUnrealised',money(unreal),pnlClass(unreal));
+  setBrokerText('acHoldingValue',money(h.totalholdingvalue)); setBrokerText('acHoldingPnl',money(h.totalprofitandloss),pnlClass(h.totalprofitandloss));
+  $('p9BrokerStatus').textContent=d?.ok?'LIVE SYNC':'ERROR'; $('p9Checked').textContent='Last broker sync: '+(d?.checkedAt?new Date(d.checkedAt).toLocaleString('en-IN'):'—');
+  renderBrokerPositions(Array.isArray(d?.positions)?d.positions:[]); renderBrokerHoldings(Array.isArray(d?.holdings)?d.holdings:[]); renderBrokerOrders(Array.isArray(d?.orders)?d.orders:[]); renderBrokerTrades(Array.isArray(d?.trades)?d.trades:[]); qContractSync();
+}
+function renderBrokerPositions(rows){
+  const el=$('brokerPositions'); if(!rows.length){el.innerHTML='<div class="broker-empty">No open/net positions returned by Angel One.</div>';return}
+  const active=rows.filter(x=>Number(x.netqty??((Number(x.buyqty)||0)-(Number(x.sellqty)||0)))!==0);
+  if(!active.length){el.innerHTML='<div class="broker-empty">No open/net positions. Day positions may still be listed below if the broker returns them.</div>';return}
+  el.innerHTML='<div class="scroll-x"><table class="broker-table"><tr><th>Symbol</th><th>Side</th><th>Qty</th><th>Avg</th><th>LTP</th><th>P&L</th><th>Product</th><th>Action</th></tr>'+active.map(x=>{const q=Number(x.netqty??((Number(x.buyqty)||0)-(Number(x.sellqty)||0)));const pnl=Number(x.pnl??x.m2m??0);const ltp=x.ltp??x.ltpPrice??'';return `<tr><td>${x.tradingsymbol||'—'}</td><td>${q>0?'LONG':'SHORT'}</td><td>${Math.abs(q)}</td><td>${Number(x.avgnetprice??x.buyavgprice??x.sellavgprice??0).toFixed(2)}</td><td>${ltp!==''?Number(ltp).toFixed(2):'—'}</td><td class="${pnl<0?'account-negative':'account-positive'}">${money(pnl)}</td><td>${x.producttype||'—'}</td><td><button class="btn sell broker-action" onclick="previewExit('${String(x.symboltoken||'')}', '${String(x.tradingsymbol||'').replaceAll("'","&#39;")}')">EXIT</button></td></tr>`}).join('')+'</table></div>';
+}
+function renderBrokerHoldings(rows){const el=$('brokerHoldings');if(!rows.length){el.innerHTML='<div class="broker-empty">No holdings returned.</div>';return} el.innerHTML='<div class="scroll-x"><table class="broker-table"><tr><th>Symbol</th><th>Qty</th><th>Avg</th><th>LTP</th><th>P&L</th><th>P&L %</th><th>Exchange</th></tr>'+rows.map(x=>{const pnl=Number(x.profitandloss||0);return `<tr><td>${x.tradingsymbol||'—'}</td><td>${x.quantity??'—'}</td><td>${x.averageprice!=null?Number(x.averageprice).toFixed(2):'—'}</td><td>${x.ltp!=null?Number(x.ltp).toFixed(2):'—'}</td><td class="${pnl<0?'account-negative':'account-positive'}">${money(pnl)}</td><td>${x.pnlpercentage!=null?Number(x.pnlpercentage).toFixed(2)+'%':'—'}</td><td>${x.exchange||'—'}</td></tr>`}).join('')+'</table></div>';}
+function renderBrokerOrders(rows){const el=$('brokerOrders');if(!rows.length){el.innerHTML='<div class="broker-empty">No orders returned.</div>';return} el.innerHTML='<div class="scroll-x"><table class="broker-table"><tr><th>Order ID</th><th>Symbol</th><th>Side</th><th>Qty</th><th>Price</th><th>Status</th><th>Updated</th><th>Action</th></tr>'+rows.map(x=>{const st=String(x.orderstatus||x.status||'').toLowerCase();const can=['open','trigger pending','pending','after market order req received'].includes(st);return `<tr><td>${x.orderid||'—'}</td><td>${x.tradingsymbol||'—'}</td><td>${x.transactiontype||'—'}</td><td>${x.quantity||'—'}</td><td>${x.price||'—'}</td><td>${x.orderstatus||x.status||'—'}</td><td>${x.updatetime||x.exchorderupdatetime||'—'}</td><td>${can?`<div class="inline-actions"><button class="btn broker-action" onclick='openModify(${JSON.stringify({orderid:x.orderid,ordertype:x.ordertype||'LIMIT',price:x.price||0,quantity:x.quantity||0,tradingsymbol:x.tradingsymbol,symboltoken:x.symboltoken,exchange:x.exchange,producttype:x.producttype||'INTRADAY',variety:x.variety||'NORMAL',ordertag:x.ordertag||''})})'>MODIFY</button><button class="btn sell broker-action" onclick="cancelLive('${String(x.orderid||'')}','${String(x.exchange||'NSE')}')">CANCEL</button></div>`:'—'}</td></tr>`}).join('')+'</table></div>';}
+function renderBrokerTrades(rows){const el=$('brokerTrades');if(!rows.length){el.innerHTML='<div class="broker-empty">No trades returned.</div>';return} el.innerHTML='<div class="scroll-x"><table class="broker-table"><tr><th>Symbol</th><th>Side</th><th>Qty</th><th>Price</th><th>Order ID</th><th>Time</th></tr>'+rows.map(x=>`<tr><td>${x.tradingsymbol||'—'}</td><td>${x.transactiontype||x.side||'—'}</td><td>${x.fillsize||x.quantity||x.filledshares||'—'}</td><td>${x.fillprice||x.averageprice||x.price||'—'}</td><td>${x.orderid||'—'}</td><td>${x.filltime||x.updatetime||'—'}</td></tr>`).join('')+'</table></div>';}
+async function loadBrokerAccount(){try{const r=await getJSON('/api/broker/account');if(!r.ok)throw new Error(r.error||'Broker account unavailable');renderBrokerAccount(r);}catch(e){$('p9BrokerStatus').textContent='LOCKED';toast(e.message||'Broker account unavailable')}}
+async function previewQuickOrder(){
+  const c=window.selectedContract;if(!c?.token){toast('First select a live contract from Contract Finder');return}
+  const side=$('qSide').value, type=$('qType').value, price=Number($('qPrice').value||0), qty=Number($('qQty').value||0), sl=Number($('qSL').value||0), capital=Number($('qCapital').value||$('capital').value||0), riskPct=Number($('qRisk').value||$('riskPct').value||0);
+  const body={transactiontype:side,exchange:c.exchange||'NSE',tradingsymbol:c.contract||c.symbol,symboltoken:c.token,ordertype:type,producttype:'INTRADAY',price,stopLoss:sl,target1:Number($('qTarget').value||0),quantity:qty,capital,riskPct,signalToken:window.phase11SignalToken||''};
+  try{const r=await fetch(API_BASE+'/api/order/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const d=await r.json();if(!r.ok||!d.ok)throw new Error([d.error,...(d.errors||[])].filter(Boolean).join(' • '));pendingOrderPreview={previewId:d.previewId};$('orderPreviewText').textContent=`${d.order.transactiontype} ${d.order.tradingsymbol} • Qty ${d.order.quantity} • ${d.order.ordertype} • Max risk ${money(d.maxLoss)} • 60 sec.`;$('orderConfirm').value='';$('orderModal').classList.add('show');}catch(e){toast(e.message||'Order preview failed')}}
+async function previewExit(token,symbol){try{const r=await fetch(API_BASE+'/api/position/exit/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symboltoken:token})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.error||'Exit preview failed');pendingExitPreview={previewId:d.previewId};$('exitPreviewText').textContent=`Exit ${d.position.symbol||symbol} • Net Qty ${d.position.netQty} • ${d.order.transactiontype} MARKET • No order has been placed yet.`;$('exitConfirm').value='';$('exitModal').classList.add('show');}catch(e){toast(e.message||'Exit preview failed')}}
+function closeExitModal(){$('exitModal').classList.remove('show');pendingExitPreview=null}
+async function executeExitPosition(){if(!pendingExitPreview){toast('Exit preview missing');return}const confirmation=$('exitConfirm').value.trim();if(confirmation.toUpperCase()!=='EXIT LIVE POSITION'){toast('Type EXIT LIVE POSITION exactly');return}try{const r=await fetch(API_BASE+'/api/position/exit/execute',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({previewId:pendingExitPreview.previewId,confirmation})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.error||'Exit order failed');closeExitModal();toast('Exit order submitted • verify fill in Orders/Trades');await loadBrokerAccount();}catch(e){toast(e.message||'Exit order failed')}}
+function openModify(o){pendingModify=o;$('modOrderId').value=o.orderid||'';$('modOrderType').value=o.ordertype||'LIMIT';$('modPrice').value=o.price||0;$('modQty').value=o.quantity||0;$('modifyModal').classList.add('show')}
+function closeModifyModal(){$('modifyModal').classList.remove('show');pendingModify=null}
+async function executeModifyOrder(){if(!pendingModify){toast('Order details missing');return}const confirmation='MODIFY LIVE ORDER';const o=pendingModify;try{const body={...o,ordertype:$('modOrderType').value,price:Number($('modPrice').value||0),quantity:Number($('modQty').value||0),confirmation};const r=await fetch(API_BASE+'/api/order/modify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.error||'Modify order failed');closeModifyModal();toast('Modify request submitted');await loadBrokerAccount();}catch(e){toast(e.message||'Modify order failed')}}
+async function cancelLive(orderid,exchange='NSE'){if(!confirm('Cancel this live order?'))return;try{const r=await fetch(API_BASE+'/api/order/cancel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({orderid,exchange})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.error||'Cancel failed');toast('Cancel request submitted');await loadBrokerAccount();}catch(e){toast(e.message||'Cancel failed')}}
+
+async function loadPhase12Readiness(){ try{ const ex=(document.getElementById('exchange')?.value||'NSE'); const r=await fetch('/api/phase12/readiness?exchange='+encodeURIComponent(ex)); const d=await r.json(); setToneText('p12Mode',d.mode||'LOCKED'); setToneText('p12Angel',d.checks?.find(x=>x.id==='ANGEL_SESSION')?.ok?'OK':'WAIT'); setToneText('p12Static',d.checks?.find(x=>x.id==='STATIC_IP')?.ok?'VERIFIED':'WAIT'); setToneText('p12Market',d.checks?.find(x=>x.id==='MARKET_SESSION')?.ok?'OPEN':'CLOSED'); setToneText('p12Exec',d.liveReady?'READY':'LOCKED'); const failed=(d.checks||[]).filter(x=>!x.ok).map(x=>x.label); document.getElementById('p12Checks').textContent=failed.length?'Blocked: '+failed.join(' • '):'All production readiness checks passed. Live order execution still requires explicit user confirmation.'; }catch(e){ setToneText('p12Mode','LOCKED'); setToneText('p12Exec','LOCKED'); document.getElementById('p12Checks').textContent='Readiness service unavailable.'; } }
+
+async function loadExecutionStatus(){
+ try{
+   const r=await getJSON('/api/execution/status'); const s=r.status||{};
+   setToneText('exSession',s.connected?'CONNECTED':'OFF'); setToneText('exStatic',s.staticIpVerified?'VERIFIED':'NOT VERIFIED'); setToneText('exEnabled',s.executionEnabled?'ON':'LOCKED'); setToneText('exKill',s.killSwitch?'ON':'OFF');
+   $('execState').textContent=s.ready?'READY':'LOCKED'; $('execState').className=s.ready?'bullish':'wait';
+ }catch(e){ setToneText('exSession','OFF'); setToneText('exStatic','WAIT'); setToneText('exEnabled','LOCKED'); setToneText('exKill','ON'); }
+}
+async function loadRMS(){
+ try{ const r=await getJSON('/api/execution/rms'); const d=r.data||{}; $('exCash').textContent=d.availablecash!=null?'₹ '+Number(d.availablecash).toLocaleString('en-IN'):'—'; toast(r.ok?'RMS loaded':'RMS unavailable'); }catch(e){ toast('RMS unavailable'); }
+}
+async function loadOrderBook(){
+ try{ const r=await getJSON('/api/execution/orders'); const d=Array.isArray(r.data)?r.data:(r.data?.data||[]); $('exOrders').textContent=Array.isArray(d)?String(d.length):'LIVE'; toast(r.ok?'Order book loaded':'Order book unavailable'); }catch(e){ toast('Order book unavailable'); }
+}
+let pendingOrderPreview=null;
+async function requestOrder(side){
+ const decision=$('action').textContent.trim();
+ if(decision==='NO TRADE'){toast('NO TRADE • decision engine is locked');return}
+ const strike=$('strike').value.trim(); const entry=$('entry').value.trim(); const sl=$('sl').value.trim(); const qty=$('quantity').value.trim();
+ if(!strike||!entry||!sl||!qty){toast('Strike, Entry, SL and Quantity required');return}
+ let token=window.selectedContract?.token||''; let exch=window.selectedContract?.exchange||'NSE'; let symbol=window.selectedContract?.contract||'';
+ if(!token){
+   toast('Select a live contract from Contract Finder first'); return;
+ }
+ const body={side:'BUY',transactiontype:side,exchange:exch,tradingsymbol:symbol,symboltoken:token,ordertype:$('orderType').value,producttype:'INTRADAY',price:Number(entry),stopLoss:Number(sl),target1:Number($('t1').value||0),quantity:Number(qty),capital:Number($('capital').value||0),riskPct:Number($('riskPct').value||0),signalToken:window.phase11SignalToken||''};
+ try{
+   const r=await fetch(API_BASE+'/api/order/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); const d=await r.json();
+   if(!r.ok||!d.ok) throw new Error([d.error,...(d.errors||[])].filter(Boolean).join(' • '));
+   pendingOrderPreview={previewId:d.previewId}; $('orderPreviewText').textContent=`${d.order.transactiontype} ${d.order.tradingsymbol} • Qty ${d.order.quantity} • Price ${d.order.price} • Max risk ₹${d.maxLoss} • expires in 60s.`; $('orderConfirm').value=''; $('orderModal').classList.add('show');
+ }catch(e){toast(e.message||'Order preview failed')}
+}
+function closeOrderModal(){ $('orderModal').classList.remove('show'); pendingOrderPreview=null; }
+async function executeLiveOrder(){
+ if(!pendingOrderPreview){toast('Preview missing or expired');return}
+ const confirmation=$('orderConfirm').value.trim(); if(confirmation.toUpperCase()!=='PLACE LIVE ORDER'){toast('Type PLACE LIVE ORDER exactly');return}
+ try{
+   const r=await fetch(API_BASE+'/api/order/execute',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({previewId:pendingOrderPreview.previewId,confirmation})}); const d=await r.json();
+   if(!r.ok||!d.ok) throw new Error(d.error||'Live order rejected');
+   closeOrderModal(); toast('Order request submitted • check broker order book'); await loadOrderBook();
+ }catch(e){toast(e.message||'Live order failed')}
+}
+
+function updateRisk(){
+ const c=Number($('capital').value||0),r=Number($('riskPct').value||0),d=Number($('dailyCap').value||0);
+ $('allowed').textContent=c&&r?'₹ '+Math.round(c*r/100).toLocaleString('en-IN'):'₹ —';$('riskOut').textContent=c&&r?'₹ '+Math.round(c*r/100).toLocaleString('en-IN'):'₹ —';
+ $('dailyOut').textContent=c&&d?'₹ '+Math.round(c*d/100).toLocaleString('en-IN'):'₹ —';$('posOut').textContent=(Number($('maxPos').value||1))+' max';
+}
+['capital','riskPct','dailyCap','maxPos'].forEach(id=>$(id).addEventListener('input',updateRisk));
+window.addEventListener('resize',drawChart);
+angelStatus();setInterval(angelStatus,5000);loadAll();loadPrediction(false);loadPhase11Shield();updateRisk();drawChart();loadExecutionStatus();loadPhase12Readiness();phase6Monitor();setInterval(loadAll,15000);setInterval(loadPrediction,20000);setInterval(loadPhase11Shield,10000);setInterval(loadBrokerAccount,10000);setInterval(loadExecutionStatus,15000);setInterval(loadPhase12Readiness,15000);setInterval(phase6Monitor,5000);
+</script>
+</body>
+</html>
