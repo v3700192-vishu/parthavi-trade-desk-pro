@@ -237,14 +237,28 @@ async function options(symbol){
     const items=await loadMaster(); const now=Date.now();
     const parseExpiry=(x)=>{const m=String(x||'').match(/^(\d{2})([A-Z]{3})(\d{4})$/i); if(!m)return 0; const mo={JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11}[m[2].toUpperCase()]; return mo==null?0:new Date(Number(m[3]),mo,Number(m[1]),23,59,59).getTime();};
     const strikes=items.filter(x=>String(x.exch_seg||'').toLowerCase()==='nse_fo'&&String(x.name||'').toUpperCase()===String(symbol).toUpperCase()&&/^(CE|PE)$/i.test(String(x.symbol||'').slice(-2))&&parseExpiry(x.expiry)>=now).map(x=>Number(x.strike)/100).filter(Number.isFinite);
+    const expiries=[...new Set(items.filter(x=>String(x.exch_seg||'').toLowerCase()==='nse_fo'&&String(x.name||'').toUpperCase()===String(symbol).toUpperCase()&&/^(CE|PE)$/i.test(String(x.symbol||'').slice(-2))&&parseExpiry(x.expiry)>=now).map(x=>String(x.expiry||'').toUpperCase()).filter(Boolean))].sort((a,b)=>parseExpiry(a)-parseExpiry(b));
+    const liveExpiry=expiries[0]||null;
     if(!strikes.length) return {atm:Math.round(spot/50)*50,ceoi:null,cedoi:null,peoi:null,pedoi:null,iv:null,pcr:null,connected:true};
     const atm=strikes.reduce((best,s)=>Math.abs(s-spot)<Math.abs(best-spot)?s:best,strikes[0]);
-    const base=await findContracts({exchange:'NSE',segment:'OPTIDX',underlying:symbol,optionType:'CE',strike:String(atm)});
-    const pe=await findContracts({exchange:'NSE',segment:'OPTIDX',underlying:symbol,optionType:'PE',strike:String(atm)});
-    const q=await quoteInstruments([...(base.slice(0,1)),...(pe.slice(0,1))]);
-    const map=new Map(q.map(x=>[String(x.symbolToken),x])); const ce=base[0]&&map.get(String(base[0].token)); const p=pe[0]&&map.get(String(pe[0].token));
-    const ceoi=Number(ce?.opnInterest), peoi=Number(p?.opnInterest), cedoi=null, pedoi=null;
-    return {connected:true,atm,ceoi:Number.isFinite(ceoi)?ceoi:null,cedoi,peoi:Number.isFinite(peoi)?peoi:null,pedoi,iv:null,pcr:Number.isFinite(ceoi)&&Number.isFinite(peoi)&&ceoi?Number((peoi/ceoi).toFixed(3)):null};
+    const base=await findContracts({exchange:'NSE',segment:'OPTIDX',underlying:symbol,expiry:liveExpiry||'',optionType:'CE'});
+    const pe=await findContracts({exchange:'NSE',segment:'OPTIDX',underlying:symbol,expiry:liveExpiry||'',optionType:'PE'});
+    const near=(arr)=>arr.map(x=>({...x,_strike:Number(x.strike)/100})).filter(x=>Number.isFinite(x._strike)).sort((a,b)=>Math.abs(a._strike-atm)-Math.abs(b._strike-atm)).slice(0,25);
+    const nearCe=near(base), nearPe=near(pe);
+    const q=await quoteInstruments([...nearCe,...nearPe]);
+    const map=new Map(q.map(x=>[String(x.symbolToken),x]));
+    const enriched=[...nearCe.map(x=>({...x,side:'CE'})),...nearPe.map(x=>({...x,side:'PE'}))].map(x=>{const qq=map.get(String(x.token))||{};return {...x,oi:Number(qq.opnInterest??qq.openInterest??qq.oi)}}).filter(x=>Number.isFinite(x.oi));
+    const ces=enriched.filter(x=>x.side==='CE'), pes=enriched.filter(x=>x.side==='PE');
+    const maxOi=(arr)=>arr.length?arr.reduce((a,b)=>b.oi>a.oi?b:a,arr[0]):null;
+    const ceMax=maxOi(ces), peMax=maxOi(pes);
+    const ce=ces.reduce((a,b)=>Math.abs(b._strike-atm)<Math.abs((a?._strike??atm)-atm)?b:a,null);
+    const p=pes.reduce((a,b)=>Math.abs(b._strike-atm)<Math.abs((a?._strike??atm)-atm)?b:a,null);
+    const ceoi=Number(ce?.oi), peoi=Number(p?.oi),
+      resistance=ceMax?Number(ceMax._strike):null, support=peMax?Number(peMax._strike):null;
+    return {connected:true,atm,expiry:liveExpiry,ceoi:Number.isFinite(ceoi)?ceoi:null,cedoi:null,peoi:Number.isFinite(peoi)?peoi:null,pedoi:null,iv:null,pcr:Number.isFinite(ceoi)&&Number.isFinite(peoi)&&ceoi?Number((peoi/ceoi).toFixed(3)):null,
+      ceMaxOi:ceMax?{strike:Number(ceMax._strike),oi:ceMax.oi,symbol:ceMax.symbol}:null,
+      peMaxOi:peMax?{strike:Number(peMax._strike),oi:peMax.oi,symbol:peMax.symbol}:null,
+      resistance,support,oiInterpretation:ceMax&&peMax?`CE OI concentration ${ceMax._strike} resistance • PE OI concentration ${peMax._strike} support`:'Partial OI chain',chainCount:enriched.length};
   }catch{return {connected:false,atm:null,ceoi:null,cedoi:null,peoi:null,pedoi:null,iv:null,pcr:null};}
 }
 const newsCache=new Map();
