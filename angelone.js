@@ -274,20 +274,26 @@ export async function loadMaster(force=false){
 export async function findContracts({exchange="NSE", segment="OPTIDX", underlying="", expiry="", optionType="", strike="", query=""}){
   const items=await loadMaster();
   const ex=exchange.toUpperCase();
-  const segMap={NSE:{EQUITY:"nse_cm",FUT:"nse_fo",OPTIDX:"nse_fo",OPTSTK:"nse_fo"},BSE:{EQUITY:"bse_cm",FUT:"bse_fo",OPTIDX:"bse_fo",OPTSTK:"bse_fo"}};
-  const targetSeg=segMap[ex]?.[segment.toUpperCase()] || segment.toLowerCase();
-  const q=(query||underlying||"").toUpperCase();
-  const ot=(optionType||"").toUpperCase();
+  const seg=segment.toUpperCase();
+  const targetSeg=ex==='BSE'?'bse_fo':seg==='EQUITY'?'nse_cm':'nse_fo';
+  const q=(query||underlying||"").trim().toUpperCase();
+  const ot=(optionType||"").trim().toUpperCase();
   const st=strike!=="" && strike!=null ? Number(strike) : null;
-  return items.filter(x=>{
-    if(String(x.exch_seg||'').toLowerCase()!==targetSeg) return false;
-    if(q && !(String(x.name||'').toUpperCase().includes(q) || String(x.symbol||'').toUpperCase().includes(q))) return false;
-    if(underlying && String(x.name||'').toUpperCase()!==underlying.toUpperCase()) return false;
-    if(expiry && String(x.expiry||'').toUpperCase()!==expiry.toUpperCase()) return false;
-    if(ot && !String(x.symbol||'').toUpperCase().endsWith(ot)) return false;
+  const normSeg=x=>{const s=String(x?.exch_seg||x?.exchange||'').toLowerCase(); if(s==='nse_fo'||s==='nfo')return'nse_fo'; if(s==='bse_fo'||s==='bfo')return'bse_fo'; if(s==='nse_cm'||s==='nse')return'nse_cm'; if(s==='bse_cm'||s==='bse')return'bse_cm'; return s;};
+  const arr=items.filter(x=>{
+    const sym=String(x.symbol||'').toUpperCase(), name=String(x.name||'').toUpperCase();
+    let okSeg=normSeg(x)===targetSeg;
+    if(!okSeg && ex==='NSE' && (seg==='OPTIDX'||seg==='OPTSTK') && /(?:CE|PE)$/.test(sym)) okSeg=true;
+    if(!okSeg) return false;
+    if((seg==='OPTIDX'||seg==='OPTSTK') && !/(?:CE|PE)$/.test(sym)) return false;
+    if(q && !(name===q || name.startsWith(q) || sym.startsWith(q) || sym.includes(q))) return false;
+    if(underlying && !(name===underlying.toUpperCase() || name.startsWith(underlying.toUpperCase()) || sym.startsWith(underlying.toUpperCase()))) return false;
+    if(expiry && String(x.expiry||'').toUpperCase()!==String(expiry).toUpperCase()) return false;
+    if(ot && !sym.endsWith(ot)) return false;
     if(st!==null && Number(x.strike)/100!==st && Number(x.strike)!==st) return false;
     return true;
-  }).slice(0,200).map(x=>({token:x.token,symbol:x.symbol,name:x.name,expiry:x.expiry,strike:x.strike,lotsize:x.lotsize,instrumenttype:x.instrumenttype,exch_seg:x.exch_seg,tick_size:x.tick_size}));
+  });
+  return arr.slice(0,200).map(x=>({token:x.token,symbol:x.symbol,name:x.name,expiry:x.expiry,strike:x.strike,lotsize:x.lotsize,instrumenttype:x.instrumenttype,exch_seg:x.exch_seg,tick_size:x.tick_size}));
 }
 
 async function subscribeOnSocket(tokens, exchangeType=1, mode=1){
