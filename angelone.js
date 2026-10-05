@@ -8,10 +8,22 @@ let api = null;
 let session = { connected:false, clientCode:null, loginAt:null, jwtToken:null, feedToken:null, profile:null };
 let masterCache = { loadedAt:0, items:[] };
 let ws = null;
+let wsConnected = false;
+let wsError = null;
+let reconnectTimer = null;
 let latestTicks = new Map();
+let lastTickAt = null;
 
 export function angelStatus(){
-  return { connected:session.connected, clientCode:session.clientCode, loginAt:session.loginAt, websocket:!!ws, tickCount:latestTicks.size };
+  return {
+    connected:session.connected,
+    clientCode:session.clientCode,
+    loginAt:session.loginAt,
+    websocket:!!ws && wsConnected,
+    tickCount:latestTicks.size,
+    lastTickAt,
+    websocketError:wsError
+  };
 }
 
 export async function loginAngel({clientCode, pin, totp}){
@@ -23,12 +35,15 @@ export async function loginAngel({clientCode, pin, totp}){
   if(!data?.status) throw new Error(data?.message || "Angel One login failed");
   session = {connected:true, clientCode:cc, loginAt:new Date().toISOString(), jwtToken:data.data?.jwtToken||null, feedToken:data.data?.feedToken||null, profile:null};
   try { session.profile = await api.getProfile(); } catch {}
-  return {connected:true, clientCode:cc, loginAt:session.loginAt, profile:session.profile};
+  try { await connectMarketWebSocket(); } catch (e) { wsError = e?.message || "WebSocket connection failed"; }
+  return {connected:true, clientCode:cc, loginAt:session.loginAt, profile:session.profile, websocket:angelStatus().websocket, websocketError:wsError};
 }
 
 export async function logoutAngel(){
   try { if(api && session.connected) await api.logout({clientcode:session.clientCode}); } catch {}
+  if(reconnectTimer){ clearTimeout(reconnectTimer); reconnectTimer=null; }
   if(ws){ try{ws.closeConnection?.()}catch{}; ws=null; }
+  wsConnected=false; wsError=null; lastTickAt=null;
   api=null; session={connected:false,clientCode:null,loginAt:null,jwtToken:null,feedToken:null,profile:null}; latestTicks.clear();
   return angelStatus();
 }
@@ -273,15 +288,72 @@ export async function findContracts({exchange="NSE", segment="OPTIDX", underlyin
   }).slice(0,200).map(x=>({token:x.token,symbol:x.symbol,name:x.name,expiry:x.expiry,strike:x.strike,lotsize:x.lotsize,instrumenttype:x.instrumenttype,exch_seg:x.exch_seg,tick_size:x.tick_size}));
 }
 
+async function subscribeOnSocket(tokens, exchangeType=1, mode=1){
+  if(!ws || !wsConnected) throw new Error("Angel One WebSocket is not connected");
+  const clean=[...new Set((tokens||[]).map(String).filter(Boolean))];
+  if(!clean.length) throw new Error("No tokens supplied");
+  const req={correlationID:`PTD${Date.now().toString().slice(-7)}`,action:1,mode:Number(mode),exchangeType:Number(exchangeType),tokens:clean};
+  ws.fetchData(req);
+  return {subscribed:true,tokens:clean.length,exchangeType:Number(exchangeType),mode:Number(mode)};
+}
+
+function scheduleReconnect(){
+  if(!session.connected || reconnectTimer) return;
+  reconnectTimer=setTimeout(async()=>{
+    reconnectTimer=null;
+    if(!session.connected) return;
+    try { await connectMarketWebSocket(); } catch (e) {
+      wsError=e?.message||"WebSocket reconnect failed";
+      scheduleReconnect();
+    }
+  },5000);
+}
+
+async function connectMarketWebSocket(){
+  if(!session.connected || !session.jwtToken || !session.feedToken) throw new Error("Angel One session is not connected");
+  if(ws && wsConnected) return angelStatus();
+
+  if(ws){ try{ws.closeConnection?.()}catch{}; ws=null; }
+  wsConnected=false; wsError=null;
+
+  const socket=new WebSocketV2({
+    jwttoken:session.jwtToken,
+    apikey:process.env.ANGEL_API_KEY,
+    clientcode:session.clientCode,
+    feedtype:session.feedToken
+  });
+  ws=socket;
+
+  try{
+    socket.on('tick', data=>{
+      try{
+        const token=String(data?.token ?? data?.symbolToken ?? data?.symboltoken ?? JSON.stringify(data));
+        latestTicks.set(token,{data,at:Date.now()});
+        lastTickAt=Date.now();
+        wsConnected=true;
+        wsError=null;
+      }catch{}
+    });
+    socket.on('error', err=>{
+      wsConnected=false;
+      wsError=err?.message || String(err) || "Angel One WebSocket error";
+      scheduleReconnect();
+    });
+    socket.on('close', ()=>{
+      wsConnected=false;
+      if(session.connected) scheduleReconnect();
+    });
+  }catch{}
+
+  await socket.connect();
+  wsConnected=true;
+  wsError=null;
+  await subscribeOnSocket(["99926000","99926009","99926017","99926037","99926074"],1,1);
+  return angelStatus();
+}
+
 export async function subscribe(tokens, exchangeType=2, mode=1){
   if(!session.connected || !session.jwtToken || !session.feedToken) throw new Error("Angel One session is not connected");
-  if(!ws){
-    ws=new WebSocketV2({jwttoken:session.jwtToken, apikey:process.env.ANGEL_API_KEY, clientcode:session.clientCode, feedtype:session.feedToken});
-    ws.on('tick', data=>{ try { const key=JSON.stringify(data); latestTicks.set(key,{data,at:Date.now()}); } catch {} });
-    await ws.connect();
-  }
-  const list=[{exchangeType:Number(exchangeType),tokens:tokens.map(String)}];
-  const req={correlationID:`PTD${Date.now().toString().slice(-7)}`,action:1,mode:Number(mode),exchangeType:Number(exchangeType),tokens:tokens.map(String)};
-  ws.fetchData(req);
-  return {subscribed:true,tokens:tokens.length};
+  if(!ws || !wsConnected) await connectMarketWebSocket();
+  return await subscribeOnSocket(tokens,exchangeType,mode);
 }
