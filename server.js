@@ -262,6 +262,38 @@ async function options(symbol){
       resistance,support,oiInterpretation:ceMax&&peMax?`CE OI concentration ${ceMax._strike} resistance • PE OI concentration ${peMax._strike} support`:'Partial OI chain',chainCount:enriched.length};
   }catch{return {connected:false,atm:null,ceoi:null,cedoi:null,peoi:null,pedoi:null,iv:null,pcr:null};}
 }
+const greekCache=new Map();
+async function liveOptionGreeks(symbol,expiry){
+  const key=String(symbol)+'|'+String(expiry||'');
+  const cached=greekCache.get(key);
+  if(cached && Date.now()-cached.at<5000) return cached.data;
+  const raw=await optionGreeks({name:String(symbol).toUpperCase(),expirydate:expiry});
+  const rows=Array.isArray(raw)?raw:[];
+  const data=rows.map(x=>({
+    name:x.name,expiry:x.expiry,strike:Number(x.strikePrice),
+    optionType:String(x.optionType||'').toUpperCase(),
+    delta:Number(x.delta),gamma:Number(x.gamma),theta:Number(x.theta),
+    vega:Number(x.vega),iv:Number(x.impliedVolatility),tradeVolume:Number(x.tradeVolume)
+  })).filter(x=>Number.isFinite(x.strike)&&Number.isFinite(x.delta)&&Number.isFinite(x.theta));
+  greekCache.set(key,{at:Date.now(),data});
+  return data;
+}
+function greekRiskWarning(g){
+  if(!g) return {status:'WAIT',message:'Live option Greeks not verified.'};
+  const theta=Math.abs(Number(g.theta)), delta=Math.abs(Number(g.delta));
+  if(!Number.isFinite(theta)||!Number.isFinite(delta)) return {status:'WAIT',message:'Live option Greeks not verified.'};
+  if(theta>=10 || delta<0.20) return {status:'NO TRADE',message:'Theta Decay is too high or Delta is too low. Option buying is risky today.'};
+  if(theta>=6 || delta<0.35) return {status:'CAUTION',message:'Theta/Delta profile is unfavorable for option buying. Prefer NO TRADE unless the setup is exceptionally strong.'};
+  return {status:'PASS',message:'Theta/Delta profile is acceptable for option buying.'};
+}
+function positionSizeFromRisk({riskBudget=1000,entry,sl,lotSize,availableBudget=null}){
+  const budget=Math.max(0,Number(riskBudget)||0), e=Number(entry), s=Number(sl), lot=Math.max(1,Math.floor(Number(lotSize)||1));
+  const perUnit=Math.abs(e-s), perLot=perUnit*lot;
+  const cap=Number.isFinite(Number(availableBudget))?Math.min(budget,Math.max(0,Number(availableBudget))):budget;
+  const lots=perLot>0?Math.floor(cap/perLot):0;
+  return {riskBudget:cap,entry:e,stopLoss:s,lossPerUnit:Number.isFinite(perUnit)?perUnit:null,lotSize:lot,lossPerLot:Number.isFinite(perLot)?perLot:null,recommendedLots:lots,recommendedQuantity:lots*lot,usedRisk:Number((lots*perLot).toFixed(2)),unusedRisk:Number(Math.max(0,cap-lots*perLot).toFixed(2))};
+}
+
 const newsCache=new Map();
 const globalCache={at:0,data:null};
 async function news(symbol){
@@ -460,6 +492,33 @@ app.post("/api/angel/subscribe", async (req,res)=>{ try { const out=await angelS
 
 
 
+
+// RISK ENGINE — daily loss budget, live lot sizing and option Greek guard.
+app.get('/api/risk/status',(req,res)=>{
+  const p=phase11ProtectionStatus(), configured=numEnv('MAX_RISK_RUPEES',1000);
+  res.json({ok:true,riskBudgetRupees:configured,dailyLossCapRupees:p.dailyLossCap,dailyLoss:p.dailyLoss,dailyLossRemaining:p.dailyLossRemaining});
+});
+app.post('/api/risk/position-size',async(req,res)=>{
+  try{
+    if(!angelStatus().connected) return res.status(401).json({ok:false,error:'ANGEL_NOT_CONNECTED'});
+    const symbol=String(req.body?.symbol||'NIFTY').toUpperCase(), expiry=String(req.body?.expiry||'').toUpperCase();
+    const strike=Number(req.body?.strike), optionType=String(req.body?.optionType||'CE').toUpperCase();
+    const riskBudget=Math.max(0,Number(req.body?.riskBudget??numEnv('MAX_RISK_RUPEES',1000))), underlyingStopPoints=Math.abs(Number(req.body?.underlyingStopPoints||0));
+    if(!expiry||!Number.isFinite(strike)||!['CE','PE'].includes(optionType)) return res.status(400).json({ok:false,error:'symbol, expiry, strike and optionType are required'});
+    const contracts=await findContracts({exchange:'NSE',segment:'OPTIDX',underlying:symbol,expiry,optionType});
+    const c0=contracts.map(x=>({...x,_strike:Number(x.strike)/100})).find(x=>Math.abs(x._strike-strike)<0.01);
+    if(!c0) return res.status(404).json({ok:false,error:'LIVE_OPTION_CONTRACT_NOT_FOUND'});
+    const q=(await quoteInstruments([c0]))[0]||{}, entry=Number(q.ltp);
+    if(!Number.isFinite(entry)||entry<=0) return res.status(502).json({ok:false,error:'LIVE_OPTION_LTP_UNAVAILABLE'});
+    let greeks=[]; try{greeks=await liveOptionGreeks(symbol,expiry)}catch{}
+    const g=greeks.find(x=>x.optionType===optionType&&Math.abs(x.strike-strike)<0.01)||null, delta=Math.abs(Number(g?.delta));
+    const premiumStop=req.body?.optionStopLoss!=null?Number(req.body.optionStopLoss):(Number.isFinite(delta)&&delta>0&&underlyingStopPoints>0?Math.max(0.05,delta*underlyingStopPoints):null);
+    if(!Number.isFinite(premiumStop)||premiumStop<=0) return res.status(400).json({ok:false,error:'Provide optionStopLoss or underlyingStopPoints so option risk can be calculated'});
+    const stop=Math.max(0.01,entry-premiumStop), lotSize=Math.max(1,Number(c0.lotsize)||1), protection=phase11ProtectionStatus();
+    const sized=positionSizeFromRisk({riskBudget,entry,sl:stop,lotSize,availableBudget:protection.dailyLossRemaining}), greekRisk=greekRiskWarning(g);
+    res.json({ok:true,symbol,expiry,strike,optionType,contract:c0.symbol,token:String(c0.token),lotSize,entry,optionStopLoss:stop,premiumRiskPerUnit:Math.abs(entry-stop),delta:Number.isFinite(delta)?delta:null,theta:Number.isFinite(Number(g?.theta))?Number(g.theta):null,iv:Number.isFinite(Number(g?.iv))?Number(g.iv):null,greeks:g,greekRisk,sizing:sized,protection});
+  }catch(e){res.status(502).json({ok:false,error:e?.message||'Risk sizing unavailable'});}
+});
 // PHASE 5 — controlled execution & server-side pre-trade risk gate.
 
 app.get('/api/phase11/protection',(req,res)=>res.json({ok:true,phase:11,protection:phase11ProtectionStatus()}));
@@ -886,12 +945,20 @@ app.get('/api/phase10/prediction',async(req,res)=>{
       news(symbol),globalData(),events(),market(symbol)
     ]);
     const ns=analyzeNews(ni), gs=analyzeGlobal(gd), es=analyzeEvents(ev);
-    let opt={connected:false};
-    try{ const od=await options(symbol); if(od) opt={connected:true,...od}; }catch{}
+    let opt={connected:false}, greeks=[];
+    try{
+      const od=await options(symbol); if(od) opt={connected:true,...od};
+      if(opt.expiry) greeks=await liveOptionGreeks(symbol,opt.expiry);
+      const pickStrike=Number(opt.atm);
+      const pickType=Number(opt.pcr)>=1?'CE':'PE';
+      const candidates=greeks.filter(x=>x.strike===pickStrike);
+      const g=candidates.find(x=>x.optionType===pickType)||candidates[0];
+      if(g){opt.greeks=g;opt.theta=g.theta;opt.delta=g.delta;opt.iv=g.iv;opt.greekRisk=greekRiskWarning(g);}
+    }catch{}
     const historical=backtestFiveMinute(m5.rows||[]);
     const vix=Number(md?.VIX?.ltp);
     const prediction=buildPrediction({h1:h1.summary,m15:m15.summary,m5:m5.summary,rows5:m5.rows,news:ns,global:gs,events:es,options:opt,marketOpen:marketSession(),backtest:historical,vix:Number.isFinite(vix)?vix:null,oi:opt});
-    res.json({ok:true,phase:10,symbol,prediction,health:{market:true,options:opt.connected,news:ns.connected,global:gs.connected,eventBlocked:es.hardBlock,eventDayBlock:es.eventDayBlock,vix:Number.isFinite(vix)?vix:null},backtest:historical,checkedAt:nowISO()});
+    res.json({ok:true,phase:10,symbol,prediction,health:{market:true,options:opt.connected,news:ns.connected,global:gs.connected,eventBlocked:es.hardBlock,eventDayBlock:es.eventDayBlock,vix:Number.isFinite(vix)?vix:null},greeks:opt.greeks||null,greekRisk:opt.greekRisk||{status:'WAIT',message:'Live option Greeks not verified.'},backtest:historical,checkedAt:nowISO()});
   }catch(e){res.status(502).json({ok:false,phase:10,error:e?.message||'Phase 10 prediction unavailable'});}
 });
 
