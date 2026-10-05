@@ -314,6 +314,21 @@ button,input,select{font:inherit} button{cursor:pointer}
   </div>
 </section>
 
+<section class="card" id="riskGreekEngine">
+  <div class="card-head"><h3>RISK ENGINE • ₹1000 MAX LOSS + THETA / DELTA</h3><span id="riskGreekState">WAIT</span></div>
+  <div class="riskout">
+    <div class="level"><small>Daily risk budget</small><b id="riskBudgetLive">₹1,000</b></div>
+    <div class="level"><small>Recommended lots</small><b id="riskLots">—</b></div>
+    <div class="level"><small>Recommended quantity</small><b id="riskQty">—</b></div>
+    <div class="level"><small>Risk used</small><b id="riskUsed">—</b></div>
+    <div class="level"><small>Delta</small><b id="riskDelta">—</b></div>
+    <div class="level"><small>Theta / day</small><b id="riskTheta">—</b></div>
+    <div class="level"><small>Option IV</small><b id="riskIV">—</b></div>
+    <div class="level"><small>Greek guard</small><b id="riskGreekGuard" class="neutral">WAIT</b></div>
+  </div>
+  <div class="note" id="riskGreekMessage">Select a live NIFTY option contract after a confirmed setup. The system will use live option LTP, lot size, Delta and the underlying SL distance to calculate the maximum quantity that fits the ₹1,000 risk budget.</div>
+</section>
+
 <section class="card" id="phase10Prediction">
   <div class="card-head"><h3>Phase 10 • Advanced Prediction & Confirmation</h3><span id="p10State">LOCKED</span></div>
   <div class="prediction-grid">
@@ -938,6 +953,27 @@ async function phase6Monitor(){
 
 function setP10Tone(el,state){ if(!el)return; const x=String(state||'').toUpperCase(); el.className=x==='BULLISH'||x==='CALL'?'bullish':x==='BEARISH'||x==='PUT'?'bearish':'neutral'; }
 function formatPct(v){ return Number.isFinite(Number(v))?Number(v).toFixed(1)+'%':'—'; }
+async function loadRiskSizing(p){
+  const state=$('riskGreekState'), budget=$('riskBudgetLive');
+  try{const rs=await getJSON('/api/risk/status'); budget.textContent=money(rs.riskBudgetRupees||1000);}catch{}
+  const c=window.selectedContract, plan=p?.finalPlan||{};
+  if(!c?.expiry||c.strike==null||!c.optionType||p?.signalState!=='CONFIRMED'||!plan.entry||!plan.sl){
+    state.textContent=p?.signalState==='CONFIRMED'?'SELECT OPTION':'WAIT';
+    $('riskLots').textContent='—'; $('riskQty').textContent='—'; $('riskUsed').textContent='—'; return;
+  }
+  try{
+    const rs=await getJSON('/api/risk/status');
+    const body={symbol,expiry:c.expiry,strike:Number(c.strike)/100,optionType:String(c.optionType).toUpperCase(),riskBudget:Number(rs.riskBudgetRupees||1000),underlyingStopPoints:Math.abs(Number(plan.entry)-Number(plan.sl))};
+    const r=await postJSON('/api/risk/position-size',body);
+    state.textContent=r.greekRisk?.status||'PASS';
+    $('riskLots').textContent=r.sizing?.recommendedLots??'—'; $('riskQty').textContent=r.sizing?.recommendedQuantity??'—'; $('riskUsed').textContent=r.sizing?.usedRisk!=null?money(r.sizing.usedRisk):'—';
+    $('riskDelta').textContent=r.delta!=null?Number(r.delta).toFixed(3):'—'; $('riskTheta').textContent=r.theta!=null?Number(r.theta).toFixed(2):'—'; $('riskIV').textContent=r.iv!=null?Number(r.iv).toFixed(2)+'%':'—';
+    $('riskGreekGuard').textContent=r.greekRisk?.status||'WAIT'; setP10Tone($('riskGreekGuard'),r.greekRisk?.status==='PASS'?'BULLISH':r.greekRisk?.status==='NO TRADE'?'BEARISH':'NEUTRAL');
+    $('riskGreekMessage').textContent=(r.greekRisk?.message||'')+' • Entry ₹'+Number(r.entry).toFixed(2)+' • Option SL ₹'+Number(r.optionStopLoss).toFixed(2)+' • Lot '+r.lotSize;
+  }catch(e){
+    state.textContent='WAIT'; $('riskLots').textContent='—'; $('riskQty').textContent='—'; $('riskUsed').textContent='—'; $('riskGreekMessage').textContent=e.message||'Live risk sizing unavailable.';
+  }
+}
 function renderPredictionPanel(r){
   const p=r?.prediction||{}; const hist=r?.backtest||p?.historical||{};
   const pred=$('p10Prediction'), act=$('p10Action');
@@ -952,6 +988,12 @@ function renderPredictionPanel(r){
   const gateText=(p.noTradeReasons||[]).join(' • ');
   $('p10Reason').textContent=(p.reasoning||'Waiting for prediction engine.')+(gateText?' | '+gateText:'');
   $('p10Meter').style.width=Math.max(0,Math.min(100,Number(p.confirmationPct||0)))+'%';
+  $('riskDelta').textContent=p.delta!=null?Number(p.delta).toFixed(3):'—';
+  $('riskTheta').textContent=p.theta!=null?Number(p.theta).toFixed(2):'—';
+  $('riskIV').textContent=p.iv!=null?Number(p.iv).toFixed(2)+'%':'—';
+  const gr=p.greekRisk?.status||'WAIT';
+  $('riskGreekGuard').textContent=gr; setP10Tone($('riskGreekGuard'),gr==='PASS'?'BULLISH':gr==='NO TRADE'?'BEARISH':'NEUTRAL');
+  $('riskGreekMessage').textContent=p.greekRisk?.message||((p.noTradeReasons||[]).find(x=>String(x).includes('Theta'))||'Select a live option contract after a confirmed setup.');
 
   const plan=p.finalPlan||{};
   $('finalPlanDirection').textContent=p.action||'NO TRADE'; setP10Tone($('finalPlanDirection'),p.action);
@@ -966,10 +1008,11 @@ function renderPredictionPanel(r){
     ? \`\${plan.mode||'UNDERLYING TRIGGER'} • \${plan.invalidation||'Wait for invalidation/SL hit.'}. Final SL and targets are shown separately so they are not confused with the entry signal. Option premium levels still require the selected live contract.\`
     : 'NO TRADE right now. Entry, Stop Loss and Targets stay blank until a confirmed setup on a closed 5M candle passes the multi-timeframe, options, news, global and event gates.';
 
-  const labels={trend:'1H trend',setup:'15M setup',trigger:'5M trigger',momentum:'Momentum',volume:'Volume',strength:'ADX',options:'Options / OI',news:'News / macro',global:'Global risk',eventSafe:'Event safe'};
+  const labels={trend:'1H trend',setup:'15M setup',trigger:'5M trigger',momentum:'Momentum',volume:'Volume',strength:'ADX',options:'Options / OI',greeks:'Theta / Delta',news:'News / macro',global:'Global risk',eventSafe:'Event safe'};
   const grid=$('p10ConfirmGrid');
   grid.innerHTML=Object.entries(labels).map(([k,label])=>{const yes=!!p.confirmations?.[k];return \`<div class="confirm-item"><span>\${label}</span><b class="\${yes?'yes':'no'}">\${yes?'✓ CONFIRMED':'WAIT'}</b></div>\`}).join('');
   $('p10Note').textContent=p.note||'Model output is not a guaranteed probability of profit.';
+  loadRiskSizing(p);
 }
 async function loadPrediction(showToast=false){
   try{
