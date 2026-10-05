@@ -27,8 +27,8 @@ export function angelStatus(){
 }
 
 export async function loginAngel({clientCode, pin, totp}){
-  if(!process.env.ANGEL_API_KEY) throw new Error("ANGEL_API_KEY is not configured on the server");
-  const cc = clientCode || process.env.ANGEL_CLIENT_CODE;
+  if(!(process.env.ANGEL_API_KEY || process.env.ANGELONE_API_KEY)) throw new Error("ANGEL_API_KEY is not configured on the server");
+  const cc = clientCode || (process.env.ANGEL_CLIENT_CODE || process.env.ANGELONE_CLIENT_CODE);
   if(!cc || !pin || !totp) throw new Error("Client code, PIN and TOTP are required");
   api = new SmartAPI({api_key:process.env.ANGEL_API_KEY});
   const data = await api.generateSession(cc, pin, totp);
@@ -153,9 +153,9 @@ function secureHeaders(){
     'X-SourceID':'WEB',
     'X-PrivateKey':String(process.env.ANGEL_API_KEY).trim(),
     'Authorization':`Bearer ${session.jwtToken}`,
-    'X-ClientLocalIP':process.env.ANGEL_CLIENT_LOCAL_IP || '127.0.0.1',
-    'X-ClientPublicIP':process.env.ANGEL_CLIENT_PUBLIC_IP || '127.0.0.1',
-    'X-MACAddress':process.env.ANGEL_MAC_ADDRESS || '00:00:00:00:00:00'
+    'X-ClientLocalIP':(process.env.ANGEL_CLIENT_LOCAL_IP || process.env.ANGELONE_CLIENT_LOCAL_IP) || '127.0.0.1',
+    'X-ClientPublicIP':(process.env.ANGEL_CLIENT_PUBLIC_IP || process.env.ANGELONE_PUBLIC_IP) || '127.0.0.1',
+    'X-MACAddress':(process.env.ANGEL_MAC_ADDRESS || process.env.ANGELONE_MAC_ADDRESS) || '00:00:00:00:00:00'
   };
 }
 
