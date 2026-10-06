@@ -266,7 +266,90 @@ body{-webkit-overflow-scrolling:touch}
 }
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 @media(max-width:760px){.toast{top:72px;font-size:9px;max-width:calc(100vw - 16px)}}
-</style></head>
+</style>
+<style id="ptd-perfect-mobile-v151">
+/* PTD Perfect Phone View: one full-width vertical app, no desktop half-pane on mobile */
+@media (max-width: 760px) {
+  html, body {
+    width: 100% !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    -webkit-text-size-adjust: 100%;
+  }
+  body { min-height: 100dvh; }
+  .app {
+    width: 100vw !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 7px 7px calc(86px + env(safe-area-inset-bottom)) !important;
+    overflow-x: hidden !important;
+  }
+  .top, .ticker, .selector, .hero-grid, .layout, .stack, .rightcol,
+  .card, .chartbox, .angel-chart, .a1-workspace, .sticky-prediction {
+    width: 100% !important;
+    max-width: none !important;
+    min-width: 0 !important;
+  }
+  .hero-grid, .layout {
+    display: block !important;
+  }
+  .hero-grid > *, .layout > *, .stack > *, .rightcol > * {
+    width: 100% !important;
+    max-width: none !important;
+    min-width: 0 !important;
+  }
+  .card { margin-left: 0 !important; margin-right: 0 !important; }
+  .ticker, .selector { overflow-x: auto !important; }
+  .titem { min-width: 150px !important; width: auto !important; }
+  .a1-workspace {
+    height: min(62dvh, 560px) !important;
+    min-height: 430px !important;
+    overflow: hidden !important;
+  }
+  .angel-chart #cv {
+    width: 100% !important;
+    max-width: none !important;
+    height: 100% !important;
+    display: block !important;
+  }
+  .angel-chart { min-height: 0 !important; }
+  .a1-head {
+    grid-template-columns: 1fr auto !important;
+  }
+  .a1-symbol { min-width: 0 !important; }
+  .a1-ohlc { min-width: 0 !important; text-align: right !important; }
+  .a1-price {
+    grid-column: 1 / -1 !important;
+    min-width: 0 !important;
+    text-align: left !important;
+  }
+  .a1-toolbar, .a1-timeframes {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    flex-wrap: nowrap !important;
+  }
+  .a1-timeframes .tf {
+    flex: 0 0 auto !important;
+    min-width: 44px !important;
+  }
+  .bottom {
+    left: 0 !important;
+    right: 0 !important;
+    width: 100vw !important;
+    max-width: none !important;
+    transform: none !important;
+  }
+}
+</style>
+
+</head>
 <body>
 <script id="ANDROID_LAYOUT_GUARD">
 (function(){try{window.scrollTo(0,0);document.documentElement.scrollLeft=0;document.body.scrollLeft=0}catch(e){}})();
