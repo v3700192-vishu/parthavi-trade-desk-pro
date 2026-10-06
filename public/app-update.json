@@ -1,7 +1,7 @@
 {
-  "versionCode": 3,
-  "versionName": "1.2.0",
+  "versionCode": 4,
+  "versionName": "1.3.0",
   "apkUrl": "https://github.com/v3700192-vishu/parthavi-trade-desk-pro/releases/latest/download/app-debug.apk",
-  "releaseUrl": "https://github.com/v3700192-vishu/parthavi-trade-desk-pro/releases/tag/android-v1.2.0-build-17",
-  "notes": "Mobile layout, PB launcher logo, one-tap in-app update, and button haptic feedback improvements."
+  "releaseUrl": "https://github.com/v3700192-vishu/parthavi-trade-desk-pro/releases/tag/android-v1.3.0-build-20",
+  "notes": "Mobile layout hardening, PB launcher logo, one-tap in-app update, reliable haptic feedback, and 15-day historical chart navigation."
 }
