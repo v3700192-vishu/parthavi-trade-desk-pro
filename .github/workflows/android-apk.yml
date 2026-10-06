@@ -56,7 +56,29 @@ jobs:
       - name: Publish APK release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: android-v1.1.0-build-${{ github.run_number }}
-          name: PARTHAVI TRADE DESK PRO Android v1.1.0 (${{ github.run_number }})
+          tag_name: android-v1.2.0-build-${{ github.run_number }}
+          name: PARTHAVI TRADE DESK PRO Android v1.2.0 (${{ github.run_number }})
           generate_release_notes: true
           files: android-app/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Publish in-app update manifest
+        env:
+          APP_VERSION_CODE: "3"
+          APP_VERSION_NAME: "1.2.0"
+          RELEASE_TAG: android-v1.2.0-build-${{ github.run_number }}
+        shell: bash
+        run: |
+          cat > public/app-update.json <<EOF
+          {
+            "versionCode": ${APP_VERSION_CODE},
+            "versionName": "${APP_VERSION_NAME}",
+            "apkUrl": "https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/app-debug.apk",
+            "releaseUrl": "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_TAG}",
+            "notes": "Mobile layout, PB launcher logo, one-tap in-app update, and button haptic feedback improvements."
+          }
+          EOF
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/app-update.json
+          git diff --cached --quiet || git commit -m "chore: publish Android update manifest ${APP_VERSION_NAME}"
+          git push
