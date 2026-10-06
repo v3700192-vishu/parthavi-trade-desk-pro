@@ -1027,13 +1027,21 @@ async function loadBase5m(symbol){
   if(cached && now-cached.at<15000) return cached.rows;
   if(candleInflight.has(key)) return await candleInflight.get(key);
   const job=(async()=>{
-    const ins=await resolveIndexToken(key), end=new Date(), from=new Date(end.getTime()-7*86400000);
+    const ins=await resolveIndexToken(key), end=new Date(), start=new Date(end.getTime()-15*86400000);
     const f=x=>{const d=new Date(x),p=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(d),m=Object.fromEntries(p.map(z=>[z.type,z.value]));return m.year+'-'+m.month+'-'+m.day+' '+m.hour+':'+m.minute;};
-    try{
-      const raw=await angelCandles({exchange:'NSE',symboltoken:ins.token,interval:'FIVE_MINUTE',fromdate:f(from),todate:f(end)});
-      const rows=candleRows(raw);
-      if(rows.length){ candleCache.set(key,{at:Date.now(),rows,source:'ANGEL'}); return rows; }
-    }catch{}
+    let rows=[];
+    // Angel One historical candles are requested in small chunks so the 15-day backfill
+    // remains compatible with provider window limits while keeping the current day included.
+    for(let cursor=start;cursor<end;cursor=new Date(Math.min(end.getTime(),cursor.getTime()+7*86400000))){
+      const chunkEnd=new Date(Math.min(end.getTime(),cursor.getTime()+7*86400000));
+      try{
+        const raw=await angelCandles({exchange:'NSE',symboltoken:ins.token,interval:'FIVE_MINUTE',fromdate:f(cursor),todate:f(chunkEnd)});
+        rows=rows.concat(candleRows(raw));
+      }catch{}
+      if(chunkEnd.getTime()>=end.getTime()) break;
+    }
+    rows=[...new Map(rows.map(r=>[r.t,r])).values()].sort((a,b)=>Date.parse(a.t)-Date.parse(b.t));
+    if(rows.length){ candleCache.set(key,{at:Date.now(),rows,source:'ANGEL'}); return rows; }
     const fallback=await loadYahoo5m(key);
     candleCache.set(key,{at:Date.now(),rows:fallback,source:'YAHOO_FALLBACK'});
     return fallback;
@@ -1047,13 +1055,14 @@ async function loadTfSummary(symbol, interval, days){
   else if(interval==='FIFTEEN_MINUTE') rows=dropIncompleteCandle(aggregateCandles(await loadBase5m(symbol),15),15);
   else if(interval==='ONE_HOUR') rows=dropIncompleteCandle(aggregateCandles(await loadBase5m(symbol),60),60);
   else {
-    const end=new Date(), from=new Date(end.getTime()-Math.min(days||1,1)*86400000);
+    const end=new Date(), lookbackDays=Math.max(2,Math.min(Number(days)||15,365)), from=new Date(end.getTime()-lookbackDays*86400000);
     const f=x=>{const d=new Date(x),p=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(d),m=Object.fromEntries(p.map(z=>[z.type,z.value]));return m.year+'-'+m.month+'-'+m.day+' '+m.hour+':'+m.minute;};
     rows=candleRows(await angelCandles({exchange:'NSE',symboltoken:ins.token,interval,fromdate:f(from),todate:f(end)}));
     if(interval!=='ONE_DAY') rows=dropIncompleteCandle(rows,5);
   }
   const wanted=interval==='ONE_HOUR'?Math.max(30,Math.ceil((days||10)*5))
     :interval==='FIFTEEN_MINUTE'?Math.max(20,Math.ceil((days||10)*26))
+    :interval==='ONE_DAY'?Math.max(20,Math.ceil((days||15)*1.2))
     :Math.max(60,Math.ceil((days||10)*75));
   const trimmed=rows.slice(-wanted);
   return {ins,rows:trimmed,summary:summarize(trimmed),closed:true};
@@ -1073,8 +1082,8 @@ app.get('/api/chart/candles',async(req,res)=>{
       rows=dropIncompleteCandle(rows,tf==='15M'?15:tf==='30M'?30:tf==='1H'||tf==='4H'?60:5);
       return res.json({ok:true,connected,source:candleCache.get(symbol)?.source||'ANGEL',rows:rows.slice(-500),checkedAt:nowISO()});
     }
-    const summary=await loadTfSummary(symbol,interval,365);
-    return res.json({ok:true,connected,source:'ANGEL',rows:(summary.rows||[]).slice(-500),checkedAt:nowISO()});
+    const summary=await loadTfSummary(symbol,interval,tf==='1D'?30:15);
+    return res.json({ok:true,connected,source:'ANGEL',rows:(summary.rows||[]).slice(-2500),checkedAt:nowISO()});
   }catch(e){
     console.warn('[CHART_CANDLES]',symbol,tf,e?.message||e);
     return res.status(502).json({ok:false,connected:angelStatus().connected,source:'ERROR',rows:[],error:e?.message||'Chart candle feed unavailable'});
