@@ -1149,7 +1149,13 @@ window.testAngelFeed = async function testAngelFeed(){
             ? ' • WebSocket connected • waiting for next market tick'
             : ' • WebSocket connected • market closed, no fresh tick expected'))
         : ` • WebSocket not connected: ${sr.error||sr.websocketError||'stream unavailable'}`;
-
+      await refreshExpiries();
+      await loadAll().catch(()=>{});
+      if(typeof window.loadPrediction==='function') await window.loadPrediction(false).catch(()=>{});
+      if(typeof window.loadPhase11Shield==='function') await window.loadPhase11Shield().catch(()=>{});
+      if(typeof window.loadPhase12Readiness==='function') await window.loadPhase12Readiness().catch(()=>{});
+      drawChart();
+      toast(connected?'Angel One REST + WebSocket connection verified':'Angel One live REST quote verified; WebSocket still waiting')
       toast(live?'Angel One REST + WebSocket stream verified':'Angel One live REST quote verified; stream still waiting');
     }
   }catch(e){ setGate('cxQuote',false,'FAIL'); $('angelTestBadge').textContent='TEST FAILED'; $('angelTestBadge').className='badge danger'; $('angelTestNote').textContent=e.message||'Live feed test failed'; }
