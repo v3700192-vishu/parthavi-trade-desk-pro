@@ -1030,7 +1030,7 @@ app.get('/api/chart/candles',async(req,res)=>{
   const tf=String(req.query.tf||'15M').toUpperCase();
   try{
     if(!angelStatus().connected) return res.json({ok:false,connected:false,source:'NONE',rows:[],error:'ANGEL_NOT_CONNECTED'});
-    const map={1M:'ONE_MINUTE',5M:'FIVE_MINUTE',15M:'FIFTEEN_MINUTE',30M:'THIRTY_MINUTE',1H:'ONE_HOUR',4H:'ONE_HOUR',1D:'ONE_DAY'};
+    const map={'1M':'ONE_MINUTE','5M':'FIVE_MINUTE','15M':'FIFTEEN_MINUTE','30M':'THIRTY_MINUTE','1H':'ONE_HOUR','4H':'ONE_HOUR','1D':'ONE_DAY'};
     const interval=map[tf]||'FIFTEEN_MINUTE';
     if(['1M','5M','15M','30M','1H','4H'].includes(tf)){
       const base=await loadBase5m(symbol);
