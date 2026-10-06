@@ -1013,6 +1013,11 @@ window.testAngelFeed = async function testAngelFeed(){
         ? ` • WebSocket tick verified • ${sr.tickCount||0} ticks`
         : ` • WebSocket tick not verified yet: ${sr.error||sr.websocketError||'stream waiting'}`;
       await refreshExpiries();
+      await loadAll().catch(()=>{});
+      if(typeof window.loadPrediction==='function') await window.loadPrediction(false).catch(()=>{});
+      if(typeof window.loadPhase11Shield==='function') await window.loadPhase11Shield().catch(()=>{});
+      if(typeof window.loadPhase12Readiness==='function') await window.loadPhase12Readiness().catch(()=>{});
+      drawChart();
       toast(live?'Angel One REST + WebSocket stream verified':'Angel One live REST quote verified; stream still waiting');
     }
   }catch(e){ setGate('cxQuote',false,'FAIL'); $('angelTestBadge').textContent='TEST FAILED'; $('angelTestBadge').className='badge danger'; $('angelTestNote').textContent=e.message||'Live feed test failed'; }
@@ -1224,7 +1229,7 @@ async function loadAll(){
        const end=new Date();
        const days=tf==='1D'?365:tf==='4H'?60:tf==='1H'?45:15;
        const from=new Date(end.getTime()-days*86400000);
-       const fmt=x=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(x).replace(', ',' ').replace(/\\//g,'-');
+       const fmt=x=>{const d=new Date(x),p=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(d),m=Object.fromEntries(p.map(z=>[z.type,z.value]));return m.year+'-'+m.month+'-'+m.day+' '+m.hour+':'+m.minute;};
        const tokenMap={NIFTY:'99926000',BANKNIFTY:'99926009',FINNIFTY:'99926037',MIDCPNIFTY:'99926074',SENSEX:'99919000'};
        const intervalMap={'1M':'ONE_MINUTE','5M':'FIVE_MINUTE','15M':'FIFTEEN_MINUTE','30M':'THIRTY_MINUTE','1H':'ONE_HOUR','4H':'ONE_HOUR','1D':'ONE_DAY'};
        const cr=await fetch(API_BASE+'/api/angel/candles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({exchange:'NSE',symboltoken:tokenMap[symbol]||'99926000',interval:intervalMap[tf]||'FIFTEEN_MINUTE',fromdate:fmt(from),todate:fmt(end)})});
