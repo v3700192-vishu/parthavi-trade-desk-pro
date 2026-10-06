@@ -1,5 +1,5 @@
-const CACHE='ptd-shell-v1';
-const SHELL=['/','/manifest.webmanifest','/icon.svg'];
+const CACHE='ptd-shell-v2';
+const SHELL=['/','/manifest.webmanifest','/icon.svg','/mobile-haptics.js'];
 self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
 self.addEventListener('fetch',e=>{
@@ -12,4 +12,12 @@ self.addEventListener('fetch',e=>{
     return;
   }
   e.respondWith(caches.match(r).then(hit=>hit||fetch(r).then(res=>{if(res.ok&&u.origin===location.origin){const copy=res.clone();caches.open(CACHE).then(c=>c.put(r,copy))}return res})));
+});
+self.addEventListener('notificationclick',event=>{
+  event.notification.close();
+  event.waitUntil(clients.matchAll({type:'window',includeUncontrolled:true}).then(list=>{
+    const win=list.find(c=>c.url&&new URL(c.url).origin===self.location.origin);
+    if(win) return win.focus();
+    return clients.openWindow('/');
+  }).catch(()=>{}));
 });
