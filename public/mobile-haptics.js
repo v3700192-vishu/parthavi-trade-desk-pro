@@ -26,9 +26,7 @@
   window.PTDHaptics = window.PTDHaptics || {};
   window.PTDHaptics.alert = function (kind) {
     try {
-      var native = window.PTDHapticsNative && typeof window.PTDHapticsNative.alert === "function"
-        ? window.PTDHapticsNative
-        : null;
+      var native = window.PTDHaptics && typeof window.PTDHaptics.alert === "function" ? window.PTDHaptics : (window.PTDHapticsNative && typeof window.PTDHapticsNative.alert === "function" ? window.PTDHapticsNative : null);
       if (native) { native.alert(String(kind || "neutral")); return true; }
       if (!navigator.vibrate) return false;
       var pattern = kind === "confirmed" ? [90,60,90,60,160]
