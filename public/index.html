@@ -1111,7 +1111,7 @@ function renderPredictionPanel(r){
   act.textContent=p.action||'NO TRADE'; setP10Tone(act,p.action);
   $('p10State').textContent=p.signalState||'LOCKED'; setP10Tone($('p10State'),p.signalState);
   $('p10Confidence').textContent=p.modelConfidence!=null?String(p.modelConfidence)+'%':'—';
-  $('p10Confirmation').textContent=(p.confirmedCount!=null?\`\${p.confirmedCount}/\${p.confirmationTotal||10}\`:'—')+(p.confirmationPct!=null?\` • \${p.confirmationPct}%\`:'');
+  $('p10Confirmation').textContent=(p.confirmedCount!=null?`${p.confirmedCount}/${p.confirmationTotal||10}`:'—')+(p.confirmationPct!=null?` • ${p.confirmationPct}%`:'');
   $('p10HitRate').textContent=hist.available&&hist.targetHitRate!=null?String(hist.targetHitRate)+'%':'NOT CALIBRATED';
   $('p10Signals').textContent=hist.signals??'—'; $('p10Resolved').textContent=hist.resolved??'—'; $('p10WinsLosses').textContent=(hist.wins??'—')+' / '+(hist.losses??'—');
   const exp=hist.available&&hist.targetHitRate!=null?((Number(hist.targetHitRate)/100*1.25)-(1-Number(hist.targetHitRate)/100)).toFixed(2):null; $('p10ExpectedR').textContent=exp==null?'—':(Number(exp)>0?'+':'')+exp+'R';
@@ -1132,15 +1132,15 @@ function renderPredictionPanel(r){
   $('finalPlanSL').textContent=usable?(plan.sl??'—'):'—';
   $('finalPlanT1').textContent=usable?(plan.target1??'—'):'—';
   $('finalPlanT2').textContent=usable?(plan.target2??'—'):'—';
-  $('finalPlanRR').textContent=usable?\`1:\${plan.rr1||'2.0'} / 1:\${plan.rr2||'2.5'}\`:'—';
-  $('finalPlanBar').textContent=p.signalState==='CONFIRMED'?\`CONFIRMED • \${p.signalBarTime?chartTime(p.signalBarTime):'CLOSED 5M'}\`:(p.signalState||'WAIT')+' • CLOSED 5M';
+  $('finalPlanRR').textContent=usable?`1:${plan.rr1||'2.0'} / 1:${plan.rr2||'2.5'}`:'—';
+  $('finalPlanBar').textContent=p.signalState==='CONFIRMED'?`CONFIRMED • ${p.signalBarTime?chartTime(p.signalBarTime):'CLOSED 5M'}`:(p.signalState||'WAIT')+' • CLOSED 5M';
   $('finalPlanNote').textContent=usable
-    ? \`\${plan.mode||'UNDERLYING TRIGGER'} • \${plan.invalidation||'Wait for invalidation/SL hit.'}. Final SL and targets are shown separately so they are not confused with the entry signal. Option premium levels still require the selected live contract.\`
+    ? `${plan.mode||'UNDERLYING TRIGGER'} • ${plan.invalidation||'Wait for invalidation/SL hit.'}. Final SL and targets are shown separately so they are not confused with the entry signal. Option premium levels still require the selected live contract.`
     : 'NO TRADE right now. Entry, Stop Loss and Targets stay blank until a confirmed setup on a closed 5M candle passes the multi-timeframe, options, news, global and event gates.';
 
   const labels={trend:'1H trend',setup:'15M setup',trigger:'5M trigger',momentum:'Momentum',volume:'Volume',strength:'ADX',options:'Options / OI',greeks:'Theta / Delta',news:'News / macro',global:'Global risk',eventSafe:'Event safe'};
   const grid=$('p10ConfirmGrid');
-  grid.innerHTML=Object.entries(labels).map(([k,label])=>{const yes=!!p.confirmations?.[k];return \`<div class="confirm-item"><span>\${label}</span><b class="\${yes?'yes':'no'}">\${yes?'✓ CONFIRMED':'WAIT'}</b></div>\`}).join('');
+  grid.innerHTML=Object.entries(labels).map(([k,label])=>{const yes=!!p.confirmations?.[k];return `<div class="confirm-item"><span>${label}</span><b class="${yes?'yes':'no'}">${yes?'✓ CONFIRMED':'WAIT'}</b></div>`}).join('');
   $('p10Note').textContent=p.note||'Model output is not a guaranteed probability of profit.';
   loadRiskSizing(p);
 }
