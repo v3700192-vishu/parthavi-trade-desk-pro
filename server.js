@@ -560,7 +560,7 @@ app.get("/api/angel/stream-test", async (req,res)=>{
   const beforeTick=Number(angelStatus().lastTickAt||0);
   let reconnectError=null;
   try{
-    const st=angelStatus();
+    let st=angelStatus();
     if(!st.websocket){
       try{
         await Promise.race([
@@ -571,31 +571,47 @@ app.get("/api/angel/stream-test", async (req,res)=>{
     }
     const deadline=Date.now()+7000;
     while(Date.now()<deadline){
-      const s=angelStatus();
-      if(s.websocket && Number(s.lastTickAt||0)>beforeTick) break;
+      st=angelStatus();
+      if(st.websocket && Number(st.lastTickAt||0)>beforeTick) break;
       await new Promise(r=>setTimeout(r,250));
     }
     const final=angelStatus();
+    const tickVerified=!!final.lastTickAt && Number(final.lastTickAt)>beforeTick && (Date.now()-Number(final.lastTickAt))<=15000;
+    const websocketConnected=!!final.websocket;
+    const streamVerified=websocketConnected;
     const ticks=getLatestTicks();
-    const streamFresh=!!final.websocket && !!final.lastTickAt && (Date.now()-Number(final.lastTickAt))<=15000 && Number(final.lastTickAt)>beforeTick;
+    const marketOpen=marketSession();
     res.json({
-      ok:streamFresh,
+      ok:streamVerified,
       connected:true,
-      streamVerified:streamFresh,
-      websocket:!!final.websocket,
+      streamVerified,
+      tickVerified,
+      websocket:websocketConnected,
+      marketOpen,
       tickCount:final.tickCount||0,
       lastTickAt:final.lastTickAt||null,
       websocketError:final.websocketError||reconnectError||null,
       sampleTicks:ticks.slice(0,3),
       checkedAt:nowISO(),
-      elapsedMs:Date.now()-started
+      elapsedMs:Date.now()-started,
+      note:websocketConnected
+        ? (tickVerified
+          ? "WebSocket connected and a fresh tick was received."
+          : (marketOpen
+            ? "WebSocket connected; waiting for the next market tick."
+            : "WebSocket connected; NSE market is closed, so a new tick is not expected."))
+        : (final.websocketError||reconnectError||"WebSocket is not connected")
     });
   }catch(e){
     const s=angelStatus();
-    res.status(502).json({ok:false,connected:s.connected,streamVerified:false,websocket:!!s.websocket,tickCount:s.tickCount||0,lastTickAt:s.lastTickAt||null,websocketError:s.websocketError||reconnectError||null,error:e?.message||"Stream verification failed"});
+    res.status(502).json({
+      ok:false,connected:s.connected,streamVerified:false,tickVerified:false,
+      websocket:!!s.websocket,tickCount:s.tickCount||0,lastTickAt:s.lastTickAt||null,
+      websocketError:s.websocketError||reconnectError||null,
+      error:e?.message||"Stream verification failed"
+    });
   }
 });
-
 
 
 
