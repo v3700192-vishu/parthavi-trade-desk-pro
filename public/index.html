@@ -277,7 +277,7 @@ button,input,select{font:inherit} button{cursor:pointer}
   </div>
   <div class="finder-note">API key stays on the server. PIN/TOTP are used only for the login request and are not written to the journal or localStorage. Live order execution remains separately locked until the broker/static-IP and final-confirmation gates are verified.</div>
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-    <button class="btn primary" onclick="testAngelFeed()">⚡ Test Live Feed</button>
+    <button class="btn primary" onclick="window.testAngelFeed()">⚡ Test Live Feed</button>
     <button class="btn" onclick="refreshExpiries()">↻ Load Expiries</button>
     <span class="badge warn" id="angelTestBadge">NOT TESTED</span>
   </div>
@@ -991,7 +991,7 @@ async function refreshExpiries(){
     setGate('cxMaster',!!r.expiries?.length,'ON');
   }catch(e){ toast('Expiry load failed'); }
 }
-async function testAngelFeed(){
+window.testAngelFeed = async function testAngelFeed(){
   try{
     const health=await getJSON('/api/health');
     setGate('cxBackend',!!health.ok,'ON');
