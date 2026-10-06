@@ -12,11 +12,22 @@
 .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}.metric{background:#070d18;border:1px solid var(--line);border-radius:10px;padding:9px}.metric small{color:var(--muted);font-size:7px}.metric b{display:block;margin-top:4px;font-size:14px}.signal{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}.signal .metric b{font-size:18px}.reason-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}.reason{padding:9px;border:1px solid var(--line);border-radius:9px;background:#070d18;display:flex;justify-content:space-between;gap:8px;font-size:8px}.reason span{color:var(--muted)}
 .chart{height:360px;border:1px solid var(--line);border-radius:12px;background:#040811;position:relative;overflow:hidden}.chart canvas{width:100%;height:100%;display:block}.tools{position:absolute;left:8px;top:8px;display:flex;gap:5px;flex-wrap:wrap}.tool{padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:#07101dce;color:#cfd8e8;font-size:8px}.chartnote{position:absolute;right:8px;top:8px}.tablewrap{overflow:auto}.tbl{width:100%;border-collapse:collapse;min-width:720px}.tbl th,.tbl td{border-bottom:1px solid var(--line);padding:8px 5px;font-size:8px;text-align:right}.tbl th{color:var(--muted);font-size:7px}.tbl th:first-child,.tbl td:first-child{text-align:left}.news{display:grid;gap:7px}.news-item{padding:9px;border:1px solid var(--line);background:#070d18;border-radius:9px}.news-item b{font-size:9px}.news-item span{display:block;color:var(--muted);font-size:8px;margin-top:4px;line-height:1.4}.global{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}.global-item{padding:9px;border:1px solid var(--line);border-radius:9px;background:#070d18}.global-item small{display:block;color:var(--muted);font-size:7px}.global-item b{display:block;margin-top:4px;font-size:11px}.bottom{position:fixed;bottom:9px;left:50%;transform:translateX(-50%);display:flex;gap:6px;padding:7px;border:1px solid var(--line);border-radius:16px;background:#07101de8;backdrop-filter:blur(12px);z-index:25}.bottom button{background:#0b1423;color:#cbd4e4;border:1px solid var(--line);border-radius:9px;padding:8px 12px;font-size:8px}.modal{position:fixed;inset:0;background:#000a;display:none;place-items:center;z-index:50;padding:16px}.modal.open{display:grid}.modalbox{width:min(430px,100%);background:#0a1220;border:1px solid var(--line);border-radius:16px;padding:15px}.modalbox input{width:100%;margin-top:7px;background:#070d18;color:#fff;border:1px solid var(--line);border-radius:9px;padding:9px}
 @media(max-width:1000px){.finder{grid-template-columns:repeat(3,1fr)}.grid{grid-template-columns:1fr}.metrics,.signal{grid-template-columns:repeat(2,1fr)}.global{grid-template-columns:repeat(2,1fr)}}@media(max-width:620px){.app{padding:7px 8px 75px}.finder{grid-template-columns:1fr 1fr}.metrics,.signal,.global{grid-template-columns:1fr 1fr}.reason-grid{grid-template-columns:1fr}.brand h1{font-size:14px}.brand p{display:none}.logo{width:56px;height:56px}.chart{height:320px}.bottom button{padding:7px 8px}}
+</style><style id="ptdLiveUXV2">
+body{overflow-x:hidden}
+.sticky-prediction{position:sticky;top:84px;z-index:40;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;margin:8px 0;padding:8px 10px;border:1px solid #33445f;border-radius:13px;background:rgba(7,13,24,.96);backdrop-filter:blur(15px);box-shadow:0 12px 30px rgba(0,0,0,.35)}
+.sticky-prediction .sp-label{display:block;color:var(--muted);font-size:7px;font-weight:900;letter-spacing:.7px}.sticky-prediction .sp-value{display:block;font-size:16px;font-weight:950;line-height:1.1}.sticky-prediction .sp-mid{display:flex;gap:5px;align-items:center;flex-wrap:wrap;min-width:0}.sticky-prediction .sp-pill{padding:4px 6px;border:1px solid var(--line);border-radius:999px;background:#0a1322;color:#aab7c9;font-size:7px;white-space:nowrap}
+.toast{position:fixed;top:72px;bottom:auto;left:50%;transform:translateX(-50%) translateY(-10px);opacity:0;pointer-events:none;z-index:90;background:#101c30;border:1px solid #49617f;border-radius:12px;padding:9px 12px;font-size:9px;line-height:1.35;max-width:calc(100vw - 18px);text-align:center;box-shadow:0 14px 34px rgba(0,0,0,.4);transition:.2s}.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+@media(max-width:620px){.sticky-prediction{top:4px;margin:0 0 7px;border-radius:0 0 13px 13px;padding:7px 8px}.sticky-prediction .sp-mid{gap:3px}.sticky-prediction .sp-pill{font-size:6.5px;padding:4px 5px}.sticky-prediction .sp-value{font-size:14px}.sticky-prediction .sp-view{padding:7px 8px}.toast{top:66px}}
+.bullish{color:#fff!important}.bearish{color:var(--red)!important}.neutral-live{color:var(--amber)!important}
 </style>
 </head>
 <body>
 <div class="app">
 <header class="top"><div class="brand"><div class="logo"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 520" aria-label="PARTHAVI BELDAR"><defs><radialGradient id="bgx"><stop stop-color="#2a3768"/><stop offset=".45" stop-color="#101731"/><stop offset="1" stop-color="#050914"/></radialGradient><linearGradient id="gx" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#fff2ac"/><stop offset=".35" stop-color="#f7c95e"/><stop offset=".7" stop-color="#d99a24"/><stop offset="1" stop-color="#fff0a0"/></linearGradient><linearGradient id="px" x1="0" x2="1"><stop stop-color="#ff6ed5"/><stop offset="1" stop-color="#a94cff"/></linearGradient></defs><circle cx="260" cy="260" r="240" fill="url(#bgx)" stroke="url(#gx)" stroke-width="9"/><circle cx="260" cy="260" r="219" fill="none" stroke="#ff4fd8" stroke-opacity=".55" stroke-width="3"/><path d="M150 118 L260 70 L370 118" fill="none" stroke="url(#gx)" stroke-width="7"/><path d="M178 120 L205 88 L231 120 L260 75 L289 120 L315 88 L342 120" fill="url(#gx)" stroke="#6e4810" stroke-width="3"/><circle cx="260" cy="75" r="12" fill="#ff57d5" stroke="url(#gx)" stroke-width="5"/><text x="260" y="300" text-anchor="middle" font-family="Georgia,serif" font-size="165" font-weight="700" fill="url(#gx)" letter-spacing="-10">P</text><text x="320" y="350" text-anchor="middle" font-family="Georgia,serif" font-size="150" font-weight="700" fill="url(#px)" letter-spacing="-8">B</text><path d="M120 382 C170 350 205 365 236 392" fill="none" stroke="#ff55ca" stroke-width="6"/><path d="M230 392 L260 360 L285 405 L335 354 L380 375" fill="none" stroke="url(#gx)" stroke-width="6" stroke-linejoin="round"/><path d="M372 362 L393 345 L386 377" fill="none" stroke="url(#gx)" stroke-width="6"/><text x="260" y="438" text-anchor="middle" font-family="Arial" font-size="28" font-weight="800" fill="#fff" letter-spacing="5">PARTHAVI</text><text x="260" y="474" text-anchor="middle" font-family="Arial" font-size="20" font-weight="700" fill="#ff72dc" letter-spacing="7">BELDAR</text></svg></div><div><h1>PARTHAVI TRADE DESK PRO</h1><p>LIVE MARKET • OPTIONS FUSION • NEWS • GLOBAL RISK • CONTROLLED EXECUTION</p></div></div><div class="head-actions"><span class="pill"><span class="dot"></span>CHECKING</span><span class="pill">FEED PARTIAL/OFFLINE</span><button class="btn" onclick="enableAlerts()">⚙ Alerts</button></div></header>
+<div id="stickyPrediction" class="sticky-prediction" aria-live="polite">
+<div><span class="sp-label">LIVE PREDICTION</span><b id="spPrediction" class="sp-value neutral-live">NO TRADE</b></div>
+<div class="sp-mid"><span id="spAction" class="sp-pill">ACTION: NO TRADE</span><span id="spConfidence" class="sp-pill">CONFIDENCE: —</span><span id="spConfirmation" class="sp-pill">CONFIRMATION: —</span><span id="spUpdated" class="sp-pill">UPDATED: —</span></div>
+<button class="btn sp-view" onclick="ptdScrollPrediction()">VIEW</button></div>
 
 <div class="wrap">
 <div class="ticker"><div class="tick"><small>NIFTY 50</small><b class="wait">WAIT</b></div><div class="tick"><small>BANK NIFTY</small><b class="wait">WAIT</b></div><div class="tick"><small>FINNIFTY</small><b class="wait">WAIT</b></div><div class="tick"><small>MIDCPNIFTY</small><b class="wait">WAIT</b></div><div class="tick"><small>INDIA VIX</small><b class="wait">WAIT</b></div><div class="tick"><small>GLOBAL RISK</small><b class="wait">WAIT</b></div></div>
@@ -30,7 +41,7 @@
 
 <section class="card"><div class="card-head"><h2>Market Command Center • 1H / 15M / 5M</h2><span>Zoom • Pan • Crosshair • Draw • Fullscreen</span></div><div class="chart"><canvas id="chart"></canvas><div class="tools"><button class="tool" onclick="zoom(1.15)">＋ Zoom</button><button class="tool" onclick="zoom(.87)">− Zoom</button><button class="tool" onclick="resetChart()">Reset</button><button class="tool" onclick="full()">Fullscreen</button><button class="tool" onclick="drawMode()">Draw</button></div><div class="chartnote"><span class="badge">DEMO VISUAL</span></div></div></section>
 
-<section class="card"><div class="card-head"><h2>Phase 10 • Advanced Prediction & Confirmation</h2><span class="badge warn">LIVE DATA REQUIRED</span></div><div class="signal"><div class="metric"><small>PREDICTION</small><b id="prediction" class="wait">NEUTRAL</b></div><div class="metric"><small>CONFIRMATION</small><b class="wait">LOCKED</b></div><div class="metric"><small>MODEL CONFIDENCE</small><b>—</b></div><div class="metric"><small>HISTORICAL HIT RATE*</small><b>—</b></div></div><div class="reason-grid" style="margin-top:8px"><div class="reason"><span>1H Trend alignment</span><b class="wait">WAIT</b></div><div class="reason"><span>15M Setup</span><b class="wait">WAIT</b></div><div class="reason"><span>5M Trigger + candle close</span><b class="wait">WAIT</b></div><div class="reason"><span>Volume ≥ 1.5× average</span><b class="wait">WAIT</b></div><div class="reason"><span>ADX ≥ 20</span><b class="wait">WAIT</b></div><div class="reason"><span>Option OI/PCR</span><b class="wait">WAIT</b></div><div class="reason"><span>News + Global Risk</span><b class="wait">WAIT</b></div><div class="reason"><span>Event Risk</span><b class="wait">WAIT</b></div></div><div class="note">*Historical/backtest hit rate only. It is not a guarantee of future profit.</div></section>
+<section class="card"><div class="card-head"><h2>Phase 10 • Advanced Prediction & Confirmation</h2><span id="p10State" class="badge warn">LIVE DATA REQUIRED</span></div><div class="signal"><div class="metric"><small>PREDICTION</small><b id="prediction" class="wait">NEUTRAL</b></div><div class="metric"><small>CONFIRMATION</small><b class="wait">LOCKED</b></div><div class="metric"><small>MODEL CONFIDENCE</small><b>—</b></div><div class="metric"><small>HISTORICAL HIT RATE*</small><b>—</b></div></div><div class="reason-grid" style="margin-top:8px"><div class="reason"><span>1H Trend alignment</span><b class="wait">WAIT</b></div><div class="reason"><span>15M Setup</span><b class="wait">WAIT</b></div><div class="reason"><span>5M Trigger + candle close</span><b class="wait">WAIT</b></div><div class="reason"><span>Volume ≥ 1.5× average</span><b class="wait">WAIT</b></div><div class="reason"><span>ADX ≥ 20</span><b class="wait">WAIT</b></div><div class="reason"><span>Option OI/PCR</span><b class="wait">WAIT</b></div><div class="reason"><span>News + Global Risk</span><b class="wait">WAIT</b></div><div class="reason"><span>Event Risk</span><b class="wait">WAIT</b></div></div><div class="note">*Historical/backtest hit rate only. It is not a guarantee of future profit.</div></section>
 
 <section class="card"><div class="card-head"><h2>Technical Indicator Matrix</h2><span>EMA • RSI • MACD • ADX • VWAP • ATR • Volume • Price Action</span></div><div class="metrics" id="indicators"></div></section>
 
@@ -46,7 +57,7 @@
 <div class="note" style="text-align:center;margin:13px 0">PARTHAVI TRADE DESK PRO • PB SIGNATURE • All live values remain blank until verified broker/data connections are active. Profit is never guaranteed.</div>
 </div></div>
 
-<div class="modal" id="m"><div class="modalbox"><h3>Protected Live Order Confirmation</h3><div class="note" id="mt">Live execution is currently locked.</div><input id="mc" placeholder="Type PLACE LIVE ORDER"><div style="display:flex;gap:7px;margin-top:8px"><button class="btn" onclick="closeM()">Cancel</button><button class="btn buy" onclick="confirmM()">Confirm</button></div></div></div>
+<div id="toast" class="toast"></div><div class="modal" id="m"><div class="modalbox"><h3>Protected Live Order Confirmation</h3><div class="note" id="mt">Live execution is currently locked.</div><input id="mc" placeholder="Type PLACE LIVE ORDER"><div style="display:flex;gap:7px;margin-top:8px"><button class="btn" onclick="closeM()">Cancel</button><button class="btn buy" onclick="confirmM()">Confirm</button></div></div></div>
 
 <nav class="bottom"><button>⌂ Home</button><button>▦ Chart</button><button>◉ Signals</button><button>▤ News</button><button>⇄ Trade</button></nav>
 
@@ -65,4 +76,94 @@ function confirmM(){log('Order guard','Confirmation received, but live broker ga
 let z=1;function zoom(v){z=Math.max(.7,Math.min(2,z*v));draw()}function resetChart(){z=1;draw()}function full(){document.querySelector('.chart').requestFullscreen?.()}function drawMode(){log('Chart','Draw mode toggled. Live drawings are local until chart engine is connected.')}
 function draw(){const c=$('chart'),x=c.getContext('2d'),d=devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*d;c.height=h*d;x.scale(d,d);x.fillStyle='#040811';x.fillRect(0,0,w,h);x.strokeStyle='#17243a';for(let i=0;i<9;i++){let y=25+i*(h-45)/8;x.beginPath();x.moveTo(0,y);x.lineTo(w,y);x.stroke()}let p=h*.62,step=(w-30)/58;for(let i=0;i<58;i++){let xx=16+i*step,delta=Math.sin(i*.27)*18*z+Math.sin(i*.08)*12,o=p,cl=p-delta,hi=Math.min(o,cl)-5,lo=Math.max(o,cl)+5;x.strokeStyle=cl<o?'#fff':'#ff5f80';x.beginPath();x.moveTo(xx,hi);x.lineTo(xx,lo);x.stroke();x.fillStyle=cl<o?'#fff':'#ff5f80';x.fillRect(xx-2,Math.min(o,cl),4,Math.max(2,Math.abs(cl-o)));p=cl}x.fillStyle='#6b7890';x.font='9px system-ui';x.fillText('OFFLINE / DEMO VISUAL — LIVE VERIFIED CANDLES WILL REPLACE THIS',14,h-10)}window.addEventListener('resize',draw);draw();
 </script>
-</body></html>
+<script id="PTD_PAGES_LIVE_BRIDGE_V2">
+(function(){
+  const API_BASE=(localStorage.getItem('ptd_backend_url')||'https://parthavi-trade-desk-pro.onrender.com').replace(/\/$/,'');
+  const symbol='NIFTY';
+  let lastPredictionKey=null,booted=false,pollBusy=false;
+
+  function showToast(msg){
+    const t=document.getElementById('toast'); if(!t)return;
+    t.textContent=msg;t.classList.add('show');
+    clearTimeout(window.__ptdToastTimer);window.__ptdToastTimer=setTimeout(()=>t.classList.remove('show'),2200);
+  }
+  function vibrate(kind){
+    try{
+      if(window.PTDHaptics&&typeof window.PTDHaptics.alert==='function')return window.PTDHaptics.alert(kind);
+      if(navigator.vibrate)navigator.vibrate(kind==='confirmed'?[90,60,90,60,160]:kind==='bearish'?[180,80,180]:kind==='bullish'?[90,60,90]:[120]);
+    }catch(_){}
+  }
+  async function notify(title,detail,key){
+    try{
+      if(!('Notification' in window)||Notification.permission!=='granted')return;
+      const reg=await navigator.serviceWorker?.getRegistration?.();
+      if(reg?.showNotification)await reg.showNotification('PARTHAVI TRADE DESK • '+title,{body:detail,tag:key||title,renotify:true});
+      else new Notification('PARTHAVI TRADE DESK • '+title,{body:detail,tag:key||title});
+    }catch(_){}
+  }
+  function toneFor(s){
+    const x=String(s||'').toUpperCase();
+    return x==='BULLISH'||x==='CALL'?'bullish':x==='BEARISH'||x==='PUT'?'bearish':'neutral-live';
+  }
+  window.ptdScrollPrediction=function(){document.getElementById('phase10Prediction')?.scrollIntoView({behavior:'smooth',block:'start'});};
+  function applyPrediction(p){
+    const pred=String(p?.prediction||'NO TRADE').toUpperCase();
+    const action=String(p?.action||'NO TRADE').toUpperCase();
+    const state=String(p?.signalState||'LOCKED').toUpperCase();
+    const conf=p?.modelConfidence!=null?String(p.modelConfidence)+'%':'—';
+    const pct=p?.confirmationPct!=null?String(p.confirmationPct)+'%':'—';
+    const pe=document.getElementById('spPrediction'),ae=document.getElementById('spAction'),ce=document.getElementById('spConfidence'),qe=document.getElementById('spConfirmation'),ue=document.getElementById('spUpdated');
+    if(pe){pe.textContent=pred;pe.className='sp-value '+toneFor(pred);}
+    if(ae){ae.textContent='ACTION: '+action;ae.className='sp-pill '+toneFor(action);}
+    if(ce)ce.textContent='CONFIDENCE: '+conf;
+    if(qe)qe.textContent='CONFIRMATION: '+pct+' • '+state;
+    if(ue)ue.textContent='UPDATED: '+new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    const card=document.getElementById('prediction');
+    if(card){card.textContent=pred;card.className=toneFor(pred);}
+    const st=document.getElementById('p10State');
+    if(st){st.textContent=state;st.className='badge '+(state==='CONFIRMED'?'ok':state==='WATCH'?'warn':'danger');}
+    const key=pred+'|'+action+'|'+state;
+    if(!booted){booted=true;lastPredictionKey=key;return;}
+    if(key===lastPredictionKey)return;
+    lastPredictionKey=key;
+    const detail=symbol+' • '+pred+' • '+action+' • Confidence '+conf+' • Confirmation '+pct;
+    vibrate(state==='CONFIRMED'?'confirmed':toneFor(action)==='bearish'?'bearish':toneFor(action)==='bullish'?'bullish':'neutral');
+    showToast('🔔 '+detail);
+    notify('Prediction changed',detail,'prediction-'+key);
+  }
+  function applyMarket(d){
+    const vals=[d?.NIFTY,d?.BANKNIFTY,d?.FINNIFTY,d?.MIDCPNIFTY,d?.VIX].map(x=>x?.ltp);
+    document.querySelectorAll('#ticker .tick b').forEach((el,i)=>{if(vals[i]!=null)el.textContent=Number(vals[i]).toLocaleString('en-IN',{maximumFractionDigits:2});});
+    const gr=document.querySelector('#ticker .tick:last-child b');
+    if(gr&&d?.GLOBAL_RISK?.label)gr.textContent=d.GLOBAL_RISK.label;
+  }
+  async function poll(){
+    if(pollBusy)return;pollBusy=true;
+    try{
+      const [pr,mr]=await Promise.all([
+        fetch(API_BASE+'/api/phase10/prediction?symbol='+encodeURIComponent(symbol),{cache:'no-store'}),
+        fetch(API_BASE+'/api/market?symbol='+encodeURIComponent(symbol),{cache:'no-store'})
+      ]);
+      const p=await pr.json().catch(()=>({})),m=await mr.json().catch(()=>({}));
+      if(p?.prediction)applyPrediction(p.prediction);
+      if(m?.data)applyMarket(m.data);
+    }catch(_){}
+    finally{pollBusy=false;}
+  }
+  window.ptdEnableAlerts=async function(){
+    vibrate('confirmed');
+    if(!('Notification' in window)){showToast('Browser notifications unavailable • vibration still works');return;}
+    try{
+      const perm=await Notification.requestPermission();
+      if(perm==='granted'){showToast('✅ Notifications + vibration enabled');vibrate('confirmed');}
+      else showToast('Notification permission not granted');
+    }catch(_){showToast('Notification permission failed')}
+  };
+  window.enableAlerts=window.ptdEnableAlerts;
+  window.addEventListener('load',function(){
+    if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js',{scope:'/'}).catch(()=>{});
+    poll();setInterval(poll,12000);
+    showToast('🔄 Live prediction auto-update started');
+  });
+})();
+</script></body></html>
