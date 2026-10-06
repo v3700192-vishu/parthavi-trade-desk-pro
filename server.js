@@ -1024,6 +1024,28 @@ async function loadTfSummary(symbol, interval, days){
   return {ins,rows:trimmed,summary:summarize(trimmed),closed:true};
 }
 
+// Chart data bridge: prefer Angel candles, then use the existing verified fallback adapter.
+app.get('/api/chart/candles',async(req,res)=>{
+  const symbol=String(req.query.symbol||'NIFTY').toUpperCase();
+  const tf=String(req.query.tf||'15M').toUpperCase();
+  try{
+    if(!angelStatus().connected) return res.json({ok:false,connected:false,source:'NONE',rows:[],error:'ANGEL_NOT_CONNECTED'});
+    const map={1M:'ONE_MINUTE',5M:'FIVE_MINUTE',15M:'FIFTEEN_MINUTE',30M:'THIRTY_MINUTE',1H:'ONE_HOUR',4H:'ONE_HOUR',1D:'ONE_DAY'};
+    const interval=map[tf]||'FIFTEEN_MINUTE';
+    if(['1M','5M','15M','30M','1H','4H'].includes(tf)){
+      const base=await loadBase5m(symbol);
+      let rows=interval==='FIVE_MINUTE'?base:aggregateCandles(base,tf==='15M'?15:tf==='30M'?30:tf==='1H'||tf==='4H'?60:5);
+      rows=dropIncompleteCandle(rows,tf==='15M'?15:tf==='30M'?30:tf==='1H'||tf==='4H'?60:5);
+      return res.json({ok:true,connected:true,source:candleCache.get(symbol)?.source||'ANGEL',rows:rows.slice(-500),checkedAt:nowISO()});
+    }
+    const summary=await loadTfSummary(symbol,interval,365);
+    return res.json({ok:true,connected:true,source:'ANGEL',rows:(summary.rows||[]).slice(-500),checkedAt:nowISO()});
+  }catch(e){
+    console.warn('[CHART_CANDLES]',symbol,tf,e?.message||e);
+    return res.status(502).json({ok:false,connected:angelStatus().connected,source:'ERROR',rows:[],error:e?.message||'Chart candle feed unavailable'});
+  }
+});
+
 // PHASE 10 — advanced prediction, confirmation and transparent historical target-hit analysis.
 app.get('/api/phase10/prediction',async(req,res)=>{
   const symbol=String(req.query.symbol||'NIFTY').toUpperCase();
