@@ -120,7 +120,31 @@ export async function quoteInstruments(instruments){
   }
   for(const k of Object.keys(exchangeTokens)) exchangeTokens[k]=[...new Set(exchangeTokens[k])].slice(0,50);
   const data=await a.getMarketData('FULL', exchangeTokens);
-  return mergeMarketData(data?.data?.fetched||[]);
+  let rows=mergeMarketData(data?.data?.fetched||[]);
+  // SmartAPI FULL may omit a contract even when the session is healthy.
+  // Fill only missing quotes with the authenticated LTP endpoint so the contract
+  // finder/paper-trading panels do not stay blank.
+  const seen=new Set(rows.map(x=>String(x.symbolToken||'')));
+  const missing=list.filter(x=>String(x.token||x.symboltoken||'') && !seen.has(String(x.token||x.symboltoken))).slice(0,10);
+  if(missing.length){
+    const extra=await Promise.allSettled(missing.map(async x=>{
+      const ex=String(x.exchange||exchangeForSegment(x.exch_seg)||'').toUpperCase();
+      const token=String(x.symboltoken||x.token||'');
+      if(!ex||!token) return null;
+      const r=await ltp({exchange:ex,tradingsymbol:String(x.tradingsymbol||x.symbol||''),symboltoken:token});
+      const d=r?.data||r;
+      if(d?.ltp==null) return null;
+      return {exchange:ex,tradingSymbol:String(x.tradingsymbol||x.symbol||''),symbolToken:token,
+        ltp:Number(d.ltp),close:d?.close??null,
+        change:d?.percentChange??d?.percentageChange??d?.netChange??null,
+        netChange:d?.netChange??null,percentChange:d?.percentChange??d?.percentageChange??null,
+        opnInterest:d?.opnInterest??d?.openInterest??d?.oi??null,
+        tradeVolume:d?.tradeVolume??d?.volume??null,
+        bestFive:d?.depth??d?.bestFive??null};
+    }));
+    rows=rows.concat(extra.map(x=>x.status==='fulfilled'?x.value:null).filter(Boolean));
+  }
+  return rows;
 }
 
 export async function optionGreeks({name, expirydate}){
