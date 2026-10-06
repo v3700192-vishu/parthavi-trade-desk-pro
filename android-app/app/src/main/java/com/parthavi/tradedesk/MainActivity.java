@@ -48,7 +48,7 @@ public class MainActivity extends Activity {
     private static final String UPDATE_JSON_URL =
             "https://parthavi-trade-desk-pro.onrender.com/app-update.json";
     private static final String APK_FILE_NAME = "parthavi-trade-desk-pro-update.apk";
-    private static final int APP_VERSION_CODE = 3;
+    private static final int APP_VERSION_CODE = 4;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -67,8 +67,9 @@ public class MainActivity extends Activity {
         settings.setAllowContentAccess(true);
         settings.setBuiltInZoomControls(false);
         settings.setDisplayZoomControls(false);
-        settings.setLoadWithOverviewMode(true);
-        settings.setUseWideViewPort(true);
+        settings.setLoadWithOverviewMode(false);
+        settings.setUseWideViewPort(false);
+        settings.setSupportZoom(false);
         settings.setDefaultFontSize(16);
         settings.setMediaPlaybackRequiresUserGesture(false);
 
@@ -112,17 +113,10 @@ public class MainActivity extends Activity {
     }
 
     private void installHapticClickScript(WebView view) {
-        String script =
-                "(function(){"
-                + "if(window.__PTD_HAPTIC_READY)return;"
-                + "window.__PTD_HAPTIC_READY=true;"
-                + "document.addEventListener('pointerup',function(e){"
-                + "var t=e.target && e.target.closest ? e.target.closest('button,a,[role=button],.btn,.chip,.tf,.tool,.hudbtn') : null;"
-                + "if(!t || t.disabled) return;"
-                + "try{ if(window.PTDHaptics && PTDHaptics.tap) PTDHaptics.tap(); else if(navigator.vibrate) navigator.vibrate(12); }catch(_e){}"
-                + "},true);"
-                + "})();";
-        view.evaluateJavascript(script, null);
+        view.evaluateJavascript(
+                "(function(){try{window.scrollTo(0,0);document.documentElement.scrollLeft=0;document.body.scrollLeft=0;}catch(e){}})();",
+                null
+        );
     }
 
     private final class HapticBridge {
