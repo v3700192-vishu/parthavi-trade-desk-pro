@@ -3,6 +3,8 @@ package com.parthavi.tradedesk;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.DownloadManager;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -11,6 +13,8 @@ import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.Manifest;
+import android.content.pm.PackageManager;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
@@ -27,6 +31,9 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
 
+import androidx.core.app.ActivityCompat;
+import androidx.core.app.NotificationCompat;
+import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 
 import org.json.JSONObject;
@@ -50,7 +57,9 @@ public class MainActivity extends Activity {
     private static final String UPDATE_JSON_URL =
             "https://parthavi-trade-desk-pro.onrender.com/app-update.json";
     private static final String APK_FILE_NAME = "parthavi-trade-desk-pro-update.apk";
-    private static final int APP_VERSION_CODE = 5;
+    private static final int APP_VERSION_CODE = 6;
+    private static final int NOTIFICATION_PERMISSION_REQUEST = 701;
+    private static final String NOTIFICATION_CHANNEL_ID = "ptd_live_alerts";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -132,6 +141,8 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT
         ));
         setContentView(webView);
+        createNotificationChannel();
+        requestNotificationPermissionIfNeeded();
 
         if (savedInstanceState != null) {
             webView.restoreState(savedInstanceState);
@@ -147,6 +158,27 @@ public class MainActivity extends Activity {
                 "(function(){try{window.scrollTo(0,0);document.documentElement.scrollLeft=0;document.body.scrollLeft=0;}catch(e){}})();",
                 null
         );
+    }
+
+    private void createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm == null) return;
+            NotificationChannel ch = new NotificationChannel(
+                    NOTIFICATION_CHANNEL_ID,
+                    "PARTHAVI Live Alerts",
+                    NotificationManager.IMPORTANCE_HIGH
+            );
+            ch.setDescription("Live prediction, breakout and risk alerts");
+            nm.createNotificationChannel(ch);
+        }
+    }
+
+    private void requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= 33 &&
+                ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.POST_NOTIFICATIONS}, NOTIFICATION_PERMISSION_REQUEST);
+        }
     }
 
     private final class HapticBridge {
@@ -172,6 +204,51 @@ public class MainActivity extends Activity {
                     } else {
                         vibrator.vibrate(12L);
                     }
+                } catch (Exception ignored) {
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void alert(String kind) {
+            runOnUiThread(() -> {
+                try {
+                    android.os.Vibrator vibrator =
+                            (android.os.Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+                    if (vibrator == null) return;
+                    long[] pattern;
+                    String k = String.valueOf(kind == null ? "neutral" : kind).toLowerCase();
+                    if ("confirmed".equals(k)) pattern = new long[]{0,90,60,90,60,160};
+                    else if ("bearish".equals(k)) pattern = new long[]{0,180,80,180};
+                    else if ("bullish".equals(k)) pattern = new long[]{0,90,60,90};
+                    else pattern = new long[]{0,120};
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        vibrator.vibrate(android.os.VibrationEffect.createWaveform(pattern, -1));
+                    } else {
+                        vibrator.vibrate(pattern, -1);
+                    }
+                } catch (Exception ignored) {
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void notifyAlert(String title, String body) {
+            runOnUiThread(() -> {
+                try {
+                    requestNotificationPermissionIfNeeded();
+                    if (Build.VERSION.SDK_INT >= 33 &&
+                            ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return;
+                    NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                    if (nm == null) return;
+                    NotificationCompat.Builder b = new NotificationCompat.Builder(MainActivity.this, NOTIFICATION_CHANNEL_ID)
+                            .setSmallIcon(android.R.drawable.ic_dialog_info)
+                            .setContentTitle(title == null ? "PARTHAVI TRADE DESK" : title)
+                            .setContentText(body == null ? "Live alert" : body)
+                            .setPriority(NotificationCompat.PRIORITY_HIGH)
+                            .setAutoCancel(true)
+                            .setCategory(NotificationCompat.CATEGORY_STATUS);
+                    nm.notify((int)(System.currentTimeMillis() & 0x7fffffff), b.build());
                 } catch (Exception ignored) {
                 }
             });
