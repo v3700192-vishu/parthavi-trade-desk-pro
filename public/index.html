@@ -123,6 +123,21 @@ button,input,select{font:inherit} button{cursor:pointer}
 .a1-overlay{position:absolute;left:52px;top:6px;color:#6e7e97;font-size:8px;letter-spacing:.3px;pointer-events:none}.a1-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#78869a;font-size:11px;background:rgba(5,10,18,.18);pointer-events:none}.a1-price-tag{position:absolute;right:5px;top:45%;padding:4px 6px;border-radius:3px;background:#21e6a1;color:#061018;font-size:10px;font-weight:950;pointer-events:none}
 .a1-footer{display:flex;align-items:center;gap:4px;padding:6px 8px;background:#060b15;border-top:1px solid #18263a;color:#77869c;font-size:8px}.a1-footer button{border:1px solid #26374f;border-radius:7px;background:#091321;color:#dfe7f2;padding:5px 8px;font-weight:900}.a1-footer #chartSource{margin-left:auto;max-width:48%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 @media(max-width:650px){.angel-chart #cv{height:430px}.angel-chart .a1-head{grid-template-columns:auto 1fr auto}.a1-ohlc{font-size:8px}.a1-price{font-size:14px}.a1-toolbar{overflow:auto;flex-wrap:nowrap}}
+
+/* Android/mobile app layout */
+@media(max-width:700px){
+  .app{width:100%;max-width:none;margin:0;padding:6px 7px 80px;overflow-x:hidden}
+  .top{position:relative;top:0;padding:8px;border-radius:18px;align-items:center}
+  .brand{min-width:0;flex:1}.logo{width:52px;height:52px;flex:0 0 52px}.brand h1{font-size:13px;letter-spacing:.5px;white-space:normal;line-height:1.1}.brand p{font-size:7px;line-height:1.2}
+  .top-actions{display:none}
+  .hero-grid,.decision-grid,.main-grid,.content-grid,.grid-2,.grid-3,.chart-grid{grid-template-columns:1fr!important}
+  .hero-grid{gap:8px;margin-top:8px}.card{min-width:0;padding:11px;border-radius:16px}.hero h2{font-size:28px}
+  .ticker{width:100%;max-width:100%}.selector{width:100%;max-width:100%}
+  table{max-width:100%;display:block;overflow-x:auto}
+  input,select,button{max-width:100%}
+  .hero,.card,.section,.panel{min-width:0;max-width:100%}
+  canvas{max-width:100%!important}
+}
 </style></style>
 
 <style id="phase10-prediction-css">
