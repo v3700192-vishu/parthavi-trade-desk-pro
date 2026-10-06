@@ -45,7 +45,13 @@ app.use((req,res,next)=>{
   }
   next();
 });
-app.use(express.static(path.join(__dirname, "public"), { setHeaders(res, filePath){ if(filePath.endsWith("index.html")) res.setHeader("Cache-Control","no-store, no-cache, must-revalidate, proxy-revalidate"); } }));
+app.use(express.static(path.join(__dirname, "public"), {
+  setHeaders(res, filePath){
+    if(filePath.endsWith("index.html") || filePath.endsWith("app-update.json")){
+      res.setHeader("Cache-Control","no-store, no-cache, must-revalidate, proxy-revalidate");
+    }
+  }
+}));
 
 const PORT = Number(process.env.PORT || 8787);
 const DEMO = String(process.env.DEMO_MODE || "false").toLowerCase() === "true";
