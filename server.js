@@ -501,12 +501,14 @@ app.get("/api/angel/contracts", async (req,res)=>{
     if(!angelStatus().connected) return res.json({ok:true,connected:false,count:0,contracts:[],message:"Connect Angel One first."});
     const base=await findContracts(req.query);
     let rows=[];
-    try{ rows=await quoteInstruments(base.slice(0,10)); }catch{}
+    try{ rows=await quoteInstruments(base.slice(0,10)); }catch(e){ console.warn('[CONTRACT_QUOTE]',e?.message||e); }
+    if(!rows.length && req.query?.strike && req.query?.optionType && base.length){ try{ const r=await angelLtp({exchange:'NFO',tradingsymbol:String(base[0].symbol),symboltoken:String(base[0].token)}); const d=r?.data||r; if(d?.ltp!=null) rows=[{symbolToken:String(base[0].token),ltp:Number(d.ltp),change:d?.percentChange??d?.netChange??null,opnInterest:null,tradeVolume:null,bestFive:null}]; }catch(e){ console.warn('[CONTRACT_LTP]',e?.message||e); } }
     const qmap=new Map(rows.map(x=>[String(x.symbolToken),x]));
     const contracts=base.slice(0,50).map(x=>{
       const q=qmap.get(String(x.token))||{};
-      return {contract:x.symbol, exchange:x.exchange, underlying:x.name, expiry:x.expiry, optionType:x.optionType, strike:x.strike, token:x.token, lotsize:x.lotsize,
-        ltp:q.ltp??null, change:q.change??null, bid:q.bestFive?.buy?.[0]?.price??q.bestFive?.buy?.[0]?.Price??null, ask:q.bestFive?.sell?.[0]?.price??q.bestFive?.sell?.[0]?.Price??null,
+      const buy=q.bestFive?.buy?.[0]||q.bestFive?.Buy?.[0]||{}, sell=q.bestFive?.sell?.[0]||q.bestFive?.Sell?.[0]||{};
+      return {contract:x.symbol, exchange:x.exchange||'NFO', underlying:x.name, expiry:x.expiry, optionType:x.optionType, strike:x.strike, token:x.token, lotsize:x.lotsize,
+        ltp:q.ltp??null, change:q.change??null, bid:buy.price??buy.Price??null, ask:sell.price??sell.Price??null,
         oi:q.opnInterest??null, doi:null, volume:q.tradeVolume??null, iv:null};
     });
     res.json({ok:true,connected:true,count:contracts.length,contracts});
