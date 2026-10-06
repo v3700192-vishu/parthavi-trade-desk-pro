@@ -48,6 +48,7 @@ public class MainActivity extends Activity {
     private static final String UPDATE_JSON_URL =
             "https://parthavi-trade-desk-pro.onrender.com/app-update.json";
     private static final String APK_FILE_NAME = "parthavi-trade-desk-pro-update.apk";
+    private static final int APP_VERSION_CODE = 2;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -174,7 +175,7 @@ public class MainActivity extends Activity {
                 String apkUrl = update.optString("apkUrl", "");
                 String notes = update.optString("notes", "New PARTHAVI TRADE DESK PRO update is available.");
 
-                if (remoteCode > BuildConfig.VERSION_CODE && apkUrl.startsWith("https://")) {
+                if (remoteCode > APP_VERSION_CODE && apkUrl.startsWith("https://")) {
                     runOnUiThread(() -> showUpdateDialog(remoteName, notes, apkUrl));
                 }
             } catch (Exception ignored) {
@@ -291,7 +292,7 @@ public class MainActivity extends Activity {
 
             Uri apkUri = FileProvider.getUriForFile(
                     this,
-                    BuildConfig.APPLICATION_ID + ".fileprovider",
+                    getPackageName() + ".fileprovider",
                     apk
             );
 
