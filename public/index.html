@@ -239,7 +239,34 @@ body{-webkit-overflow-scrolling:touch}
 @media(max-width:620px){.shield-grid{grid-template-columns:1fr 1fr}.shield-hero{grid-column:span 2}.shield-rules{grid-template-columns:1fr 1fr}}
 </style>
 <script src="/mobile-haptics.js"></script>
-</head>
+<style id="ptdLiveUXV2">
+/* Live UX: sticky prediction, top notification, and mobile-safe scrolling. */
+.sticky-prediction{
+  position:sticky;top:86px;z-index:34;display:grid;grid-template-columns:auto 1fr auto;align-items:center;
+  gap:9px;margin:8px 0;padding:8px 10px;border:1px solid #33445f;border-radius:14px;
+  background:rgba(7,13,24,.94);backdrop-filter:blur(16px);box-shadow:0 12px 32px rgba(0,0,0,.32)
+}
+.sticky-prediction .sp-label{display:block;color:var(--muted);font-size:7px;font-weight:900;letter-spacing:.7px;text-transform:uppercase}
+.sticky-prediction .sp-value{display:block;font-size:17px;font-weight:950;line-height:1.1;margin-top:2px}
+.sticky-prediction .sp-mid{display:flex;gap:7px;align-items:center;flex-wrap:wrap;min-width:0}
+.sticky-prediction .sp-pill{padding:5px 7px;border:1px solid var(--line);border-radius:999px;background:#0a1322;color:#aab7c9;font-size:8px;white-space:nowrap}
+.sticky-prediction .sp-updated{overflow:hidden;text-overflow:ellipsis}
+@media(max-width:760px){
+  .sticky-prediction{top:4px;margin:0 -2px 7px;border-radius:0 0 14px 14px;padding:7px 8px;grid-template-columns:auto 1fr auto}
+  .sticky-prediction .sp-value{font-size:15px}
+  .sticky-prediction .sp-mid{gap:4px}
+  .sticky-prediction .sp-pill{font-size:7px;padding:4px 6px}
+  .sticky-prediction .sp-view{padding:7px 8px}
+}
+.toast{
+  position:fixed;top:92px;bottom:auto;left:50%;transform:translateX(-50%) translateY(-10px);opacity:0;
+  pointer-events:none;background:#101c30;border:1px solid #49617f;border-radius:12px;padding:10px 13px;
+  font-size:10px;line-height:1.35;z-index:140;transition:.2s;max-width:min(560px,calc(100vw - 20px));
+  box-shadow:0 14px 36px rgba(0,0,0,.4);text-align:center
+}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+@media(max-width:760px){.toast{top:72px;font-size:9px;max-width:calc(100vw - 16px)}}
+</style></head>
 <body>
 <script id="ANDROID_LAYOUT_GUARD">
 (function(){try{window.scrollTo(0,0);document.documentElement.scrollLeft=0;document.body.scrollLeft=0}catch(e){}})();
@@ -339,6 +366,19 @@ body{-webkit-overflow-scrolling:touch}
     <button class="btn primary" onclick="openSettings()">⚙</button>
   </div>
 </header>
+<div id="stickyPrediction" class="sticky-prediction" aria-live="polite">
+  <div>
+    <span class="sp-label">LIVE PREDICTION</span>
+    <b id="spPrediction" class="sp-value neutral">NO TRADE</b>
+  </div>
+  <div class="sp-mid">
+    <span id="spAction" class="sp-pill">ACTION: NO TRADE</span>
+    <span id="spConfidence" class="sp-pill">CONFIDENCE: —</span>
+    <span id="spConfirmation" class="sp-pill">CONFIRMATION: —</span>
+    <span id="spUpdated" class="sp-pill sp-updated">UPDATED: —</span>
+  </div>
+  <button class="btn sp-view" onclick="scrollToPhase10Backtest()">VIEW</button>
+</div>
 
 <div class="ticker" id="ticker">
   <div class="titem"><small>NIFTY 50</small><strong id="nifty">WAIT</strong></div>
@@ -1234,11 +1274,22 @@ function addAlert(title,detail,tone='neutral',key=''){
   if(key && alertState.seen.has(key)) return; if(key) alertState.seen.add(key);
   const feed=$('alertFeed'); if(!feed)return; const el=document.createElement('div'); el.className='alert-item '+tone;
   el.innerHTML='<b>'+escapeHtml(title)+'</b><span>'+escapeHtml(detail)+'</span>'; feed.prepend(el); while(feed.children.length>30)feed.lastChild.remove();
+  ptdAlertVibrate(tone);
+  toast('🔔 '+title);
   if(document.hidden || window.__notifyAlways){ if('Notification' in window && Notification.permission==='granted'){ try{new Notification('PARTHAVI TRADE DESK • '+title,{body:detail,tag:key||title});}catch{} } }
 }
 async function enableNotifications(){
-  if(!('Notification' in window)){toast('Browser notifications not supported; in-app alerts still work');return}
-  try{const p=await Notification.requestPermission(); if(p==='granted'){window.__notifyAlways=true;$('notifyBtn').textContent='🔔 Notifications ON';toast('Browser notifications enabled')}else toast('Notification permission not granted')}catch(e){toast('Notification permission failed')}
+  ptdAlertVibrate('neutral');
+  if(!('Notification' in window)){toast('Browser notifications not supported; in-app alerts + vibration still work');return}
+  try{
+    const p=await Notification.requestPermission();
+    if(p==='granted'){
+      window.__notifyAlways=true;
+      $('notifyBtn').textContent='🔔 Notifications ON';
+      ptdAlertVibrate('confirmed');
+      toast('✅ Notifications + vibration enabled');
+    }else toast('Notification permission not granted');
+  }catch(e){toast('Notification permission failed')}
 }
 function clearAlerts(){alertState.seen.clear();$('alertFeed').innerHTML='<div class="alert-item neutral"><b>Alerts cleared</b><span>New events will appear here.</span></div>';}
 function crossedUp(prev,cur,level){return Number.isFinite(prev)&&Number.isFinite(cur)&&Number.isFinite(level)&&prev<=level&&cur>level}
@@ -1291,6 +1342,74 @@ async function phase6Monitor(){
   }catch(e){$('phase6State').textContent='ERROR';$('p6Monitor').textContent='ERROR'}
 }
 
+function updateStickyPrediction(p){
+  try{
+    const pred=String(p?.prediction||'NO TRADE').toUpperCase(), act=String(p?.action||'NO TRADE').toUpperCase();
+    const state=String(p?.signalState||'LOCKED').toUpperCase();
+    const pe=$('spPrediction'), ae=$('spAction'), ce=$('spConfidence'), qe=$('spConfirmation'), ue=$('spUpdated');
+    if(!pe)return;
+    pe.textContent=pred; pe.className='sp-value '+(pred==='BULLISH'?'bullish':pred==='BEARISH'?'bearish':'neutral');
+    ae.textContent='ACTION: '+act;
+    ae.className='sp-pill '+(act==='CALL'?'bullish':act==='PUT'?'bearish':'neutral');
+    ce.textContent='CONFIDENCE: '+(p?.modelConfidence!=null?String(p.modelConfidence)+'%':'—');
+    qe.textContent='CONFIRMATION: '+(p?.confirmationPct!=null?String(p.confirmationPct)+'%':'—')+' • '+state;
+    ue.textContent='UPDATED: '+indiaNow();
+  }catch(_){}
+}
+function ptdAlertVibrate(kind){
+  try{
+    if(window.PTDHaptics && typeof window.PTDHaptics.alert==='function') return window.PTDHaptics.alert(kind);
+    if(!navigator.vibrate)return false;
+    const pattern=kind==='confirmed'?[90,60,90,60,160]:kind==='bearish'?[180,80,180]:kind==='bullish'?[90,60,90]:[120];
+    navigator.vibrate(pattern); return true;
+  }catch(_){return false}
+}
+async function ptdSystemNotify(title,detail,key){
+  try{
+    if(!('Notification' in window)||Notification.permission!=='granted')return;
+    const reg=await navigator.serviceWorker?.getRegistration?.();
+    if(reg?.showNotification){
+      await reg.showNotification('PARTHAVI TRADE DESK • '+title,{body:detail,tag:key||title,renotify:true});
+    }else{
+      new Notification('PARTHAVI TRADE DESK • '+title,{body:detail,tag:key||title});
+    }
+  }catch(_){}
+}
+const ptdPredictionNotice={key:null,booted:false};
+function announcePrediction(p){
+  const pred=String(p?.prediction||'NO TRADE').toUpperCase(), act=String(p?.action||'NO TRADE').toUpperCase(), state=String(p?.signalState||'LOCKED').toUpperCase();
+  const key=pred+'|'+act+'|'+state;
+  if(!ptdPredictionNotice.booted){ptdPredictionNotice.booted=true;ptdPredictionNotice.key=key;return}
+  if(!key||key===ptdPredictionNotice.key)return;
+  ptdPredictionNotice.key=key;
+  const tone=act==='CALL'||pred==='BULLISH'?'bullish':act==='PUT'||pred==='BEARISH'?'bearish':'neutral';
+  const vib=state==='CONFIRMED'?'confirmed':tone;
+  const detail=`${symbol} • ${pred} • ${act} • Confidence ${p?.modelConfidence??'—'}% • Confirmation ${p?.confirmationPct??'—'}%`;
+  addAlert('Prediction changed',detail,tone,'prediction-'+key);
+  ptdAlertVibrate(vib);
+  if('Notification' in window && Notification.permission==='granted') ptdSystemNotify('Prediction changed',detail,'prediction-'+key);
+}
+async function refreshLiveTicker(){
+  try{
+    const m=await getJSON('/api/market?symbol='+encodeURIComponent(symbol));
+    if(m?.data) renderTicker(m.data);
+  }catch(_){}
+}
+let ptdChartRefreshBusy=false;
+async function refreshLiveChart(){
+  if(ptdChartRefreshBusy||typeof chartRowsOk!=='function')return;
+  ptdChartRefreshBusy=true;
+  try{
+    const rr=await fetch(API_BASE+'/api/chart/candles?symbol='+encodeURIComponent(symbol)+'&tf='+encodeURIComponent(tf),{cache:'no-store'});
+    const d=await rr.json().catch(()=>({}));
+    const rows=Array.isArray(d?.rows)?d.rows:[];
+    if(chartRowsOk(rows)){
+      chartDataCache.set(tf,rows); liveData=rows; chartDay=''; renderChartDays(rows); window.__chartCacheAt=Date.now();
+      const src=$('chartSource'); if(src)src.textContent=(d?.source||'ANGEL')+' • LIVE AUTO UPDATE • '+rows.length+' BARS';
+      drawChart();
+    }
+  }catch(_){ } finally { ptdChartRefreshBusy=false; }
+}
 function setP10Tone(el,state){ if(!el)return; const x=String(state||'').toUpperCase(); el.className=x==='BULLISH'||x==='CALL'?'bullish':x==='BEARISH'||x==='PUT'?'bearish':'neutral'; }
 function formatPct(v){ return Number.isFinite(Number(v))?Number(v).toFixed(1)+'%':'—'; }
 async function loadRiskSizing(p){
@@ -1317,6 +1436,7 @@ async function loadRiskSizing(p){
 function renderPredictionPanel(r){
   const p=r?.prediction||{}; const hist=r?.backtest||p?.historical||{};
   const pred=$('p10Prediction'), act=$('p10Action');
+  updateStickyPrediction(p);
   pred.textContent=p.prediction||'NO TRADE'; setP10Tone(pred,p.prediction);
   act.textContent=p.action||'NO TRADE'; setP10Tone(act,p.action);
   $('p10State').textContent=p.signalState||'LOCKED'; setP10Tone($('p10State'),p.signalState);
@@ -1357,6 +1477,7 @@ async function loadPrediction(showToast=false){
   try{
     const r=await getJSON('/api/phase10/prediction?symbol='+encodeURIComponent(symbol));
     renderPredictionPanel(r);
+    announcePrediction(r?.prediction||{});
     if(r?.prediction?.signalState!=='CONFIRMED'){window.phase11SignalToken='';window.phase11Snapshot=null;$('p11SignalStatus').textContent='No live signal token loaded.';}
     if(showToast) toast(r?.prediction?.signalState==='CONFIRMED'?'Phase 10 prediction confirmed':'Phase 10 prediction refreshed');
   }catch(e){
@@ -1634,7 +1755,23 @@ function updateRisk(){
 }
 ['capital','riskPct','dailyCap','maxPos'].forEach(id=>$(id).addEventListener('input',updateRisk));
 window.addEventListener('resize',drawChart);
-angelStatus();setInterval(angelStatus,5000);loadAll();loadPrediction(false);loadPhase11Shield();updateRisk();drawChart();loadExecutionStatus();loadPhase12Readiness();phase6Monitor();renderTradeJournal();setInterval(loadAll,15000);setInterval(loadPrediction,20000);setInterval(loadPhase11Shield,10000);setInterval(loadBrokerAccount,10000);setInterval(loadExecutionStatus,15000);setInterval(loadPhase12Readiness,15000);setInterval(phase6Monitor,5000);
+let ptdAutoRefreshBusy=false;
+async function ptdAutoRefresh(){
+  if(ptdAutoRefreshBusy)return;
+  ptdAutoRefreshBusy=true;
+  try{ await Promise.allSettled([loadAll(),loadPrediction(false),refreshLiveChart()]); }
+  finally{ ptdAutoRefreshBusy=false; }
+}
+angelStatus();setInterval(angelStatus,5000);
+loadAll();loadPrediction(false);loadPhase11Shield();updateRisk();drawChart();loadExecutionStatus();loadPhase12Readiness();phase6Monitor();renderTradeJournal();
+ptdAutoRefresh();
+setInterval(ptdAutoRefresh,12000);
+setInterval(refreshLiveTicker,5000);
+setInterval(loadPhase11Shield,10000);
+setInterval(loadBrokerAccount,10000);
+setInterval(loadExecutionStatus,15000);
+setInterval(loadPhase12Readiness,15000);
+setInterval(phase6Monitor,5000);
 </script>
 </body>
 </html>
