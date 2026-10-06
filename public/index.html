@@ -1276,7 +1276,9 @@ function addAlert(title,detail,tone='neutral',key=''){
   el.innerHTML='<b>'+escapeHtml(title)+'</b><span>'+escapeHtml(detail)+'</span>'; feed.prepend(el); while(feed.children.length>30)feed.lastChild.remove();
   ptdAlertVibrate(tone);
   toast('🔔 '+title);
-  if(document.hidden || window.__notifyAlways){ if('Notification' in window && Notification.permission==='granted'){ try{new Notification('PARTHAVI TRADE DESK • '+title,{body:detail,tag:key||title});}catch{} } }
+  if((document.hidden || window.__notifyAlways) && 'Notification' in window && Notification.permission==='granted'){
+    ptdSystemNotify(title,detail,key);
+  }
 }
 async function enableNotifications(){
   ptdAlertVibrate('neutral');
@@ -1386,8 +1388,7 @@ function announcePrediction(p){
   const vib=state==='CONFIRMED'?'confirmed':tone;
   const detail=`${symbol} • ${pred} • ${act} • Confidence ${p?.modelConfidence??'—'}% • Confirmation ${p?.confirmationPct??'—'}%`;
   addAlert('Prediction changed',detail,tone,'prediction-'+key);
-  ptdAlertVibrate(vib);
-  if('Notification' in window && Notification.permission==='granted') ptdSystemNotify('Prediction changed',detail,'prediction-'+key);
+  // addAlert() already handles the top toast, vibration and system notification.
 }
 async function refreshLiveTicker(){
   try{
