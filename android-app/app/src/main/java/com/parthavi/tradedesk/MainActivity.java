@@ -50,7 +50,7 @@ public class MainActivity extends Activity {
     private static final String UPDATE_JSON_URL =
             "https://parthavi-trade-desk-pro.onrender.com/app-update.json";
     private static final String APK_FILE_NAME = "parthavi-trade-desk-pro-update.apk";
-    private static final int APP_VERSION_CODE = 4;
+    private static final int APP_VERSION_CODE = 5;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
