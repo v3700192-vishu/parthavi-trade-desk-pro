@@ -1377,7 +1377,7 @@ async function ptdSystemNotify(title,detail,key){
     }
   }catch(_){}
 }
-const ptdPredictionNotice={key:null,booted:false};
+const ptdPredictionNotice={key:null,booted:false}; window.__notifyAlways=('Notification' in window && Notification.permission==='granted');
 function announcePrediction(p){
   const pred=String(p?.prediction||'NO TRADE').toUpperCase(), act=String(p?.action||'NO TRADE').toUpperCase(), state=String(p?.signalState||'LOCKED').toUpperCase();
   const key=pred+'|'+act+'|'+state;
