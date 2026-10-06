@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#050812">
+<meta name="theme-color" content="#050812"><link rel="manifest" href="manifest.webmanifest"><script src="mobile-haptics.js"></script>
 <title>PARTHAVI TRADE DESK PRO</title>
 <style>
 :root{--bg:#050812;--card:#0b1120;--line:#24314d;--txt:#f7f9ff;--muted:#8e9bb1;--white:#fff;--red:#ff5f80;--amber:#ffd166;--green:#25e0a2;--cyan:#6edfff;--violet:#a98bff;--gold:#ffd66d}
@@ -41,7 +41,7 @@ body{overflow-x:hidden}
 
 <section class="card"><div class="card-head"><h2>Market Command Center • 1H / 15M / 5M</h2><span>Zoom • Pan • Crosshair • Draw • Fullscreen</span></div><div class="chart"><canvas id="chart"></canvas><div class="tools"><button class="tool" onclick="zoom(1.15)">＋ Zoom</button><button class="tool" onclick="zoom(.87)">− Zoom</button><button class="tool" onclick="resetChart()">Reset</button><button class="tool" onclick="full()">Fullscreen</button><button class="tool" onclick="drawMode()">Draw</button></div><div class="chartnote"><span class="badge">DEMO VISUAL</span></div></div></section>
 
-<section class="card"><div class="card-head"><h2>Phase 10 • Advanced Prediction & Confirmation</h2><span id="p10State" class="badge warn">LIVE DATA REQUIRED</span></div><div class="signal"><div class="metric"><small>PREDICTION</small><b id="prediction" class="wait">NEUTRAL</b></div><div class="metric"><small>CONFIRMATION</small><b class="wait">LOCKED</b></div><div class="metric"><small>MODEL CONFIDENCE</small><b>—</b></div><div class="metric"><small>HISTORICAL HIT RATE*</small><b>—</b></div></div><div class="reason-grid" style="margin-top:8px"><div class="reason"><span>1H Trend alignment</span><b class="wait">WAIT</b></div><div class="reason"><span>15M Setup</span><b class="wait">WAIT</b></div><div class="reason"><span>5M Trigger + candle close</span><b class="wait">WAIT</b></div><div class="reason"><span>Volume ≥ 1.5× average</span><b class="wait">WAIT</b></div><div class="reason"><span>ADX ≥ 20</span><b class="wait">WAIT</b></div><div class="reason"><span>Option OI/PCR</span><b class="wait">WAIT</b></div><div class="reason"><span>News + Global Risk</span><b class="wait">WAIT</b></div><div class="reason"><span>Event Risk</span><b class="wait">WAIT</b></div></div><div class="note">*Historical/backtest hit rate only. It is not a guarantee of future profit.</div></section>
+<section class="card" id="phase10Prediction"><div class="card-head"><h2>Phase 10 • Advanced Prediction & Confirmation</h2><span id="p10State" class="badge warn">LIVE DATA REQUIRED</span></div><div class="signal"><div class="metric"><small>PREDICTION</small><b id="prediction" class="wait">NEUTRAL</b></div><div class="metric"><small>CONFIRMATION</small><b class="wait">LOCKED</b></div><div class="metric"><small>MODEL CONFIDENCE</small><b>—</b></div><div class="metric"><small>HISTORICAL HIT RATE*</small><b>—</b></div></div><div class="reason-grid" style="margin-top:8px"><div class="reason"><span>1H Trend alignment</span><b class="wait">WAIT</b></div><div class="reason"><span>15M Setup</span><b class="wait">WAIT</b></div><div class="reason"><span>5M Trigger + candle close</span><b class="wait">WAIT</b></div><div class="reason"><span>Volume ≥ 1.5× average</span><b class="wait">WAIT</b></div><div class="reason"><span>ADX ≥ 20</span><b class="wait">WAIT</b></div><div class="reason"><span>Option OI/PCR</span><b class="wait">WAIT</b></div><div class="reason"><span>News + Global Risk</span><b class="wait">WAIT</b></div><div class="reason"><span>Event Risk</span><b class="wait">WAIT</b></div></div><div class="note">*Historical/backtest hit rate only. It is not a guarantee of future profit.</div></section>
 
 <section class="card"><div class="card-head"><h2>Technical Indicator Matrix</h2><span>EMA • RSI • MACD • ADX • VWAP • ATR • Volume • Price Action</span></div><div class="metrics" id="indicators"></div></section>
 
@@ -161,7 +161,7 @@ function draw(){const c=$('chart'),x=c.getContext('2d'),d=devicePixelRatio||1,w=
   };
   window.enableAlerts=window.ptdEnableAlerts;
   window.addEventListener('load',function(){
-    if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js',{scope:'/'}).catch(()=>{});
+    if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js',{scope:'./'}).catch(()=>{});
     poll();setInterval(poll,12000);
     showToast('🔄 Live prediction auto-update started');
   });
