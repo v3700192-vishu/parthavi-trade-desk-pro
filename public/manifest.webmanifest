@@ -1,0 +1,16 @@
+{
+  "name":"PARTHAVI TRADE DESK PRO",
+  "short_name":"PARTHAVI TRADE",
+  "description":"Live market, options fusion, Angel One connectivity and risk-first trading dashboard.",
+  "start_url":"/?source=pwa",
+  "scope":"/",
+  "display":"standalone",
+  "display_override":["window-controls-overlay","standalone"],
+  "orientation":"portrait-primary",
+  "background_color":"#040610",
+  "theme_color":"#050812",
+  "lang":"en-IN",
+  "icons":[
+    {"src":"/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}
+  ]
+}
