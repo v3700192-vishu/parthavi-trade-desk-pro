@@ -1138,18 +1138,18 @@ window.testAngelFeed = async function testAngelFeed(){
     $('angelTestNote').textContent=ok?`Live quote received: ${q.symbol} • LTP ${q.data?.ltp??'—'} • token ${q.token}`:(q.error||'Quote test failed');
     if(ok){
       const sr=await getJSON('/api/angel/stream-test?symbol='+encodeURIComponent(symbol));
-      const live=!!sr.streamVerified;
-      setGate('cxWs',live,live?'LIVE':'WAIT');
-      $('feed').textContent=live?'STREAM VERIFIED':'LIVE QUOTE';
-      $('angelTestNote').textContent += live
-        ? ` • WebSocket tick verified • ${sr.tickCount||0} ticks`
-        : ` • WebSocket tick not verified yet: ${sr.error||sr.websocketError||'stream waiting'}`;
-      await refreshExpiries();
-      await loadAll().catch(()=>{});
-      if(typeof window.loadPrediction==='function') await window.loadPrediction(false).catch(()=>{});
-      if(typeof window.loadPhase11Shield==='function') await window.loadPhase11Shield().catch(()=>{});
-      if(typeof window.loadPhase12Readiness==='function') await window.loadPhase12Readiness().catch(()=>{});
-      drawChart();
+      const connected=!!sr.streamVerified;
+      const tickVerified=!!sr.tickVerified;
+      setGate('cxWs',connected,connected?'LIVE':'WAIT');
+      $('feed').textContent=connected?(tickVerified?'STREAM VERIFIED':'STREAM CONNECTED'):'LIVE QUOTE';
+      $('angelTestNote').textContent += connected
+        ? (tickVerified
+          ? ` • WebSocket tick verified • ${sr.tickCount||0} ticks`
+          : (sr.marketOpen
+            ? ' • WebSocket connected • waiting for next market tick'
+            : ' • WebSocket connected • market closed, no fresh tick expected'))
+        : ` • WebSocket not connected: ${sr.error||sr.websocketError||'stream unavailable'}`;
+
       toast(live?'Angel One REST + WebSocket stream verified':'Angel One live REST quote verified; stream still waiting');
     }
   }catch(e){ setGate('cxQuote',false,'FAIL'); $('angelTestBadge').textContent='TEST FAILED'; $('angelTestBadge').className='badge danger'; $('angelTestNote').textContent=e.message||'Live feed test failed'; }
