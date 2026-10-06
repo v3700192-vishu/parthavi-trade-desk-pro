@@ -394,9 +394,13 @@ async function globalData(){
   return out;
 }
 async function events(){
-  const raw=await fetchProviderJson(process.env.EVENTS_PROVIDER_URL,process.env.EVENTS_PROVIDER_TOKEN,{country:"IN",region:"global",days:2});
-  if(raw==null) return [];
-  return (raw?.events||raw?.items||raw?.data||raw||[]);
+  try{
+    const raw=await fetchProviderJson(process.env.EVENTS_PROVIDER_URL,process.env.EVENTS_PROVIDER_TOKEN,{country:"IN",region:"global",days:2});
+    if(raw==null) return [];
+    return (raw?.events||raw?.items||raw?.data||raw||[]);
+  }catch{
+    return [];
+  }
 }
 
 
