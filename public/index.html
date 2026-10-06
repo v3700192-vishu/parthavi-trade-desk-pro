@@ -833,6 +833,45 @@ button,input,select{font:inherit} button{cursor:pointer}
    so a separate dashboard runtime error cannot make broker login appear to do nothing. */
 (function(){
   const el=id=>document.getElementById(id);
+  /* Fallback test handler is installed before the main dashboard runtime.
+     This prevents the Test Live Feed button from becoming undefined when a
+     later dashboard initializer throws before it reaches its own handler. */
+  window.testAngelFeed = window.testAngelFeed || async function(){
+    const base=location.hostname.endsWith('github.io')?'https://parthavi-trade-desk-pro.onrender.com':((location.origin&&/^https?:$/.test(location.protocol))?location.origin:'');
+    const set=(id,v)=>{const x=el(id);if(x)x.textContent=v};
+    const setGateSafe=(id,ok,v)=>{if(typeof window.setGate==='function')window.setGate(id,ok,v)};
+    try{
+      set('angelTestBadge','TESTING');
+      const stR=await fetch(base+'/api/angel/status',{cache:'no-store'});
+      const st=await stR.json().catch(()=>({}));
+      if(!st?.connected){
+        set('angelTestBadge','LOGIN REQUIRED');
+        set('angelTestNote','Angel One is not connected. Connect Angel One first, then run Test Live Feed.');
+        setGateSafe('cxLogin',false,'OFF'); setGateSafe('cxQuote',false,'OFF'); setGateSafe('cxWs',false,'OFF');
+        return;
+      }
+      setGateSafe('cxLogin',true,'ON');
+      const qR=await fetch(base+'/api/angel/connection-test?symbol=NIFTY',{cache:'no-store'});
+      const q=await qR.json().catch(()=>({}));
+      if(!qR.ok||!q?.ok) throw new Error(q?.error||'Live quote test failed');
+      setGateSafe('cxQuote',true,'LIVE');
+      const sR=await fetch(base+'/api/angel/stream-test?symbol=NIFTY',{cache:'no-store'});
+      const sd=await sR.json().catch(()=>({}));
+      const live=!!sd?.streamVerified;
+      setGateSafe('cxWs',live,live?'LIVE':'WAIT');
+      set('angelTestBadge',live?'STREAM VERIFIED':'LIVE QUOTE OK');
+      set('angelTestNote',live
+        ? 'NIFTY live quote + WebSocket tick verified • LTP '+(q.data?.ltp??'—')+' • '+(sd.tickCount||0)+' ticks'
+        : 'NIFTY live quote verified • WebSocket stream is still waiting: '+(sd.error||sd.websocketError||'no fresh tick yet'));
+      if(typeof window.refreshExpiries==='function')window.refreshExpiries().catch(()=>{});
+      if(typeof window.loadAll==='function')setTimeout(()=>window.loadAll().catch(()=>{}),50);
+    }catch(e){
+      setGateSafe('cxQuote',false,'FAIL');
+      set('angelTestBadge','TEST FAILED');
+      set('angelTestNote',e?.message||'Live feed test failed');
+    }
+  };
+  const sameOrigin=()=>location.hostname.endsWith('github.io')?'https://parthavi-trade-desk-pro.onrender.com':(location.origin&&/^https?:$/.test(location.protocol)?location.origin:'');
   const sameOrigin=()=>location.hostname.endsWith('github.io')?'https://parthavi-trade-desk-pro.onrender.com':(location.origin&&/^https?:$/.test(location.protocol)?location.origin:'');
   function note(v){const x=el('angelTestNote');if(x)x.textContent=v;}
   function badge(v,cls){const x=el('angelTestBadge');if(x){x.textContent=v;x.className='badge '+cls;}}
