@@ -1232,13 +1232,12 @@ async function loadAll(){
        const fmt=x=>{const d=new Date(x),p=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(d),m=Object.fromEntries(p.map(z=>[z.type,z.value]));return m.year+'-'+m.month+'-'+m.day+' '+m.hour+':'+m.minute;};
        const tokenMap={NIFTY:'99926000',BANKNIFTY:'99926009',FINNIFTY:'99926037',MIDCPNIFTY:'99926074',SENSEX:'99919000'};
        const intervalMap={'1M':'ONE_MINUTE','5M':'FIVE_MINUTE','15M':'FIFTEEN_MINUTE','30M':'THIRTY_MINUTE','1H':'ONE_HOUR','4H':'ONE_HOUR','1D':'ONE_DAY'};
-       const cr=await fetch(API_BASE+'/api/angel/candles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({exchange:'NSE',symboltoken:tokenMap[symbol]||'99926000',interval:intervalMap[tf]||'FIFTEEN_MINUTE',fromdate:fmt(from),todate:fmt(end)})});
-       const cd=await cr.json();
-       const raw=cd?.data?.data||cd?.data||[];
-       const rows=Array.isArray(raw)?raw.map(x=>({t:x[0],o:Number(x[1]),h:Number(x[2]),l:Number(x[3]),c:Number(x[4]),v:Number(x[5]||0)})).filter(x=>[x.o,x.h,x.l,x.c].every(Number.isFinite)):[];
+       const cr=await fetch(API_BASE+'/api/chart/candles?symbol='+encodeURIComponent(symbol)+'&tf='+encodeURIComponent(tf),{cache:'no-store'});
+       const cd=await cr.json().catch(()=>({}));
+       const rows=Array.isArray(cd?.rows)?cd.rows:[];
        if(candleFresh(rows)){
          liveData=rows; window.__chartCacheAt=Date.now();
-         try{localStorage.setItem('PTD_LAST_CANDLES_'+symbol,JSON.stringify({savedAt:window.__chartCacheAt,rows:rows.slice(-500)}));}catch{}
+         try{localStorage.setItem('PTD_LAST_CANDLES_'+symbol,JSON.stringify({savedAt:window.__chartCacheAt,source:cd?.source||'UNKNOWN',rows:rows.slice(-500)}));}catch{}
        }
      }catch{}
    }
