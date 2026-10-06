@@ -991,8 +991,7 @@ async function loadBase5m(symbol){
   if(candleInflight.has(key)) return await candleInflight.get(key);
   const job=(async()=>{
     const ins=await resolveIndexToken(key), end=new Date(), from=new Date(end.getTime()-7*86400000);
-    const f=x=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false})
-      .format(new Date(x)).replace(', ',' ').replace(/\\//g,'-');
+    const f=x=>{const d=new Date(x),p=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(d),m=Object.fromEntries(p.map(z=>[z.type,z.value]));return m.year+'-'+m.month+'-'+m.day+' '+m.hour+':'+m.minute;};
     try{
       const raw=await angelCandles({exchange:'NSE',symboltoken:ins.token,interval:'FIVE_MINUTE',fromdate:f(from),todate:f(end)});
       const rows=candleRows(raw);
@@ -1012,8 +1011,7 @@ async function loadTfSummary(symbol, interval, days){
   else if(interval==='ONE_HOUR') rows=dropIncompleteCandle(aggregateCandles(await loadBase5m(symbol),60),60);
   else {
     const end=new Date(), from=new Date(end.getTime()-Math.min(days||1,1)*86400000);
-    const f=x=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false})
-      .format(new Date(x)).replace(', ',' ').replace(/\\//g,'-');
+    const f=x=>{const d=new Date(x),p=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(d),m=Object.fromEntries(p.map(z=>[z.type,z.value]));return m.year+'-'+m.month+'-'+m.day+' '+m.hour+':'+m.minute;};
     rows=candleRows(await angelCandles({exchange:'NSE',symboltoken:ins.token,interval,fromdate:f(from),todate:f(end)}));
     if(interval!=='ONE_DAY') rows=dropIncompleteCandle(rows,5);
   }
