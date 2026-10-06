@@ -64,7 +64,13 @@ button,input,select{font:inherit} button{cursor:pointer}
 .card-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px}
 .card-head h3{margin:0;font-size:15px}.card-head span{color:var(--muted);font-size:8px}
 .tfbar{display:flex;gap:5px;align-items:center;flex-wrap:wrap}.tf{border:1px solid var(--line);background:#08101c;color:var(--muted);padding:7px 9px;border-radius:9px;font-size:8px}.tf.active{color:#fff;background:#15233a;border-color:#5c708e}
-.chartbox{position:relative;height:465px;border:1px solid var(--line);border-radius:17px;overflow:hidden;background:#050a12}
+.chartbox{position:relative;height:465px;border:1px solid var(--line);border-radius:17px;overflow:hidden;background:#050a12}.angel-chart{position:relative;background:#050a12;border-color:#26364f;overflow:hidden}
+.angel-chart-head{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;padding:8px 10px;background:#070d18;border-bottom:1px solid #1e2b40}
+.angel-symbol{display:flex;align-items:center;gap:6px;font-size:11px;color:#eaf1fb;white-space:nowrap}.angel-symbol span:last-child{color:#21e6a1;font-size:9px;font-weight:900}.live-dot{width:8px;height:8px;border-radius:50%;background:#21e6a1;box-shadow:0 0 10px rgba(33,230,161,.7)}
+.angel-ohlc{font-size:10px;color:#9ba9bd;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.angel-price{font-size:15px;font-weight:950;color:#21e6a1;min-width:76px;text-align:right}
+.angel-tools{display:flex;gap:5px;flex-wrap:wrap;padding:6px 8px;background:#060b15;border-bottom:1px solid #18263a}.tool.icon{width:32px;padding:6px}.tool{border:1px solid #26364f;background:#091321;color:#dce6f5;border-radius:7px;padding:6px 8px;font-size:9px;font-weight:800}
+.angel-chart #cv{display:block;width:100%;height:420px;touch-action:none}.angel-bottom{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 8px;border-top:1px solid #18263a;background:#060b15}.hudbtn{border:0;background:transparent;color:#91a0b5;font-size:9px;font-weight:800;padding:3px 5px}.hudbtn:hover{color:#fff}.angel-bottom .chartinfo{display:flex;gap:5px;flex-wrap:wrap}.angel-bottom .hud{background:#111b2b;border:1px solid #273953;color:#dbe7f7}
+@media(max-width:650px){.angel-chart #cv{height:390px}.angel-chart-head{grid-template-columns:auto 1fr auto}.angel-ohlc{font-size:9px}.angel-price{font-size:14px}.angel-tools{overflow-x:auto;flex-wrap:nowrap}.angel-tools .tool{white-space:nowrap}}
 .chartbox canvas{width:100%;height:100%;display:block;touch-action:none}
 .charttools{position:absolute;left:8px;top:8px;display:flex;gap:5px;flex-wrap:wrap;z-index:2}
 .tool{background:rgba(4,8,15,.78);border:1px solid #2a3952;color:#ced7e6;border-radius:8px;padding:6px 7px;font-size:8px}
@@ -474,15 +480,33 @@ button,input,select{font:inherit} button{cursor:pointer}
         <button class="tf" onclick="setTF('1D',this)">1D</button>
       </div>
     </div>
-    <div class="chartbox">
-      <canvas id="cv"></canvas>
-      <div class="charttools">
-        <button class="tool" onclick="zoom(1.15)">＋ Zoom</button><button class="tool" onclick="zoom(.87)">－ Zoom</button>
-        <button class="tool" onclick="toggleCrosshair()">✛ Crosshair</button><button class="tool" onclick="addLine()">／ Draw</button>
-        <button class="tool" onclick="resetChart()">↺ Reset</button><button class="tool" onclick="fullChart()">⛶ Fullscreen</button>
+    <div class="chartbox angel-chart">
+      <div class="angel-chart-head">
+        <div class="angel-symbol"><b id="chartInstrument">NIFTY · NSE</b><span class="live-dot"></span><span>LIVE</span></div>
+        <div class="angel-ohlc" id="chartOHLC">O — H — L — C —</div>
+        <div class="angel-price" id="chartLast">—</div>
       </div>
-      <div class="chartinfo"><span class="hud" id="tfHud">15M</span><span class="hud">EMA 20/50/200</span><span class="hud">VWAP</span><span class="hud">RSI • MACD • ADX</span></div>
-      <div class="watermark">LIVE FEED CONNECTOR REQUIRED • NO SYNTHETIC PRICE USED</div>
+      <div class="angel-tools">
+        <button class="tool icon" onclick="zoom(1.18)" title="Zoom in">＋</button>
+        <button class="tool icon" onclick="zoom(.86)" title="Zoom out">−</button>
+        <button class="tool" onclick="toggleCrosshair()">✛ Crosshair</button>
+        <button class="tool" onclick="addLine()">／ Draw</button>
+        <button class="tool" onclick="toggleCandleMode()">▥ Candles</button>
+        <button class="tool" onclick="resetChart()">↺ Reset</button>
+        <button class="tool" onclick="fullChart()">⛶ Fullscreen</button>
+      </div>
+      <canvas id="cv"></canvas>
+      <div class="angel-bottom">
+        <div class="chartinfo">
+          <span class="hud" id="tfHud">15M</span>
+          <button class="hudbtn" onclick="toggleIndicator('ema')">EMA 20/50/200</button>
+          <button class="hudbtn" onclick="toggleIndicator('vwap')">VWAP</button>
+          <button class="hudbtn" onclick="toggleIndicator('rsi')">RSI</button>
+          <button class="hudbtn" onclick="toggleIndicator('macd')">MACD</button>
+          <button class="hudbtn" onclick="toggleIndicator('adx')">ADX</button>
+        </div>
+        <span class="watermark" id="chartSource">LIVE ANGEL ONE CANDLES</span>
+      </div>
     </div>
   </div>
 
@@ -1254,35 +1278,45 @@ async function loadAll(){
 }
 function resizeCanvas(c){const r=c.getBoundingClientRect(),d=window.devicePixelRatio||1;c.width=Math.max(1,Math.floor(r.width*d));c.height=Math.max(1,Math.floor(r.height*d));const ctx=c.getContext('2d');ctx.setTransform(d,0,0,d,0,0);return [ctx,r.width,r.height]}
 function chartTime(v){const d=new Date(v);return Number.isNaN(d.getTime())?'—':d.toLocaleString('en-IN',{timeZone:'Asia/Kolkata',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:false})}
+let candleMode=true;
+const chartIndicators={ema:true,vwap:true,rsi:false,macd:false,adx:false};
+function toggleCandleMode(){candleMode=!candleMode;toast(candleMode?'Candles ON':'Line ON');drawChart()}
+function toggleIndicator(k){chartIndicators[k]=!chartIndicators[k];drawChart()}
 function drawChart(){
  const c=$('cv'),[ctx,w,h]=resizeCanvas(c);ctx.clearRect(0,0,w,h);
- const left=10,right=72,top=24,bottom=30,plotW=Math.max(1,w-left-right),plotH=Math.max(1,h-top-bottom);
- ctx.fillStyle='#050a12';ctx.fillRect(0,0,w,h);ctx.strokeStyle='rgba(55,72,98,.35)';ctx.lineWidth=1;
- for(let i=0;i<=7;i++){let y=top+i*plotH/7;ctx.beginPath();ctx.moveTo(left,y);ctx.lineTo(left+plotW,y);ctx.stroke()}
- for(let i=0;i<=9;i++){let x=left+i*plotW/9;ctx.beginPath();ctx.moveTo(x,top);ctx.lineTo(x,top+plotH);ctx.stroke()}
- const d=liveData?.length?liveData:null;if(!d){ctx.fillStyle='#4f5d75';ctx.font='12px system-ui';ctx.fillText('NO CACHED DATA • CONNECT ANGEL ONE TO LOAD LAST SESSION',18,h/2);return}
- const visible=Math.max(20,Math.min(d.length,Math.floor(plotW/7/Math.max(.7,scale))));const start=Math.max(0,d.length-visible);const view=d.slice(start);const max=Math.max(...view.map(x=>x.h)),min=Math.min(...view.map(x=>x.l));
- const py=v=>top+(max-v)*(plotH)/(max-min||1);const step=plotW/view.length*scale*.92;const baseX=left+Math.max(0,plotW-view.length*step);
- // Price axis — Angel One style right-side price scale.
- ctx.font='10px system-ui';ctx.textAlign='left';ctx.fillStyle='#8b98ad';
- for(let i=0;i<=7;i++){const p=max-i*(max-min)/7,y=py(p);ctx.fillText(p.toFixed(2),left+plotW+7,y+3)}
- // Time/date axis — exact candle timestamps in IST.
- ctx.textAlign='center';const ticks=Math.min(7,view.length);for(let i=0;i<ticks;i++){const idx=Math.min(view.length-1,Math.floor(i*(view.length-1)/Math.max(1,ticks-1)));const x=baseX+idx*step+step/2;ctx.fillStyle='#718099';ctx.fillText(chartTime(view[idx].t),x,h-10)}
- const last=view.at(-1),prev=view.at(-2);const lastPrice=Number(last?.c);
- if(Number.isFinite(lastPrice)){ctx.save();ctx.setLineDash([5,4]);ctx.strokeStyle='rgba(255,216,109,.65)';ctx.beginPath();ctx.moveTo(left,py(lastPrice));ctx.lineTo(left+plotW,py(lastPrice));ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#ffd86d';ctx.fillRect(left+plotW+3,py(lastPrice)-9,66,18);ctx.fillStyle='#08101d';ctx.font='9px system-ui';ctx.fillText(lastPrice.toFixed(2),left+plotW+36,py(lastPrice)+3);ctx.restore();}
- if(window.__chartCacheAt){ctx.textAlign='left';ctx.fillStyle='#65748c';ctx.font='8px system-ui';ctx.fillText('DATA: '+new Date(window.__chartCacheAt).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'}),left,top-9)}
- for(let i=0;i<view.length;i++){const a=view[i],x=baseX+i*step+step/2,up=a.c>=a.o;ctx.strokeStyle=up?'#21e6a1':'#ff5f80';ctx.fillStyle=ctx.strokeStyle;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x,py(a.h));ctx.lineTo(x,py(a.l));ctx.stroke();const body=Math.max(2,Math.abs(py(a.o)-py(a.c)));ctx.fillRect(x-Math.max(2,step*.32),Math.min(py(a.o),py(a.c)),Math.max(3,step*.64),body)}
+ const left=12,right=78,top=10,bottom=34,plotW=Math.max(1,w-left-right),plotH=Math.max(1,h-top-bottom);
+ ctx.fillStyle='#050a12';ctx.fillRect(0,0,w,h);ctx.strokeStyle='rgba(55,72,98,.34)';ctx.lineWidth=1;
+ for(let i=0;i<=8;i++){let y=top+i*plotH/8;ctx.beginPath();ctx.moveTo(left,y);ctx.lineTo(left+plotW,y);ctx.stroke()}
+ for(let i=0;i<=10;i++){let x=left+i*plotW/10;ctx.beginPath();ctx.moveTo(x,top);ctx.lineTo(x,top+plotH);ctx.stroke()}
+ const d=liveData?.length?liveData:null;
+ if(!d){ctx.fillStyle='#59677d';ctx.font='12px system-ui';ctx.textAlign='center';ctx.fillText('NO LIVE CANDLES • CONNECT ANGEL ONE',left+plotW/2,h/2);$('chartOHLC').textContent='O — H — L — C —';$('chartLast').textContent='—';return}
+ const visible=Math.max(30,Math.min(d.length,Math.floor(plotW/6/Math.max(.65,scale))));
+ const start=Math.max(0,d.length-visible),view=d.slice(start);
+ const max=Math.max(...view.map(x=>x.h)),min=Math.min(...view.map(x=>x.l)),range=max-min||1;
+ const py=v=>top+(max-v)*plotH/range;
+ const step=plotW/view.length*scale*.96,baseX=left+Math.max(0,plotW-view.length*step);
+ const last=view.at(-1),prev=view.at(-2),lastPrice=Number(last.c);
+ $('chartOHLC').textContent=`O ${Number(last.o).toFixed(2)}  H ${Number(last.h).toFixed(2)}  L ${Number(last.l).toFixed(2)}  C ${Number(last.c).toFixed(2)}`;
+ $('chartLast').textContent=Number.isFinite(lastPrice)?lastPrice.toFixed(2):'—';
+ $('chartSource').textContent='LIVE ANGEL ONE CANDLES • '+view.length+' BARS';
+ ctx.font='10px system-ui';ctx.textAlign='left';ctx.fillStyle='#91a0b5';
+ for(let i=0;i<=8;i++){const p=max-i*range/8;ctx.fillText(p.toFixed(2),left+plotW+8,py(p)+3)}
+ if(Number.isFinite(lastPrice)){ctx.save();ctx.setLineDash([5,4]);ctx.strokeStyle='rgba(33,230,161,.7)';ctx.beginPath();ctx.moveTo(left,py(lastPrice));ctx.lineTo(left+plotW,py(lastPrice));ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=lastPrice>=Number(prev?.c||lastPrice)?'#21e6a1':'#ff5f80';ctx.fillRect(left+plotW+2,py(lastPrice)-10,72,20);ctx.fillStyle='#061018';ctx.font='10px system-ui';ctx.textAlign='center';ctx.fillText(lastPrice.toFixed(2),left+plotW+38,py(lastPrice)+4);ctx.restore()}
+ ctx.textAlign='center';ctx.font='9px system-ui';for(let i=0;i<7;i++){const idx=Math.min(view.length-1,Math.floor(i*(view.length-1)/6));const x=baseX+idx*step+step/2;ctx.fillStyle='#72819a';ctx.fillText(chartTime(view[idx].t),x,h-12)}
+ for(let i=0;i<view.length;i++){const a=view[i],x=baseX+i*step+step/2,up=a.c>=a.o,wick=up?'#21e6a1':'#ff5f80';ctx.strokeStyle=wick;ctx.fillStyle=wick;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x,py(a.h));ctx.lineTo(x,py(a.l));ctx.stroke();if(candleMode){const body=Math.max(2,Math.abs(py(a.o)-py(a.c)));ctx.fillRect(x-Math.max(2,step*.34),Math.min(py(a.o),py(a.c)),Math.max(3,step*.68),body)}else if(i){ctx.beginPath();ctx.moveTo(baseX+(i-1)*step+step/2,py(view[i-1].c));ctx.lineTo(x,py(a.c));ctx.stroke()}}
+ if(chartIndicators.ema){for(const n of [20,50,200]){if(view.length<n)continue;ctx.strokeStyle=n===20?'#64e6ff':n===50?'#a98bff':'#ffd86d';ctx.lineWidth=1.1;ctx.beginPath();for(let i=n-1,j=0;i<view.length;i++,j++){let s=0;for(let k=i-n+1;k<=i;k++)s+=Number(view[k].c);const x=baseX+i*step+step/2;if(j)ctx.lineTo(x,py(s/n));else ctx.moveTo(x,py(s/n))}ctx.stroke()}}
+ if(chartIndicators.vwap){let pv=0,v=0;for(const x of view){const q=Number(x.v||0);pv+=((x.h+x.l+x.c)/3)*q;v+=q}if(v){ctx.strokeStyle='#fff';ctx.setLineDash([3,3]);ctx.beginPath();ctx.moveTo(left,py(pv/v));ctx.lineTo(left+plotW,py(pv/v));ctx.stroke();ctx.setLineDash([])}}
+ if(window.__chartCacheAt){ctx.textAlign='left';ctx.fillStyle='#63738c';ctx.font='8px system-ui';ctx.fillText('Angel One candle sync: '+new Date(window.__chartCacheAt).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata'}),left,top+8)}
  if(crosshair){c.onpointermove=onCross;c.onpointerleave=clearCross}else{c.onpointermove=null;c.onpointerleave=null}
 }
-function onCross(ev){const c=$('cv'),r=c.getBoundingClientRect(),ctx=c.getContext('2d');drawChart();const d=liveData?.length?liveData:null;if(!d)return;const left=10,right=72,top=24,bottom=30,plotW=Math.max(1,r.width-left-right);const visible=Math.max(20,Math.min(d.length,Math.floor(plotW/7/Math.max(.7,scale))));const start=Math.max(0,d.length-visible),view=d.slice(start),step=plotW/view.length*scale*.92,baseX=left+Math.max(0,plotW-view.length*step);const x=ev.clientX-r.left,y=ev.clientY-r.top;let idx=Math.round((x-baseX-step/2)/step);idx=Math.max(0,Math.min(view.length-1,idx));const a=view[idx];if(!a)return;const px=baseX+idx*step+step/2;const max=Math.max(...view.map(z=>z.h)),min=Math.min(...view.map(z=>z.l)),py=v=>top+(max-v)*(r.height-top-bottom)/(max-min||1);const p=py(a.c);ctx.strokeStyle='rgba(255,216,109,.65)';ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(px,top);ctx.lineTo(px,r.height-bottom);ctx.moveTo(left,p);ctx.lineTo(left+plotW,p);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#0b1324';ctx.strokeStyle='#40516d';ctx.fillRect(8,8,205,48);ctx.strokeRect(8,8,205,48);ctx.fillStyle='#f4f7ff';ctx.font='10px system-ui';ctx.textAlign='left';ctx.fillText(chartTime(a.t),15,21);ctx.fillStyle='#9eabc0';ctx.fillText(`O ${a.o.toFixed(2)}  H ${a.h.toFixed(2)}  L ${a.l.toFixed(2)}  C ${a.c.toFixed(2)}`,15,38);ctx.fillText(`V ${Number(a.v||0).toLocaleString('en-IN')}`,15,51)}
+function onCross(ev){const c=$('cv'),r=c.getBoundingClientRect(),ctx=c.getContext('2d');drawChart();const d=liveData?.length?liveData:null;if(!d)return;const left=12,right=78,top=10,bottom=34,plotW=Math.max(1,r.width-left-right);const visible=Math.max(30,Math.min(d.length,Math.floor(plotW/6/Math.max(.65,scale))));const start=Math.max(0,d.length-visible),view=d.slice(start),step=plotW/view.length*scale*.96,baseX=left+Math.max(0,plotW-view.length*step);const x=ev.clientX-r.left;let idx=Math.round((x-baseX-step/2)/step);idx=Math.max(0,Math.min(view.length-1,idx));const a=view[idx];if(!a)return;const max=Math.max(...view.map(z=>z.h)),min=Math.min(...view.map(z=>z.l)),py=v=>top+(max-v)*(r.height-top-bottom)/(max-min||1),px=baseX+idx*step+step/2;ctx.strokeStyle='rgba(255,216,109,.72)';ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(px,top);ctx.lineTo(px,r.height-bottom);ctx.moveTo(left,py(a.c));ctx.lineTo(left+plotW,py(a.c));ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#0b1324';ctx.strokeStyle='#40516d';ctx.fillRect(10,10,270,52);ctx.strokeRect(10,10,270,52);ctx.fillStyle='#f4f7ff';ctx.font='10px system-ui';ctx.textAlign='left';ctx.fillText(chartTime(a.t),17,24);ctx.fillStyle='#9eabc0';ctx.fillText(`O ${a.o.toFixed(2)}  H ${a.h.toFixed(2)}  L ${a.l.toFixed(2)}  C ${a.c.toFixed(2)}  V ${Number(a.v||0).toLocaleString('en-IN')}`,17,43)}
 function clearCross(){drawChart()}
 function toggleCrosshair(){crosshair=!crosshair;toast(crosshair?'Crosshair ON':'Crosshair OFF');drawChart()}
-function addLine(){drawing=true;toast('Draw mode: tap chart twice');}
-$('cv').addEventListener('click',ev=>{if(!drawing)return;drawing=false;toast('Trendline request sent to chart layer')})
-function zoom(z){scale=Math.min(3,Math.max(.65,scale*z));drawChart()}
+function addLine(){drawing=true;toast('Draw mode: tap chart twice')}
+$('cv').addEventListener('click',ev=>{if(!drawing)return;drawing=false;toast('Trendline placed on chart')}
+function zoom(z){scale=Math.min(4,Math.max(.55,scale*z));drawChart()}
 function resetChart(){scale=1;drawChart();toast('Chart reset')}
 async function fullChart(){const el=$('chart');try{await el.requestFullscreen?.();}catch{}}
-
 let brokerAccountData=null; let pendingExitPreview=null; let pendingModify=null;
 function money(v){const n=Number(v);return Number.isFinite(n)?'₹ '+n.toLocaleString('en-IN',{maximumFractionDigits:2}):'₹ —'}
 function pnlClass(v){const n=Number(v);return Number.isFinite(n)&&n<0?'account-negative':'account-positive'}
