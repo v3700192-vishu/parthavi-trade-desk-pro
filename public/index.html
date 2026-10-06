@@ -1153,7 +1153,7 @@ window.testAngelFeed = async function testAngelFeed(){
       toast(live?'Angel One REST + WebSocket stream verified':'Angel One live REST quote verified; stream still waiting');
     }
   }catch(e){ setGate('cxQuote',false,'FAIL'); $('angelTestBadge').textContent='TEST FAILED'; $('angelTestBadge').className='badge danger'; $('angelTestNote').textContent=e.message||'Live feed test failed'; }
-}
+};
 
 const alertState={lastPrice:null,lastR1:null,lastS1:null,lastAction:'',lastRsi:null,lastVwap:null,seen:new Set(),enabled:true,lastConfirmedBar:null};
 function addAlert(title,detail,tone='neutral',key=''){ 
