@@ -17,6 +17,8 @@ import android.os.Looper;
 import android.provider.Settings;
 import android.view.Window;
 import android.view.ViewGroup;
+import android.view.MotionEvent;
+import android.view.HapticFeedbackConstants;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -70,6 +72,8 @@ public class MainActivity extends Activity {
         settings.setLoadWithOverviewMode(false);
         settings.setUseWideViewPort(false);
         settings.setSupportZoom(false);
+        settings.setBuiltInZoomControls(false);
+
         settings.setDefaultFontSize(16);
         settings.setMediaPlaybackRequiresUserGesture(false);
 
@@ -97,6 +101,32 @@ public class MainActivity extends Activity {
             }
         });
         webView.setWebChromeClient(new WebChromeClient());
+        webView.setHapticFeedbackEnabled(true);
+        final float[] downX = {0f}, downY = {0f};
+        final long[] downAt = {0L};
+        webView.setOnTouchListener((v, event) -> {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    downX[0] = event.getX();
+                    downY[0] = event.getY();
+                    downAt[0] = System.currentTimeMillis();
+                    break;
+                case MotionEvent.ACTION_UP:
+                    float dx = event.getX() - downX[0];
+                    float dy = event.getY() - downY[0];
+                    long dt = System.currentTimeMillis() - downAt[0];
+                    if (dt <= 500L && (dx * dx + dy * dy) <= (24f * 24f)) {
+                        v.performHapticFeedback(
+                                HapticFeedbackConstants.VIRTUAL_KEY,
+                                HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
+                        );
+                    }
+                    break;
+                default:
+                    break;
+            }
+            return false;
+        });
         webView.setLayoutParams(new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
@@ -127,6 +157,13 @@ public class MainActivity extends Activity {
                     android.os.Vibrator vibrator =
                             (android.os.Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
                     if (vibrator == null) return;
+                    if (webView != null) {
+                        boolean done = webView.performHapticFeedback(
+                                HapticFeedbackConstants.VIRTUAL_KEY,
+                                HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
+                        );
+                        if (done) return;
+                    }
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                         vibrator.vibrate(android.os.VibrationEffect.createOneShot(
                                 12L,
