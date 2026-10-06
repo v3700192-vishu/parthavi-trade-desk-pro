@@ -838,8 +838,12 @@ async function angelStatus(){
     if(el) el.textContent=d.connected?('CONNECTED • '+(d.clientCode||'')+(d.websocket?' • STREAM LIVE':' • REST ONLY')):'DISCONNECTED';
     setGate('cxLogin',!!d.connected,d.connected?'ON':'OFF');
     setGate('cxWs',!!d.websocket,d.websocket?'LIVE':(d.connected?'READY':'OFF'));
-    if(!d.connected){ $('feed').textContent='DISCONNECTED'; setGate('cxQuote',false,'OFF'); setGate('cxWs',false,'OFF'); }
+    if(!d.connected){ $('feed').textContent='DISCONNECTED'; setGate('cxQuote',false,'OFF'); setGate('cxWs',false,'OFF'); window.__angelDataSynced=false; }
     if(d.websocketError && !d.websocket) $('angelTestNote').textContent='WebSocket: '+d.websocketError;
+    if(d.connected && !window.__angelDataSynced){
+      window.__angelDataSynced=true;
+      Promise.allSettled([loadAll(),loadPrediction(false),loadPhase11Shield(),loadPhase12Readiness()]).catch(()=>{});
+    }
     return d;
   }catch(e){ setGate('cxLogin',false,'OFF'); setGate('cxWs',false,'OFF'); return {connected:false}; }
 }
@@ -1244,7 +1248,7 @@ async function loadAll(){
    drawChart();
    if(m?.connected) await loadBrokerAccount();
  }catch(err){
-   renderGates({}); $('decision').textContent='NO TRADE';$('action').textContent='NO TRADE';$('decision').className='neutral';$('action').className='neutral';$('decisionReason').textContent='Live backend data is not connected or is stale. The engine is locked for safety.';
+   renderGates({}); $('decision').textContent='NO TRADE';$('action').textContent='NO TRADE';$('decision').className='neutral';$('action').className='neutral';$('decisionReason').textContent='Live sync error: '+(err?.message||'backend data unavailable')+'. The engine remains locked for safety.';
    drawChart();
  }
 }
