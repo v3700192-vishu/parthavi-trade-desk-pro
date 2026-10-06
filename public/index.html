@@ -1330,8 +1330,15 @@ async function loadAll(){
     getJSON('/api/events'),
     getJSON('/api/analyze?symbol='+encodeURIComponent(symbol)+'&tf='+tf)
    ]);
-   const val=(i,f)=>reqs[i].status==='fulfilled'?reqs[i].value:f;
-   const s=val(0,{open:false}); const m=val(1,{data:{}}); const n=val(2,{items:[],strategy:{connected:false}}); const g=val(3,{data:{},strategy:{connected:false}}); const o=val(4,{data:{}}); const e=val(5,{items:[],strategy:{connected:false}}); const a=val(6,{health:{},decision:{action:'NO TRADE',reason:'Analysis feed unavailable.'},candles:null});
+   const val=(i,fallback)=>reqs[i].status==='fulfilled'?reqs[i].value:fallback;
+   const s=val(0,{open:false});
+   const m=val(1,{data:{},connected:false});
+   const n=val(2,{items:[],strategy:{connected:false}});
+   const g=val(3,{data:{},strategy:{connected:false}});
+   const o=val(4,{data:{},strategy:{connected:false}});
+   const e=val(5,{items:[],strategy:{connected:false}});
+   const a=val(6,{health:{},decision:{action:'NO TRADE',reason:'Analysis feed unavailable.'},candles:[]});
+
    renderStatus(s);
    renderTicker(m.data||{});
    renderNews(n.items||[],n.strategy||{});
@@ -1343,40 +1350,40 @@ async function loadAll(){
    renderDecision(a.decision||{});
    processAlerts(a);
 
-   // HARD FRESHNESS GATE: never render an old local/session candle cache as LIVE.
-   const candleMaxAgeMs = tf==='1D' ? 48*60*60*1000 : tf==='1H' ? 2*60*60*1000 : 30*60*1000;
-   const candleFresh = rows => {
-     if(!Array.isArray(rows)||!rows.length) return false;
-     const lastMs=Date.parse(rows.at(-1)?.t);
-     return Number.isFinite(lastMs) && (Date.now()-lastMs)>=0 && (Date.now()-lastMs)<=candleMaxAgeMs;
-   };
-   liveData=null; window.__chartCacheAt=null;
-   if(candleFresh(a.candles)){
-     liveData=a.candles;
+   liveData=null;
+   window.__chartCacheAt=null;
+   const rows=Array.isArray(a.candles)?a.candles:[];
+   const maxAge=tf==='1D'?48*60*60*1000:tf==='1H'?2*60*60*1000:30*60*1000;
+   const lastMs=rows.length?Date.parse(rows.at(-1)?.t):NaN;
+   const fresh=rows.length && Number.isFinite(lastMs) && lastMs<=Date.now() && Date.now()-lastMs<=maxAge;
+
+   if(fresh){
+     liveData=rows;
      window.__chartCacheAt=Date.now();
-     try{localStorage.setItem('PTD_LAST_CANDLES_'+symbol,JSON.stringify({savedAt:window.__chartCacheAt,rows:a.candles.slice(-500)}));}catch{}
+     try{localStorage.setItem('PTD_LAST_CANDLES_'+symbol,JSON.stringify({savedAt:window.__chartCacheAt,rows:rows.slice(-500)}));}catch{}
    }else{
-     // Fetch directly from the authenticated Angel One candle endpoint.
      try{
-       const end=new Date();
-       const days=tf==='1D'?365:tf==='4H'?60:tf==='1H'?45:15;
-       const from=new Date(end.getTime()-days*86400000);
-       const fmt=x=>{const d=new Date(x),p=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(d),m=Object.fromEntries(p.map(z=>[z.type,z.value]));return m.year+'-'+m.month+'-'+m.day+' '+m.hour+':'+m.minute;};
-       const tokenMap={NIFTY:'99926000',BANKNIFTY:'99926009',FINNIFTY:'99926037',MIDCPNIFTY:'99926074',SENSEX:'99919000'};
-       const intervalMap={'1M':'ONE_MINUTE','5M':'FIVE_MINUTE','15M':'FIFTEEN_MINUTE','30M':'THIRTY_MINUTE','1H':'ONE_HOUR','4H':'ONE_HOUR','1D':'ONE_DAY'};
        const cr=await fetch(API_BASE+'/api/chart/candles?symbol='+encodeURIComponent(symbol)+'&tf='+encodeURIComponent(tf),{cache:'no-store'});
        const cd=await cr.json().catch(()=>({}));
-       const rows=Array.isArray(cd?.rows)?cd.rows:[];
-       if(candleFresh(rows)){
-         liveData=rows; window.__chartCacheAt=Date.now();
-         try{localStorage.setItem('PTD_LAST_CANDLES_'+symbol,JSON.stringify({savedAt:window.__chartCacheAt,source:cd?.source||'UNKNOWN',rows:rows.slice(-500)}));}catch{}
+       const freshRows=Array.isArray(cd?.rows)?cd.rows:[];
+       const fm=freshRows.length?Date.parse(freshRows.at(-1)?.t):NaN;
+       if(freshRows.length&&Number.isFinite(fm)&&fm<=Date.now()&&Date.now()-fm<=maxAge){
+         liveData=freshRows;
+         window.__chartCacheAt=Date.now();
+         try{localStorage.setItem('PTD_LAST_CANDLES_'+symbol,JSON.stringify({savedAt:window.__chartCacheAt,source:cd?.source||'UNKNOWN',rows:freshRows.slice(-500)}));}catch{}
        }
      }catch{}
    }
+
    drawChart();
    if(m?.connected) await loadBrokerAccount();
  }catch(err){
-   renderGates({}); $('decision').textContent='NO TRADE';$('action').textContent='NO TRADE';$('decision').className='neutral';$('action').className='neutral';$('decisionReason').textContent='Live sync error: '+(err?.message||'backend data unavailable')+'. The engine remains locked for safety.';
+   renderGates({});
+   $('decision').textContent='NO TRADE';
+   $('action').textContent='NO TRADE';
+   $('decision').className='neutral';
+   $('action').className='neutral';
+   $('decisionReason').textContent='Live sync error: '+(err?.message||'backend data unavailable')+'. The engine remains locked for safety.';
    drawChart();
  }
 }
