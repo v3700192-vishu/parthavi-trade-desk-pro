@@ -18,6 +18,6 @@ self.addEventListener('notificationclick',event=>{
   event.waitUntil(clients.matchAll({type:'window',includeUncontrolled:true}).then(list=>{
     const win=list.find(c=>c.url&&new URL(c.url).origin===self.location.origin);
     if(win) return win.focus();
-    return clients.openWindow('/');
+    return clients.openWindow(self.registration.scope);
   }).catch(()=>{}));
 });
