@@ -788,15 +788,24 @@ button,input,select{font:inherit} button{cursor:pointer}
         const qr=await fetch(sameOrigin()+'/api/angel/connection-test?symbol=NIFTY',{cache:'no-store'});
         const q=await qr.json().catch(()=>({}));
         if(q.ok){
-          badge('LIVE CONNECTED','ok');
-          note('Angel One connected • LIVE NIFTY LTP '+(q.data?.ltp??'—')+(q.websocket?' • STREAM LIVE':' • REST OK, stream reconnecting'));
           if(typeof window.setGate==='function')window.setGate('cxQuote',true,'LIVE');
+          const sr=await fetch(sameOrigin()+'/api/angel/stream-test?symbol=NIFTY',{cache:'no-store'});
+          const sd=await sr.json().catch(()=>({}));
+          if(sd.streamVerified){
+            badge('STREAM VERIFIED','ok');
+            note('Angel One • LIVE NIFTY LTP '+(q.data?.ltp??'—')+' • WebSocket tick verified • '+(sd.tickCount||0)+' ticks');
+            if(typeof window.setGate==='function')window.setGate('cxWs',true,'LIVE');
+          }else{
+            badge('REST LIVE • STREAM WAIT','warn');
+            note('Angel One login + REST quote are working, but WebSocket tick is not yet verified: '+(sd.error||sd.websocketError||'stream not receiving ticks'));
+            if(typeof window.setGate==='function')window.setGate('cxWs',false,'WAIT');
+          }
         }else{
           badge('LOGIN OK • QUOTE FAILED','danger');
           note('Angel session connected, but live quote failed: '+(q.error||'Unknown error'));
         }
       }catch(e){
-        badge('LOGIN OK • TEST FAILED','danger');note('Angel session connected, but quote verification failed: '+(e?.message||'Unknown error'));
+        badge('LOGIN OK • TEST FAILED','danger');note('Angel session connected, but quote/stream verification failed: '+(e?.message||'Unknown error'));
       }
       if(typeof window.loadBrokerAccount==='function')await window.loadBrokerAccount().catch(()=>{});
       if(typeof window.loadAll==='function')setTimeout(()=>window.loadAll().catch(()=>{}),250);
@@ -996,10 +1005,15 @@ async function testAngelFeed(){
     $('angelTestBadge').className='badge '+(ok?'ok':'danger');
     $('angelTestNote').textContent=ok?`Live quote received: ${q.symbol} • LTP ${q.data?.ltp??'—'} • token ${q.token}`:(q.error||'Quote test failed');
     if(ok){
+      const sr=await getJSON('/api/angel/stream-test?symbol='+encodeURIComponent(symbol));
+      const live=!!sr.streamVerified;
+      setGate('cxWs',live,live?'LIVE':'WAIT');
+      $('feed').textContent=live?'STREAM VERIFIED':'LIVE QUOTE';
+      $('angelTestNote').textContent += live
+        ? ` • WebSocket tick verified • ${sr.tickCount||0} ticks`
+        : ` • WebSocket tick not verified yet: ${sr.error||sr.websocketError||'stream waiting'}`;
       await refreshExpiries();
-      setGate('cxWs',!!st.websocket,st.websocket?'LIVE':'READY');
-      $('feed').textContent='LIVE QUOTE';
-      toast('Angel One live quote verified');
+      toast(live?'Angel One REST + WebSocket stream verified':'Angel One live REST quote verified; stream still waiting');
     }
   }catch(e){ setGate('cxQuote',false,'FAIL'); $('angelTestBadge').textContent='TEST FAILED'; $('angelTestBadge').className='badge danger'; $('angelTestNote').textContent=e.message||'Live feed test failed'; }
 }
