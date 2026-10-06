@@ -502,7 +502,20 @@ app.get("/api/angel/contracts", async (req,res)=>{
     const base=await findContracts(req.query);
     let rows=[];
     try{ rows=await quoteInstruments(base.slice(0,10)); }catch(e){ console.warn('[CONTRACT_QUOTE]',e?.message||e); }
-    if(!rows.length && req.query?.strike && req.query?.optionType && base.length){ try{ const r=await angelLtp({exchange:'NFO',tradingsymbol:String(base[0].symbol),symboltoken:String(base[0].token)}); const d=r?.data||r; if(d?.ltp!=null) rows=[{symbolToken:String(base[0].token),ltp:Number(d.ltp),change:d?.percentChange??d?.netChange??null,opnInterest:null,tradeVolume:null,bestFive:null}]; }catch(e){ console.warn('[CONTRACT_LTP]',e?.message||e); } }
+    // FULL quote can be partial; explicitly backfill any missing LTPs for the
+    // contracts currently being shown. This keeps the visible option price live.
+    const quoted=new Set(rows.map(x=>String(x.symbolToken||'')));
+    const missing=base.slice(0,10).filter(x=>!Number.isFinite(Number(rows.find(q=>String(q.symbolToken||'')===String(x.token))?.ltp)));
+    if(missing.length){
+      const extra=await Promise.allSettled(missing.map(async x=>{
+        const r=await angelLtp({exchange:'NFO',tradingsymbol:String(x.symbol),symboltoken:String(x.token)});
+        const d=r?.data||r;
+        if(d?.ltp==null) return null;
+        return {symbolToken:String(x.token),ltp:Number(d.ltp),change:d?.percentChange??d?.percentageChange??d?.netChange??null,opnInterest:d?.opnInterest??d?.openInterest??d?.oi??null,tradeVolume:d?.tradeVolume??d?.volume??null,bestFive:d?.depth??d?.bestFive??null};
+      }));
+      rows=rows.concat(extra.map(x=>x.status==='fulfilled'?x.value:null).filter(Boolean));
+    }
+    console.log('[CONTRACT_FEED]',req.query.underlying||'',req.query.expiry||'',req.query.optionType||'',req.query.strike||'','base='+base.length,'quotes='+rows.length);
     const qmap=new Map(rows.map(x=>[String(x.symbolToken),x]));
     const contracts=base.slice(0,50).map(x=>{
       const q=qmap.get(String(x.token))||{};
