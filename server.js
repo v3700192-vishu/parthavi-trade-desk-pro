@@ -535,6 +535,47 @@ app.get("/api/angel/connection-test",async(req,res)=>{
   }catch(e){res.status(502).json({ok:false,connected:angelStatus().connected,error:e?.message||"Live feed test failed"});}
 });
 app.post("/api/angel/subscribe", async (req,res)=>{ try { const out=await angelSubscribe(req.body?.tokens||[], req.body?.exchangeType||2, req.body?.mode||1); res.json({ok:true,...out}); } catch(e){ res.status(401).json({ok:false,error:e?.message||"Subscription failed"}); } });
+app.get("/api/angel/stream-test", async (req,res)=>{
+  if(!angelStatus().connected) return res.status(401).json({ok:false,connected:false,streamVerified:false,error:"Angel One is not connected"});
+  const started=Date.now();
+  const beforeTick=Number(angelStatus().lastTickAt||0);
+  let reconnectError=null;
+  try{
+    const st=angelStatus();
+    if(!st.websocket){
+      try{
+        await Promise.race([
+          angelReconnectWebSocket(),
+          new Promise((_,reject)=>setTimeout(()=>reject(new Error("WebSocket reconnect timeout after 12 seconds")),12000))
+        ]);
+      }catch(e){ reconnectError=e?.message||"WebSocket reconnect failed"; }
+    }
+    const deadline=Date.now()+7000;
+    while(Date.now()<deadline){
+      const s=angelStatus();
+      if(s.websocket && Number(s.lastTickAt||0)>beforeTick) break;
+      await new Promise(r=>setTimeout(r,250));
+    }
+    const final=angelStatus();
+    const ticks=getLatestTicks();
+    const streamFresh=!!final.websocket && !!final.lastTickAt && (Date.now()-Number(final.lastTickAt))<=15000 && Number(final.lastTickAt)>beforeTick;
+    res.json({
+      ok:streamFresh,
+      connected:true,
+      streamVerified:streamFresh,
+      websocket:!!final.websocket,
+      tickCount:final.tickCount||0,
+      lastTickAt:final.lastTickAt||null,
+      websocketError:final.websocketError||reconnectError||null,
+      sampleTicks:ticks.slice(0,3),
+      checkedAt:nowISO(),
+      elapsedMs:Date.now()-started
+    });
+  }catch(e){
+    const s=angelStatus();
+    res.status(502).json({ok:false,connected:s.connected,streamVerified:false,websocket:!!s.websocket,tickCount:s.tickCount||0,lastTickAt:s.lastTickAt||null,websocketError:s.websocketError||reconnectError||null,error:e?.message||"Stream verification failed"});
+  }
+});
 
 
 
