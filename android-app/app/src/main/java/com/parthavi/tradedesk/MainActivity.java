@@ -48,7 +48,7 @@ public class MainActivity extends Activity {
     private static final String UPDATE_JSON_URL =
             "https://parthavi-trade-desk-pro.onrender.com/app-update.json";
     private static final String APK_FILE_NAME = "parthavi-trade-desk-pro-update.apk";
-    private static final int APP_VERSION_CODE = 2;
+    private static final int APP_VERSION_CODE = 3;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -223,12 +223,12 @@ public class MainActivity extends Activity {
     }
 
     private void startApkDownload(String apkUrl) {
-        if (!installPermissionReady()) {
-            openInstallPermissionSettings();
-            return;
-        }
-
         try {
+            java.io.File oldApk = new java.io.File(
+                    getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS),
+                    APK_FILE_NAME
+            );
+            if (oldApk.exists()) oldApk.delete();
             if (downloadManager == null) {
                 downloadManager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
             }
@@ -280,6 +280,10 @@ public class MainActivity extends Activity {
     }
 
     private void installDownloadedApk() {
+        if (!installPermissionReady()) {
+            openInstallPermissionSettings();
+            return;
+        }
         try {
             java.io.File apk = new java.io.File(
                     getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS),
@@ -307,6 +311,18 @@ public class MainActivity extends Activity {
             startActivity(installIntent);
         } catch (Exception e) {
             Toast.makeText(this, "Could not open installer: " + e.getMessage(), Toast.LENGTH_LONG).show();
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        java.io.File apk = new java.io.File(
+                getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS),
+                APK_FILE_NAME
+        );
+        if (apk.exists() && apk.length() >= 10000L && installPermissionReady()) {
+            new Handler(Looper.getMainLooper()).postDelayed(this::installDownloadedApk, 350);
         }
     }
 
