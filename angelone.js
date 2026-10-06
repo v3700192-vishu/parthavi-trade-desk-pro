@@ -44,7 +44,7 @@ export async function loginAngel({clientCode, pin, totp}){
 export async function logoutAngel(){
   try { if(api && session.connected) await api.logout({clientcode:session.clientCode}); } catch {}
   if(reconnectTimer){ clearTimeout(reconnectTimer); reconnectTimer=null; }
-  if(ws){ try{ws.closeConnection?.()}catch{}; ws=null; }
+  if(ws){ try{ws.close?.()}catch{}; try{ws.closeConnection?.()}catch{}; ws=null; }
   wsConnected=false; wsError=null; lastTickAt=null;
   api=null; session={connected:false,clientCode:null,loginAt:null,jwtToken:null,feedToken:null,profile:null}; latestTicks.clear();
   return angelStatus();
@@ -332,6 +332,10 @@ async function connectMarketWebSocket(){
   });
   ws=socket;
 
+  // smartapi-javascript WebSocketV2 exposes only "connect" and "tick" through .on().
+  // Enable its custom error path so connection failures reject instead of hanging silently.
+  try{ socket.customError?.(); }catch{}
+  try{ socket.reconnection?.('simple',15000,1); }catch{}
   try{
     socket.on('tick', data=>{
       try{
@@ -342,21 +346,23 @@ async function connectMarketWebSocket(){
         wsError=null;
       }catch{}
     });
-    socket.on('error', err=>{
-      wsConnected=false;
-      wsError=err?.message || String(err) || "Angel One WebSocket error";
-      scheduleReconnect();
-    });
-    socket.on('close', ()=>{
-      wsConnected=false;
-      if(session.connected) scheduleReconnect();
-    });
   }catch{}
 
-  await socket.connect();
+  console.log('[ANGEL_WS] connecting client='+String(session.clientCode||'').slice(0,24));
+
+  const timeoutMs=12000;
+  await Promise.race([
+    socket.connect(),
+    new Promise((_,reject)=>setTimeout(()=>reject(new Error('Angel One WebSocket connect timeout after 12 seconds')),timeoutMs))
+  ]);
+
   wsConnected=true;
   wsError=null;
-  await subscribeOnSocket(["99926000","99926009","99926017","99926037","99926074"],1,1);
+  console.log('[ANGEL_WS] connected');
+
+  const sub=await subscribeOnSocket(["99926000","99926009","99926017","99926037","99926074"],1,1);
+  console.log('[ANGEL_WS] subscribed index tokens='+sub.tokens);
+
   return angelStatus();
 }
 
