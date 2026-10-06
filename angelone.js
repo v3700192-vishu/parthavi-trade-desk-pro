@@ -98,12 +98,12 @@ function mergeMarketData(rows){
   return arr.map(x=>({
     exchange:x.exchange, tradingSymbol:x.tradingSymbol, symbolToken:String(x.symbolToken||''),
     ltp:x.ltp, open:x.open, high:x.high, low:x.low, close:x.close,
-    change:x.percentageChange ?? x.change ?? null, lastTradeQty:x.lastTradeQty ?? null,
+    change:x.percentChange ?? x.percentageChange ?? x.netChange ?? x.change ?? null, netChange:x.netChange ?? null, percentChange:x.percentChange ?? x.percentageChange ?? null, lastTradeQty:x.lastTradeQty ?? null,
     exchTradeTime:x.exchTradeTime ?? x.exchangeTimeStamp ?? null,
     upperCircuit:x.upperCircuit, lowerCircuit:x.lowerCircuit,
     opnInterest:x.opnInterest ?? x.openInterest ?? x.oi ?? null,
     tradeVolume:x.tradeVolume ?? x.volume ?? null,
-    bestFive:x.bestFive ?? null
+    bestFive:x.depth ?? x.bestFive ?? null
   }));
 }
 
