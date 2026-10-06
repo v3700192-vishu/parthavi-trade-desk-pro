@@ -97,8 +97,7 @@ button,input,select{font:inherit} button{cursor:pointer}
  .hero h2{font-size:29px}.decision-grid{grid-template-columns:1fr 1fr}.decision-grid .stat:first-child{grid-column:1/-1}
  .rightcol{display:block}.chartbox{height:350px}.levels{grid-template-columns:1fr 1fr}.levels .level:last-child{grid-column:1/-1}
  .grid8{grid-template-columns:1fr 1fr}.fusion{grid-template-columns:1fr}.reason-grid,.blueprint,.riskgrid,.eventlist{grid-template-columns:1fr}
- .exec{grid-template-columns:1fr 1fr}.footer{display:block}.footer span{display:block;margin-top:3px}
- .bottom{display:grid;position:fixed;left:0;right:0;bottom:0;grid-template-columns:repeat(5,1fr);gap:4px;padding:6px 7px calc(6px + env(safe-area-inset-bottom));background:rgba(4,7,15,.94);border-top:1px solid var(--line);z-index:40;backdrop-filter:blur(18px)}
+ .exec{grid-template-columns:1fr 1fr}.footer{display:block}.footer span{display:block;margin-top:3px} .bottom{display:grid;position:fixed;left:0;right:0;bottom:0;grid-template-columns:repeat(5,1fr);gap:4px;padding:6px 7px calc(6px + env(safe-area-inset-bottom));background:rgba(4,7,15,.94);border-top:1px solid var(--line);z-index:40;backdrop-filter:blur(18px)}
  .bottom a{color:#8e9bb2;text-decoration:none;text-align:center;font-size:7px;padding:6px 2px;border-radius:9px}.bottom a.active{color:#fff;background:#0e182a}
 }
 
@@ -181,6 +180,7 @@ button,input,select{font:inherit} button{cursor:pointer}
 @media(max-width:980px){.shield-grid{grid-template-columns:1fr 1fr}.shield-hero{grid-column:span 2}.shield-rules{grid-template-columns:1fr 1fr}}
 @media(max-width:620px){.shield-grid{grid-template-columns:1fr 1fr}.shield-hero{grid-column:span 2}.shield-rules{grid-template-columns:1fr 1fr}}
 </style>
+<script src="/mobile-haptics.js"></script>
 </head>
 <body>
 <script id="PWA_BOOTSTRAP_V1">
@@ -197,8 +197,7 @@ button,input,select{font:inherit} button{cursor:pointer}
    This keeps the broker login usable even if another dashboard component has a JS error. */
 (function(){
   function note(msg){const e=document.getElementById('angelTestNote');if(e)e.textContent=msg;}
-  function badge(text,cls){const e=document.getElementById('angelTestBadge');if(e){e.textContent=text;e.className='badge '+cls;}}
-  function status(d){
+  function badge(text,cls){const e=document.getElementById('angelTestBadge');if(e){e.textContent=text;e.className='badge '+cls;}}  function status(d){
     const e=document.getElementById('angelStatusText');
     if(e)e.textContent=d?.connected?('CONNECTED • '+(d.clientCode||'')+(d.websocket?' • STREAM LIVE':' • REST ONLY')):'DISCONNECTED';
   }
@@ -296,7 +295,6 @@ button,input,select{font:inherit} button{cursor:pointer}
   <button class="chip" data-symbol="MIDCPNIFTY">MIDCPNIFTY</button>
   <button class="chip" data-symbol="SENSEX">SENSEX</button>
 </div>
-
 
 <section class="card" id="contractFinder">
   <div class="card-head"><h3>Contract Finder • NSE / BSE</h3><span>Exchange → Segment → Underlying → Expiry → CE/PE → Strike</span></div>
@@ -397,8 +395,7 @@ button,input,select{font:inherit} button{cursor:pointer}
     <div class="shield-rule"><span>Stop loss mandatory</span><b id="p11SL">ON</b></div>
     <div class="shield-rule"><span>Signed signal</span><b id="p11Signed">ON</b></div>
   </div>
-  <div class="shield-actions">
-    <button class="btn primary" onclick="loadPhase11Shield()">🛡 Refresh Shield</button>
+  <div class="shield-actions">    <button class="btn primary" onclick="loadPhase11Shield()">🛡 Refresh Shield</button>
     <button class="btn" onclick="requestPhase11Signal()">✅ Get Confirmed Signal Lock</button>
     <span class="shield-status" id="p11SignalStatus">No live signal token loaded.</span>
   </div>
@@ -497,8 +494,7 @@ button,input,select{font:inherit} button{cursor:pointer}
     <h3>Real-money protection</h3>
     <p>One failed critical gate = NO TRADE.</p>
     <div class="check"><span>Exchange session</span><span class="badge warn" id="gSession">WAIT</span></div>
-    <div class="check"><span>Market feed freshness</span><span class="badge danger" id="gMarket">OFF</span></div>
-    <div class="check"><span>Options / OI feed</span><span class="badge danger" id="gOptions">OFF</span></div>
+    <div class="check"><span>Market feed freshness</span><span class="badge danger" id="gMarket">OFF</span></div>    <div class="check"><span>Options / OI feed</span><span class="badge danger" id="gOptions">OFF</span></div>
     <div class="check"><span>News + macro feed</span><span class="badge danger" id="gNews">OFF</span></div>
     <div class="check"><span>Global risk freshness</span><span class="badge danger" id="gGlobal">OFF</span></div>
     <div class="check"><span>Risk / SL validation</span><span class="badge ok">ON</span></div>
@@ -598,7 +594,6 @@ button,input,select{font:inherit} button{cursor:pointer}
       <div class="level"><small>VWAP</small><b id="lvwap">—</b></div><div class="level"><small>S1</small><b id="s1">—</b></div><div class="level"><small>S2</small><b id="s2">—</b></div>
     </div>
   </div>
-
   <div class="card" id="signals">
     <div class="card-head"><h3>Multi-Timeframe Indicator Matrix</h3><span>Confluence model — not certainty</span></div>
     <div class="grid8">
@@ -697,8 +692,7 @@ button,input,select{font:inherit} button{cursor:pointer}
       <tr><th>CE OI</th><th>CE ΔOI</th><th>Strike</th><th>PE ΔOI</th><th>PE OI</th><th>IV</th><th>PCR</th></tr>
       <tr><td id="ceoi">—</td><td id="cedoi">—</td><td id="atm">—</td><td id="pedoi">—</td><td id="peoi">—</td><td id="iv">—</td><td id="pcr">—</td></tr>
     </table></div>
-    <div class="note">The options layer should also detect OI walls, unusual volume, IV expansion/compression, ATM/OTM liquidity and expiry effects.</div>
-  </div>
+    <div class="note">The options layer should also detect OI walls, unusual volume, IV expansion/compression, ATM/OTM liquidity and expiry effects.</div>  </div>
 
   <div class="card">
     <div class="card-head"><h3>Risk Manager</h3><span>Real-money safeguards</span></div>
@@ -797,8 +791,7 @@ button,input,select{font:inherit} button{cursor:pointer}
   <div class="card-head"><h3>Trade Journal & Audit Trail</h3><span>Auto-saved on this device • live broker fills remain gated</span></div>
   <div class="tablewrap"><table class="j" id="journalTable">
     <tr><th>Time</th><th>Symbol</th><th>Side</th><th>Decision</th><th>Entry</th><th>SL</th><th>T1</th><th>T2</th><th>Status</th></tr>
-    <tbody id="journalBody"><tr><td colspan="9">No trades recorded yet.</td></tr></tbody>
-  </table></div>
+    <tbody id="journalBody"><tr><td colspan="9">No trades recorded yet.</td></tr></tbody>  </table></div>
   <div class="note" id="journalSummary">Journal: 0 trades • Wins 0 • Losses 0 • Net P&L ₹0</div>
 </div>
 
@@ -897,8 +890,7 @@ button,input,select{font:inherit} button{cursor:pointer}
     }
   };
   const sameOrigin=()=>location.hostname.endsWith('github.io')?'https://parthavi-trade-desk-pro.onrender.com':(location.origin&&/^https?:$/.test(location.protocol)?location.origin:'');
-  function note(v){const x=el('angelTestNote');if(x)x.textContent=v;}
-  function badge(v,cls){const x=el('angelTestBadge');if(x){x.textContent=v;x.className='badge '+cls;}}
+  function note(v){const x=el('angelTestNote');if(x)x.textContent=v;}  function badge(v,cls){const x=el('angelTestBadge');if(x){x.textContent=v;x.className='badge '+cls;}}
   function statusText(d){
     const x=el('angelStatusText');
     if(x)x.textContent=d?.connected?('CONNECTED • '+(d.clientCode||'')+(d.websocket?' • STREAM LIVE':' • REST ONLY')):'DISCONNECTED';
@@ -997,8 +989,7 @@ async function angelReconnect(){
     if(!r.ok) throw new Error(d.error||('Reconnect failed (HTTP '+r.status+')'));
     await angelStatus();
     toast(d.websocket?'Stream reconnected':'Reconnect requested');
-    await loadAll(); await loadPrediction(false);
-  }catch(e){ $('angelTestNote').textContent='Reconnect error: '+(e.message||'Unknown error'); toast(e.message||'Reconnect failed'); }
+    await loadAll(); await loadPrediction(false);  }catch(e){ $('angelTestNote').textContent='Reconnect error: '+(e.message||'Unknown error'); toast(e.message||'Reconnect failed'); }
 }
 async function angelDisconnect(){ try{await fetch(API_BASE+'/api/angel/logout',{method:'POST'}); await angelStatus(); toast('Disconnected');}catch(e){toast('Disconnect failed');} }
 const API_BASE = (location.hostname.endsWith('github.io')) ? 'https://parthavi-trade-desk-pro.onrender.com' : ((location.origin && /^https?:$/.test(location.protocol)) ? location.origin : '');
@@ -1097,8 +1088,7 @@ function renderEvents(es){
  $('events').innerHTML=arr.map(e=>`<div class="event"><span>${escapeHtml(e.label||'Event')}<br><span style="color:#65738a">${escapeHtml(e.time||'')}</span></span><b>${escapeHtml(e.risk||'WATCH')}</b></div>`).join('')||'<div class="event"><span>No event feed</span><b>WAIT</b></div>';
  const high=arr.filter(e=>['HIGH','RED','CRITICAL'].includes(String(e.risk||'').toUpperCase())).length;
  setToneText('eventGate', high?'WATCH':'NORMAL'); setToneText('eventWatch', high?'ACTIVE':'NONE'); setToneText('eventFreeze', 'WAIT');
- $('eventReason').textContent=high?'Connected calendar contains high-impact events.':'No high-impact event detected from connected feed.';
- $('eventFeedMeta').textContent=arr.length?`Feed status: CONNECTED • ${arr.length} event(s)`:'Feed status: UNVERIFIED • no usable event calendar data';
+ $('eventReason').textContent=high?'Connected calendar contains high-impact events.':'No high-impact event detected from connected feed.'; $('eventFeedMeta').textContent=arr.length?`Feed status: CONNECTED • ${arr.length} event(s)`:'Feed status: UNVERIFIED • no usable event calendar data';
 }
 function renderEventStrategy(st){ const x=st||{}; setToneText('eventGate',x.hardBlock?'NO TRADE':'NORMAL'); setToneText('eventWatch',x.watch?'ACTIVE':'NONE'); setToneText('eventFreeze',x.hardBlock?'ACTIVE':'NONE'); $('eventReason').textContent=x.reason||'Calendar feed not connected'; }
 async function getJSON(path){
@@ -1197,8 +1187,7 @@ function processAlerts(a){
   const vols=rows.slice?.(-21,-1).map(x=>Number(x.v)).filter(Number.isFinite)||[];
   const avgVol=vols.length?vols.reduce((x,y)=>x+y,0)/vols.length:NaN;
   const volRatio=Number.isFinite(avgVol)&&avgVol>0?Number(cur?.v||0)/avgVol:NaN;
-  const candleBull=!!cur&&Number(cur.c)>Number(cur.o)&&Number(cur.c)>r1;
-  const candleBear=!!cur&&Number(cur.c)<Number(cur.o)&&Number(cur.c)<s1;
+  const candleBull=!!cur&&Number(cur.c)>Number(cur.o)&&Number(cur.c)>r1;  const candleBear=!!cur&&Number(cur.c)<Number(cur.o)&&Number(cur.c)<s1;
   const options=a?.decision?.optionsData||a?.options||{};
   const pcr=Number(options.pcr), ceDoi=Number(options.cedoi), peDoi=Number(options.pedoi);
   const oiBull=Number.isFinite(pcr)?pcr>=1.0:(Number.isFinite(peDoi)&&Number.isFinite(ceDoi)?peDoi>ceDoi:false);
@@ -1297,8 +1286,7 @@ function renderPredictionPanel(r){
     : 'NO TRADE right now. Entry, Stop Loss and Targets stay blank until a confirmed setup on a closed 5M candle passes the multi-timeframe, options, news, global and event gates.';
 
   const labels={trend:'1H trend',setup:'15M setup',trigger:'5M trigger',momentum:'Momentum',volume:'Volume',strength:'ADX',options:'Options / OI',greeks:'Theta / Delta',news:'News / macro',global:'Global risk',eventSafe:'Event safe'};
-  const grid=$('p10ConfirmGrid');
-  grid.innerHTML=Object.entries(labels).map(([k,label])=>{const yes=!!p.confirmations?.[k];return `<div class="confirm-item"><span>${label}</span><b class="${yes?'yes':'no'}">${yes?'✓ CONFIRMED':'WAIT'}</b></div>`}).join('');
+  const grid=$('p10ConfirmGrid');  grid.innerHTML=Object.entries(labels).map(([k,label])=>{const yes=!!p.confirmations?.[k];return `<div class="confirm-item"><span>${label}</span><b class="${yes?'yes':'no'}">${yes?'✓ CONFIRMED':'WAIT'}</b></div>`}).join('');
   $('p10Note').textContent=p.note||'Model output is not a guaranteed probability of profit.';
   loadRiskSizing(p);
 }
@@ -1397,8 +1385,7 @@ async function loadAll(){
    }
 
    drawChart();
-   if(m?.connected) await loadBrokerAccount();
- }catch(err){
+   if(m?.connected) await loadBrokerAccount(); }catch(err){
    renderGates({});
    $('decision').textContent='NO TRADE';
    $('action').textContent='NO TRADE';
@@ -1497,7 +1484,6 @@ async function executeModifyOrder(){if(!pendingModify){toast('Order details miss
 async function cancelLive(orderid,exchange='NSE'){if(!confirm('Cancel this live order?'))return;try{const r=await fetch(API_BASE+'/api/order/cancel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({orderid,exchange})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.error||'Cancel failed');toast('Cancel request submitted');await loadBrokerAccount();}catch(e){toast(e.message||'Cancel failed')}}
 
 async function loadPhase12Readiness(){ try{ const ex=(document.getElementById('exchange')?.value||'NSE'); const r=await fetch('/api/phase12/readiness?exchange='+encodeURIComponent(ex)); const d=await r.json(); setToneText('p12Mode',d.mode||'LOCKED'); setToneText('p12Angel',d.checks?.find(x=>x.id==='ANGEL_SESSION')?.ok?'OK':'WAIT'); setToneText('p12Static',d.checks?.find(x=>x.id==='STATIC_IP')?.ok?'VERIFIED':'WAIT'); setToneText('p12Market',d.checks?.find(x=>x.id==='MARKET_SESSION')?.ok?'OPEN':'CLOSED'); setToneText('p12Exec',d.liveReady?'READY':'LOCKED'); const failed=(d.checks||[]).filter(x=>!x.ok).map(x=>x.label); document.getElementById('p12Checks').textContent=failed.length?'Blocked: '+failed.join(' • '):'All production readiness checks passed. Live order execution still requires explicit user confirmation.'; }catch(e){ setToneText('p12Mode','LOCKED'); setToneText('p12Exec','LOCKED'); document.getElementById('p12Checks').textContent='Readiness service unavailable.'; } }
-
 async function loadExecutionStatus(){
  try{
    const r=await getJSON('/api/execution/status'); const s=r.status||{};
