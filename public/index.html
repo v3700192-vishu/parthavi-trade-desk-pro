@@ -137,7 +137,24 @@ button,input,select{font:inherit} button{cursor:pointer}
   .hero,.card,.section,.panel{min-width:0;max-width:100%}
   canvas{max-width:100%!important}
 }
-</style></style>
+</style>
+
+<style id="android-mobile-chart-fixes">
+html,body{width:100%;max-width:100%;min-width:0;overflow-x:hidden}
+body{overscroll-behavior-x:none}
+.app{width:100%;max-width:1580px;min-width:0;margin:0 auto}
+@media(max-width:760px){
+  .app{width:100vw;max-width:100vw;margin:0;padding-left:7px;padding-right:7px;overflow-x:hidden}
+  .top,.ticker,.selector,.card,.layout,.stack,.rightcol,.chartbox,.angel-chart{width:100%;max-width:100%;min-width:0}
+  .layout{display:grid;grid-template-columns:1fr!important}
+  .a1-workspace{width:100%;max-width:100%;overflow:hidden}
+  .a1-head{min-width:0}.a1-ohlc{min-width:0}.a1-price{min-width:62px}
+  .a1-toolbar,.a1-timeframes{max-width:100%;overflow-x:auto;white-space:nowrap}
+  .finder-grid{grid-template-columns:1fr 1fr}
+  .finder-grid label,.finder-grid input,.finder-grid select{min-width:0;max-width:100%}
+  .chartbox.angel-chart{min-height:0}
+}
+</style>
 
 <style id="phase10-prediction-css">
 .prediction-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:10px;margin-top:10px}
@@ -183,6 +200,9 @@ button,input,select{font:inherit} button{cursor:pointer}
 <script src="/mobile-haptics.js"></script>
 </head>
 <body>
+<script id="ANDROID_LAYOUT_GUARD">
+(function(){try{window.scrollTo(0,0);document.documentElement.scrollLeft=0;document.body.scrollLeft=0}catch(e){}})();
+</script>
 <script id="PWA_BOOTSTRAP_V1">
 (function(){
   let deferredPrompt=null;
@@ -998,8 +1018,8 @@ const $=id=>document.getElementById(id);
 function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800)}
 function openSettings(){$('modal').classList.add('show')} function closeSettings(){$('modal').classList.remove('show')}
 async function pingBackend(){try{const r=await fetch(API_BASE+'/api/health');const j=await r.json();toast(j.ok?'Backend reachable':'Backend not ready')}catch(e){toast('Backend not reachable')}}
-async function setTF(next,btn){tf=next;document.querySelectorAll('.tf').forEach(b=>b.classList.remove('active'));if(btn)btn.classList.add('active');$('tfHud').textContent=tf;await loadChartTimeframe(tf)}
-function setSymbol(next){symbol=next;window.phase11SignalToken='';window.phase11Snapshot=null;$('p11SignalStatus').textContent='No live signal token loaded.';document.querySelectorAll('.chip').forEach(b=>b.classList.toggle('active',b.dataset.symbol===symbol));$('chartTitle').textContent=(symbol==='NIFTY'?'NIFTY 50':symbol)+' — LIVE CHART';$('instrumentLabel').textContent=symbol+' options';$('jSymbol').textContent=symbol;$('chartInstrument').textContent=(symbol==='NIFTY'?'NIFTY 50':symbol)+' · NSE';drawChart();loadAll()}
+async function setTF(next,btn){tf=next;chartOffset=0;document.querySelectorAll('.tf').forEach(b=>b.classList.remove('active'));if(btn)btn.classList.add('active');$('tfHud').textContent=tf;await loadChartTimeframe(tf)}
+function setSymbol(next){symbol=next;chartOffset=0;window.phase11SignalToken='';window.phase11Snapshot=null;$('p11SignalStatus').textContent='No live signal token loaded.';document.querySelectorAll('.chip').forEach(b=>b.classList.toggle('active',b.dataset.symbol===symbol));$('chartTitle').textContent=(symbol==='NIFTY'?'NIFTY 50':symbol)+' — LIVE CHART';$('instrumentLabel').textContent=symbol+' options';$('jSymbol').textContent=symbol;$('chartInstrument').textContent=(symbol==='NIFTY'?'NIFTY 50':symbol)+' · NSE';drawChart();loadAll()}
 document.querySelectorAll('.chip').forEach(b=>b.addEventListener('click',()=>setSymbol(b.dataset.symbol)));
 function indiaNow(){return new Intl.DateTimeFormat('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',weekday:'short',hour12:false,day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date())}
 function setGate(id, ok, text){const el=$(id);el.textContent=text;el.className='badge '+(ok?'ok':'danger')}
@@ -1369,7 +1389,7 @@ async function loadAll(){
    if(fresh){
      liveData=rows;
      window.__chartCacheAt=Date.now();
-     try{localStorage.setItem('PTD_LAST_CANDLES_'+symbol,JSON.stringify({savedAt:window.__chartCacheAt,rows:rows.slice(-500)}));}catch{}
+     try{localStorage.setItem('PTD_LAST_CANDLES_'+symbol,JSON.stringify({savedAt:window.__chartCacheAt,rows:rows.slice(-2500)}));}catch{}
    }else{
      try{
        const cr=await fetch(API_BASE+'/api/chart/candles?symbol='+encodeURIComponent(symbol)+'&tf='+encodeURIComponent(tf),{cache:'no-store'});
@@ -1395,7 +1415,7 @@ async function loadAll(){
    drawChart();
  }
 }
-let chartType='candles',logScale=false,autoScale=true,chartReq=0;
+let chartType='candles',logScale=false,autoScale=true,chartReq=0,chartOffset=0,chartDrag=null;
 const chartIndicators={ema:true,vwap:true,volume:true,rsi:false,macd:false,adx:false};
 const chartDataCache=new Map(),chartDrawings=[];let chartDrawMode='',chartDraft=null;
 function resizeCanvas(c){const r=c.getBoundingClientRect(),d=window.devicePixelRatio||1;c.width=Math.max(1,Math.floor(r.width*d));c.height=Math.max(1,Math.floor(r.height*d));const ctx=c.getContext('2d');ctx.setTransform(d,0,0,d,0,0);return[ctx,r.width,r.height]}
@@ -1410,7 +1430,7 @@ function toggleIndicator(k){chartIndicators[k]=!chartIndicators[k];drawChart()}
 function toggleScaleMode(){logScale=!logScale;drawChart()}
 function toggleAutoScale(){autoScale=!autoScale;drawChart()}
 function captureChart(){try{const a=document.createElement('a');a.href=$('cv').toDataURL('image/png');a.download='PARTHAVI_'+symbol+'_'+tf+'.png';a.click()}catch{toast('Chart screenshot unavailable')}}
-function fitChart(){scale=1;autoScale=true;drawChart()}
+function fitChart(){scale=1;autoScale=true;chartOffset=0;drawChart()}
 function chartSearch(){toast('Select the symbol from the NIFTY / BANKNIFTY chips above')}
 function setDrawMode(mode){chartDrawMode=mode;chartDraft=null;['candleMenu','indicatorMenu','drawMenu'].forEach(id=>$(id)?.classList.remove('open'));toast(mode==='trend'?'Tap two points on chart':mode==='hline'?'Tap once for horizontal line':'Tap once for vertical line')}
 function clearDrawings(){chartDrawings.length=0;chartDraft=null;drawChart()}
@@ -1422,7 +1442,7 @@ function drawChart(){
  ctx.clearRect(0,0,w,h);ctx.fillStyle='#050a12';ctx.fillRect(0,0,w,h);ctx.strokeStyle='rgba(61,78,105,.30)';ctx.lineWidth=1;
  for(let i=0;i<=8;i++){const y=top+i*plotH/8;ctx.beginPath();ctx.moveTo(left,y);ctx.lineTo(left+plotW,y);ctx.stroke()}for(let i=0;i<=10;i++){const x=left+i*plotW/10;ctx.beginPath();ctx.moveTo(x,top);ctx.lineTo(x,top+plotH);ctx.stroke()}
  const raw=chartDataCache.get(tf)||liveData;if(!chartRowsOk(raw)){$('chartLoading').style.display='flex';$('chartLoading').textContent='NO LIVE CANDLES • CONNECT ANGEL ONE';$('chartOHLC').textContent='O — H — L — C —';$('chartLast').textContent='—';return}
- $('chartLoading').style.display='none';const base=chartType==='heikin'?haRows(raw):raw,visible=Math.min(base.length,Math.max(35,Math.floor(plotW/5/Math.max(.55,scale)))),view=base.slice(-visible);
+ $('chartLoading').style.display='none';const base=chartType==='heikin'?haRows(raw):raw,visible=Math.min(base.length,Math.max(35,Math.floor(plotW/5/Math.max(.55,scale)))),maxOffset=Math.max(0,base.length-visible);chartOffset=Math.max(0,Math.min(chartOffset,maxOffset));const end=base.length-chartOffset,start=Math.max(0,end-visible),view=base.slice(start,end);
  let min=Math.min(...view.map(x=>x.l)),max=Math.max(...view.map(x=>x.h));const pad=(max-min||1)*.06;min-=pad;max+=pad;
  const py=v=>{if(!logScale)return top+(max-v)*plotH/(max-min||1);const lo=Math.log(Math.max(.0001,min)),hi=Math.log(Math.max(.0001,max)),z=Math.log(Math.max(.0001,v));return top+(hi-z)*plotH/(hi-lo||1)};
  const step=plotW/view.length*scale*.94,baseX=left+Math.max(0,plotW-view.length*step),last=view.at(-1),prev=view.at(-2),lp=Number(last.c);
@@ -1443,8 +1463,8 @@ function drawChart(){
 function toggleCrosshair(){crosshair=!crosshair;drawChart()}
 function addLine(){setDrawMode('trend')}
 function onChartPointer(ev){if(!crosshair&&!chartDrawMode)return;const c=$('cv'),r=c.getBoundingClientRect();if(crosshair){const d=chartDataCache.get(tf)||liveData;if(!chartRowsOk(d))return;drawChart();const x=ev.clientX-r.left,view=d.slice(-Math.min(d.length,Math.max(35,Math.floor((r.width-118)/5/Math.max(.55,scale))))),step=(r.width-118)/view.length*scale*.94,baseX=44+Math.max(0,(r.width-118)-view.length*step),idx=Math.max(0,Math.min(view.length-1,Math.round((x-baseX-step/2)/step))),a=view[idx];if(!a)return;const[ctx]=resizeCanvas(c),left=44,top=18,bottom=44,plotW=r.width-left-74,max=Math.max(...view.map(z=>z.h)),min=Math.min(...view.map(z=>z.l)),py=v=>top+(max-v)*(r.height-top-bottom)/(max-min||1),px=baseX+idx*step+step/2;ctx.strokeStyle='rgba(255,216,109,.78)';ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(px,top);ctx.lineTo(px,r.height-bottom);ctx.moveTo(left,py(a.c));ctx.lineTo(left+plotW,py(a.c));ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#0b1324';ctx.strokeStyle='#40516d';ctx.fillRect(8,8,320,56);ctx.strokeRect(8,8,320,56);ctx.fillStyle='#f4f7ff';ctx.font='10px system-ui';ctx.textAlign='left';ctx.fillText(chartTime(a.t),15,23);ctx.fillStyle='#9eabc0';ctx.fillText(`O ${a.o.toFixed(2)} H ${a.h.toFixed(2)} L ${a.l.toFixed(2)} C ${a.c.toFixed(2)} V ${Number(a.v||0).toLocaleString('en-IN')}`,15,43)}}
-$('cv').addEventListener('pointermove',onChartPointer);$('cv').addEventListener('pointerleave',()=>drawChart());$('cv').addEventListener('click',ev=>{if(!chartDrawMode)return;const c=$('cv'),r=c.getBoundingClientRect(),x=ev.clientX-r.left,y=ev.clientY-r.top;if(chartDrawMode==='trend'){if(!chartDraft)chartDraft={x1:x,y1:y};else{chartDrawings.push({kind:'trend',x1:chartDraft.x1,y1:chartDraft.y1,x2:x,y2:y});chartDraft=null;chartDrawMode='';drawChart()}}else{chartDrawings.push(chartDrawMode==='hline'?{kind:'hline',y}:{kind:'vline',x});chartDrawMode='';drawChart()}});
-function zoom(z){scale=Math.min(5,Math.max(.5,scale*z));autoScale=false;drawChart()}function resetChart(){scale=1;autoScale=true;chartDrawings.length=0;chartDrawMode='';chartDraft=null;drawChart()}async function fullChart(){try{await $('chart').requestFullscreen?.()}catch{}}function loadChartTimeframe(next=tf){return(async()=>{const seq=++chartReq;tf=next;const cached=chartDataCache.get(tf)||localRows(tf);if(cached){chartDataCache.set(tf,cached);liveData=cached;window.__chartCacheAt=Date.now();drawChart()}$('chartLoading').style.display='flex';$('chartLoading').textContent='Loading '+tf+' candles…';try{const r=await fetch(API_BASE+'/api/chart/candles?symbol='+encodeURIComponent(symbol)+'&tf='+encodeURIComponent(tf),{cache:'no-store'});const d=await r.json().catch(()=>({}));if(seq!==chartReq)return;const rows=Array.isArray(d?.rows)?d.rows:[];if(chartRowsOk(rows)){chartDataCache.set(tf,rows);liveData=rows;window.__chartCacheAt=Date.now();$('chartLoading').style.display='none';$('chartSource').textContent=(d?.source||'ANGEL')+' • '+rows.length+' BARS';try{localStorage.setItem('PTD_CHART_'+symbol+'_'+tf,JSON.stringify({savedAt:window.__chartCacheAt,source:d?.source||'ANGEL',rows:rows.slice(-500)}))}catch{}drawChart()}else{$('chartLoading').textContent='NO LIVE CANDLES • connect Angel One and retry';drawChart()}}catch(e){if(seq===chartReq){$('chartLoading').textContent='Chart feed error • '+(e?.message||'unknown');drawChart()}}})()}
+$('cv').addEventListener('pointerdown',ev=>{if(crosshair||chartDrawMode)return;const c=$('cv'),r=c.getBoundingClientRect(),raw=chartDataCache.get(tf)||liveData;if(!chartRowsOk(raw))return;chartDrag={x:ev.clientX,offset:chartOffset,startWidth:r.width};c.setPointerCapture?.(ev.pointerId)});$('cv').addEventListener('pointermove',ev=>{if(chartDrag){const c=$('cv'),r=c.getBoundingClientRect(),raw=chartDataCache.get(tf)||liveData;if(!chartRowsOk(raw))return;const base=chartType==='heikin'?haRows(raw):raw;const visible=Math.min(base.length,Math.max(35,Math.floor((r.width-118)/5/Math.max(.55,scale))));const step=Math.max(.4,(r.width-118)/Math.max(1,visible)*scale*.94);const delta=(ev.clientX-chartDrag.x)/step;const maxOffset=Math.max(0,base.length-visible);chartOffset=Math.max(0,Math.min(maxOffset,Math.round(chartDrag.offset-delta)));drawChart();return}onChartPointer(ev)});$('cv').addEventListener('pointerup',()=>{chartDrag=null});$('cv').addEventListener('pointercancel',()=>{chartDrag=null});$('cv').addEventListener('pointerleave',()=>{if(!chartDrag)drawChart()});$('cv').addEventListener('click',ev=>{if(!chartDrawMode)return;const c=$('cv'),r=c.getBoundingClientRect(),x=ev.clientX-r.left,y=ev.clientY-r.top;if(chartDrawMode==='trend'){if(!chartDraft)chartDraft={x1:x,y1:y};else{chartDrawings.push({kind:'trend',x1:chartDraft.x1,y1:chartDraft.y1,x2:x,y2:y});chartDraft=null;chartDrawMode='';drawChart()}}else{chartDrawings.push(chartDrawMode==='hline'?{kind:'hline',y}:{kind:'vline',x});chartDrawMode='';drawChart()}});
+function zoom(z){scale=Math.min(5,Math.max(.5,scale*z));autoScale=false;drawChart()}function resetChart(){scale=1;autoScale=true;chartOffset=0;chartDrawings.length=0;chartDrawMode='';chartDraft=null;drawChart()}async function fullChart(){try{await $('chart').requestFullscreen?.()}catch{}}function loadChartTimeframe(next=tf){return(async()=>{const seq=++chartReq;tf=next;chartOffset=0;const cached=chartDataCache.get(tf)||localRows(tf);if(cached){chartDataCache.set(tf,cached);liveData=cached;window.__chartCacheAt=Date.now();drawChart()}$('chartLoading').style.display='flex';$('chartLoading').textContent='Loading '+tf+' candles…';try{const r=await fetch(API_BASE+'/api/chart/candles?symbol='+encodeURIComponent(symbol)+'&tf='+encodeURIComponent(tf),{cache:'no-store'});const d=await r.json().catch(()=>({}));if(seq!==chartReq)return;const rows=Array.isArray(d?.rows)?d.rows:[];if(chartRowsOk(rows)){chartDataCache.set(tf,rows);liveData=rows;window.__chartCacheAt=Date.now();$('chartLoading').style.display='none';$('chartSource').textContent=(d?.source||'ANGEL')+' • '+rows.length+' BARS';try{localStorage.setItem('PTD_CHART_'+symbol+'_'+tf,JSON.stringify({savedAt:window.__chartCacheAt,source:d?.source||'ANGEL',rows:rows.slice(-500)}))}catch{}drawChart()}else{$('chartLoading').textContent='NO LIVE CANDLES • connect Angel One and retry';drawChart()}}catch(e){if(seq===chartReq){$('chartLoading').textContent='Chart feed error • '+(e?.message||'unknown');drawChart()}}})()}
 let brokerAccountData=null; let pendingExitPreview=null; let pendingModify=null;
 function money(v){const n=Number(v);return Number.isFinite(n)?'₹ '+n.toLocaleString('en-IN',{maximumFractionDigits:2}):'₹ —'}
 function pnlClass(v){const n=Number(v);return Number.isFinite(n)&&n<0?'account-negative':'account-positive'}
