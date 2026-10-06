@@ -1064,6 +1064,7 @@ app.get("/api/analyze",async(req,res)=>{
     }
   }catch(e){ packs.error=e.message; }
   const s1=packs.h1?.summary,s15=packs.m15?.summary,s5=packs.m5?.summary;
+  const opt=packs.opt||{connected:false};
   let newsItems=[], global={}, eventItems=[], md=null;
   try{ [newsItems,global,eventItems,md]=await Promise.all([news(symbol),globalData(),events(),market(symbol)]); packs.md=md||{}; }catch(e){ packs.fusionError=e.message; }
   const newsStrat=analyzeNews(newsItems),globalStrat=analyzeGlobal(global),eventStrat=analyzeEvents(eventItems);
