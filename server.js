@@ -1029,17 +1029,17 @@ app.get('/api/chart/candles',async(req,res)=>{
   const symbol=String(req.query.symbol||'NIFTY').toUpperCase();
   const tf=String(req.query.tf||'15M').toUpperCase();
   try{
-    if(!angelStatus().connected) return res.json({ok:false,connected:false,source:'NONE',rows:[],error:'ANGEL_NOT_CONNECTED'});
+    const connected=angelStatus().connected;
     const map={'1M':'ONE_MINUTE','5M':'FIVE_MINUTE','15M':'FIFTEEN_MINUTE','30M':'THIRTY_MINUTE','1H':'ONE_HOUR','4H':'ONE_HOUR','1D':'ONE_DAY'};
     const interval=map[tf]||'FIFTEEN_MINUTE';
     if(['1M','5M','15M','30M','1H','4H'].includes(tf)){
       const base=await loadBase5m(symbol);
       let rows=interval==='FIVE_MINUTE'?base:aggregateCandles(base,tf==='15M'?15:tf==='30M'?30:tf==='1H'||tf==='4H'?60:5);
       rows=dropIncompleteCandle(rows,tf==='15M'?15:tf==='30M'?30:tf==='1H'||tf==='4H'?60:5);
-      return res.json({ok:true,connected:true,source:candleCache.get(symbol)?.source||'ANGEL',rows:rows.slice(-500),checkedAt:nowISO()});
+      return res.json({ok:true,connected,source:candleCache.get(symbol)?.source||'ANGEL',rows:rows.slice(-500),checkedAt:nowISO()});
     }
     const summary=await loadTfSummary(symbol,interval,365);
-    return res.json({ok:true,connected:true,source:'ANGEL',rows:(summary.rows||[]).slice(-500),checkedAt:nowISO()});
+    return res.json({ok:true,connected,source:'ANGEL',rows:(summary.rows||[]).slice(-500),checkedAt:nowISO()});
   }catch(e){
     console.warn('[CHART_CANDLES]',symbol,tf,e?.message||e);
     return res.status(502).json({ok:false,connected:angelStatus().connected,source:'ERROR',rows:[],error:e?.message||'Chart candle feed unavailable'});
@@ -1051,12 +1051,15 @@ app.get('/api/phase10/prediction',async(req,res)=>{
   const symbol=String(req.query.symbol||'NIFTY').toUpperCase();
   try{
     if(!angelStatus().connected) return res.json({ok:true,phase:10,locked:true,prediction:buildPrediction({marketOpen:false}),message:'Connect Angel One before running live prediction.'});
-    const [h1,m15,m5,ni,gd,ev,md]=await Promise.all([
+    const settled=await Promise.allSettled([
       loadTfSummary(symbol,'ONE_HOUR',45),
       loadTfSummary(symbol,'FIFTEEN_MINUTE',30),
       loadTfSummary(symbol,'FIVE_MINUTE',15),
       news(symbol),globalData(),events(),market(symbol)
     ]);
+    const val=(i,f)=>settled[i]?.status==='fulfilled'?settled[i].value:f;
+    const h1=val(0,{rows:[],summary:{trend:'WAIT'}}), m15=val(1,{rows:[],summary:{trend:'WAIT'}}), m5=val(2,{rows:[],summary:{trend:'WAIT'}});
+    const ni=val(3,[]), gd=val(4,{}), ev=val(5,[]), md=val(6,{});
     const ns=analyzeNews(ni), gs=analyzeGlobal(gd), es=analyzeEvents(ev);
     let opt={connected:false}, greeks=[];
     try{
@@ -1071,7 +1074,8 @@ app.get('/api/phase10/prediction',async(req,res)=>{
     const historical=backtestFiveMinute(m5.rows||[]);
     const vix=Number(md?.VIX?.ltp);
     const prediction=buildPrediction({h1:h1.summary,m15:m15.summary,m5:m5.summary,rows5:m5.rows,news:ns,global:gs,events:es,options:opt,marketOpen:marketSession(),backtest:historical,vix:Number.isFinite(vix)?vix:null,oi:opt});
-    res.json({ok:true,phase:10,symbol,prediction,health:{market:true,options:opt.connected,news:ns.connected,global:gs.connected,eventBlocked:es.hardBlock,eventDayBlock:es.eventDayBlock,vix:Number.isFinite(vix)?vix:null},greeks:opt.greeks||null,greekRisk:opt.greekRisk||{status:'WAIT',message:'Live option Greeks not verified.'},backtest:historical,checkedAt:nowISO()});
+    const candleConnected=Array.isArray(m5.rows)&&m5.rows.length>0;
+    res.json({ok:true,phase:10,symbol,prediction,health:{market:candleConnected,options:opt.connected,news:ns.connected,global:gs.connected,eventBlocked:es.hardBlock,eventDayBlock:es.eventDayBlock,vix:Number.isFinite(vix)?vix:null},greeks:opt.greeks||null,greekRisk:opt.greekRisk||{status:'WAIT',message:'Live option Greeks not verified.'},backtest:historical,checkedAt:nowISO()});
   }catch(e){res.status(502).json({ok:false,phase:10,error:e?.message||'Phase 10 prediction unavailable'});}
 });
 
