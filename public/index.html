@@ -145,6 +145,63 @@ button,input,select{font:inherit} button{cursor:pointer}
 </style>
 </head>
 <body>
+<script>
+/* ANGEL CONNECTION BOOTSTRAP — intentionally independent of the dashboard runtime.
+   This keeps the broker login usable even if another dashboard component has a JS error. */
+(function(){
+  function note(msg){const e=document.getElementById('angelTestNote');if(e)e.textContent=msg;}
+  function badge(text,cls){const e=document.getElementById('angelTestBadge');if(e){e.textContent=text;e.className='badge '+cls;}}
+  function status(d){
+    const e=document.getElementById('angelStatusText');
+    if(e)e.textContent=d?.connected?('CONNECTED • '+(d.clientCode||'')+(d.websocket?' • STREAM LIVE':' • REST ONLY')):'DISCONNECTED';
+  }
+  async function connect(){
+    const pin=document.getElementById('angelPin')?.value||'';
+    const totp=document.getElementById('angelTotp')?.value.trim()||'';
+    const clientCode=document.getElementById('angelClient')?.value.trim()||'';
+    const btn=document.getElementById('angelConnectBtn');
+    if(!pin||!totp){badge('LOGIN INPUT MISSING','danger');note('Connection stopped: PIN + TOTP required.');return;}
+    if(btn){btn.disabled=true;btn.textContent='Connecting…';}
+    badge('CONNECTING','warn');note('Connecting to Angel One • waiting for secure login response…');
+    const c=new AbortController(),timer=setTimeout(()=>c.abort(),20000);
+    try{
+      const r=await fetch((location.origin||'')+'/api/angel/login',{
+        method:'POST',headers:{'Content-Type':'application/json','Cache-Control':'no-cache'},
+        body:JSON.stringify({clientCode,pin,totp}),cache:'no-store',signal:c.signal
+      });
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok)throw new Error(d.error||('Login failed (HTTP '+r.status+')'));
+      if(document.getElementById('angelPin'))document.getElementById('angelPin').value='';
+      if(document.getElementById('angelTotp'))document.getElementById('angelTotp').value='';
+      status(d);
+      try{
+        const q=await fetch((location.origin||'')+'/api/angel/diagnostics?symbol=NIFTY',{cache:'no-store'});
+        const qd=await q.json().catch(()=>({}));
+        if(q.ok&&qd.ok){
+          badge('LIVE CONNECTED','ok');
+          note('Angel One connected • LIVE LTP verified: '+qd.symbol+' '+(qd.data?.ltp??'—')+(qd.websocket?' • STREAM LIVE':' • REST OK, stream reconnecting'));
+        }else{
+          badge('LOGIN OK • QUOTE FAILED','danger');
+          note('Angel login accepted, but live quote verification failed: '+(qd.error||'Unknown quote error'));
+        }
+      }catch(e){badge('LOGIN OK • TEST FAILED','danger');note('Angel login accepted, but verification failed: '+(e.message||'Unknown error'));}
+      try{const s=await (await fetch((location.origin||'')+'/api/angel/status',{cache:'no-store'})).json();status(s);}catch{}
+    }catch(e){
+      const msg=e?.name==='AbortError'?'Login request timed out after 20 seconds.':(e.message||'Unknown connection error');
+      badge('CONNECTION ERROR','danger');note('Angel One connection error: '+msg);
+    }finally{
+      clearTimeout(timer);if(btn){btn.disabled=false;btn.textContent='Connect Angel One';}
+    }
+  }
+  function boot(){
+    const btn=document.getElementById('angelConnectBtn');
+    if(btn)btn.addEventListener('click',function(ev){ev.preventDefault();ev.stopImmediatePropagation();connect();},true);
+    window.addEventListener('error',e=>note('Dashboard script error: '+(e.message||'Unknown JavaScript error')));
+    window.addEventListener('unhandledrejection',e=>note('Dashboard promise error: '+(e.reason?.message||String(e.reason||'Unknown error'))));
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+})();
+</script>
 <div class="app">
 <header class="top" id="home">
   <div class="brand">
