@@ -1,7 +1,7 @@
 {
-  "versionCode": 6,
-  "versionName": "1.5.0",
+  "versionCode": 7,
+  "versionName": "1.5.1",
   "apkUrl": "https://github.com/v3700192-vishu/parthavi-trade-desk-pro/releases/latest/download/app-debug.apk",
-  "releaseUrl": "https://github.com/v3700192-vishu/parthavi-trade-desk-pro/releases/tag/android-v1.5.0-build-29",
-  "notes": "True mobile one-column vertical scrolling, no page horizontal drag, reliable native tap haptics, and 15-day chart day navigation."
+  "releaseUrl": "https://github.com/v3700192-vishu/parthavi-trade-desk-pro/releases/tag/android-v1.5.1-build-33",
+  "notes": "Perfect full-width phone layout, one-column vertical scrolling, full-width Angel-style chart, no page horizontal drag, and native alerts/haptics."
 }
