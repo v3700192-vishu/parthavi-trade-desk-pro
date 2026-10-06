@@ -23,6 +23,23 @@
       : null;
   }
 
+  window.PTDHaptics = window.PTDHaptics || {};
+  window.PTDHaptics.alert = function (kind) {
+    try {
+      var native = window.PTDHapticsNative && typeof window.PTDHapticsNative.alert === "function"
+        ? window.PTDHapticsNative
+        : null;
+      if (native) { native.alert(String(kind || "neutral")); return true; }
+      if (!navigator.vibrate) return false;
+      var pattern = kind === "confirmed" ? [90,60,90,60,160]
+        : kind === "bearish" ? [180,80,180]
+        : kind === "bullish" ? [90,60,90]
+        : [120];
+      navigator.vibrate(pattern);
+      return true;
+    } catch (_) { return false; }
+  };
+
   document.addEventListener("pointerdown", function (event) {
     tap(controlFor(event.target));
   }, true);
