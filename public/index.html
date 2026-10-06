@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#050812">
+<link rel="manifest" href="/manifest.webmanifest"><link rel="icon" href="/icon.svg"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="PARTHAVI TRADE">
 <title>PARTHAVI TRADE DESK PRO</title>
 <style>
 :root{
@@ -167,6 +168,15 @@ button,input,select{font:inherit} button{cursor:pointer}
 </style>
 </head>
 <body>
+<script id="PWA_BOOTSTRAP_V1">
+(function(){
+  let deferredPrompt=null;
+  window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();deferredPrompt=e;const b=document.getElementById("installAppBtn");if(b)b.style.display="inline-flex";});
+  window.addEventListener("appinstalled",()=>{deferredPrompt=null;const b=document.getElementById("installAppBtn");if(b){b.style.display="none";b.textContent="✅ App Installed";}});
+  document.addEventListener("click",async e=>{const b=e.target?.closest?.("#installAppBtn");if(!b)return;if(!deferredPrompt){alert("Browser install option is not available yet. Use browser menu → Add to Home screen.");return;}deferredPrompt.prompt();try{await deferredPrompt.userChoice}catch{}deferredPrompt=null;b.style.display="none";});
+  if("serviceWorker" in navigator) window.addEventListener("load",()=>navigator.serviceWorker.register("/sw.js",{scope:"/"}).catch(()=>{}));
+})();
+</script>
 <script>
 /* ANGEL CONNECTION BOOTSTRAP — intentionally independent of the dashboard runtime.
    This keeps the broker login usable even if another dashboard component has a JS error. */
@@ -248,7 +258,7 @@ button,input,select{font:inherit} button{cursor:pointer}
     </svg></div>
     <div><h1>PARTHAVI TRADE DESK PRO</h1><p>LIVE MARKET • OPTIONS FUSION • NEWS • GLOBAL RISK • CONTROLLED EXECUTION</p></div>
   </div>
-  <div class="top-actions">
+  <div class="top-actions"><button class="btn primary" id="installAppBtn" style="display:none">📲 Install App</button>
     <div class="pill"><span class="dot" id="dot"></span><b id="status">CHECKING</b></div>
     <div class="pill">FEED <b id="feed">OFFLINE</b></div>
     <button class="btn primary" onclick="openSettings()">⚙</button>
