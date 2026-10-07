@@ -495,7 +495,7 @@ app.get("/api/angel/expiries", async (req,res)=>{
       if(optionLike && !/(CE|PE)$/.test(sym)) return false;
       return !q || name===q || name.startsWith(q) || sym.startsWith(q) || sym.replace(/^(NIFTY|BANKNIFTY|FINNIFTY|MIDCPNIFTY|SENSEX)/,'').includes(q);
     }).map(x=>String(x.expiry||'').trim().toUpperCase()).filter(Boolean))].sort((a,b)=>{
-      const pa=String(a).match(/^(\\d{1,2})([A-Z]{3})(\\d{4})$/), pb=String(b).match(/^(\\d{1,2})([A-Z]{3})(\\d{4})$/);
+      const pa=String(a).match(/^(\\d{1,2})([A-Z]{3})(\d{4})$/), pb=String(b).match(/^(\\d{1,2})([A-Z]{3})(\d{4})$/);
       if(pa&&pb){ const mo={JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11}; return new Date(+pa[3],mo[pa[2]],+pa[1])-new Date(+pb[3],mo[pb[2]],+pb[1]); }
       return String(a).localeCompare(String(b));
     });
@@ -1096,7 +1096,7 @@ async function loadFuturesVolume(symbol){
       const contracts=await findContracts({exchange:'NSE',segment:'FUTIDX',underlying:key});
       const now=Date.now();
       const parseExpiry=x=>{
-        const m=String(x||'').match(/^(\\d{2})([A-Z]{3})(\\d{4})$/i);
+        const m=String(x||'').match(/^(\d{2})([A-Z]{3})(\d{4})$/i);
         if(!m) return 0;
         const mo={JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11}[m[2].toUpperCase()];
         return mo==null?0:new Date(Number(m[3]),mo,Number(m[1]),23,59,59).getTime();
