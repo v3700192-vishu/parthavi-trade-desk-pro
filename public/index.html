@@ -89,7 +89,7 @@ button,input,select{font:inherit} button{cursor:pointer}
 .eventlist{display:grid;grid-template-columns:1fr 1fr;gap:7px}.event{display:flex;justify-content:space-between;gap:7px;border:1px solid var(--line);background:#070d18;border-radius:11px;padding:9px;font-size:8px}.event b{font-size:9px}
 .tablewrap{overflow:auto}table.j{width:100%;min-width:700px;border-collapse:collapse;font-size:8px}table.j th,table.j td{padding:8px;border-bottom:1px solid var(--line);text-align:left}table.j th{color:var(--muted)}
 .note{color:var(--muted);font-size:8px;line-height:1.55;margin-top:7px}.footer{display:flex;justify-content:space-between;gap:10px;color:#62718a;font-size:7px;padding:10px 2px}
-.modal{position:fixed;inset:0;background:rgba(0,0,0,.68);display:none;place-items:center;z-index:100;padding:15px}.modal.show{display:grid}.modal-box{width:min(560px,100%);background:#0b1324;border:1px solid var(--line2);border-radius:18px;padding:16px}.modal-box h3{margin:0 0 6px;font-size:15px}.modal-box p{font-size:10px;color:var(--muted);line-height:1.55}.modal-actions{display:flex;justify-content:flex-end;gap:7px;margin-top:10px}.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(14px);opacity:0;pointer-events:none;background:#111c30;border:1px solid #3c4e6a;border-radius:11px;padding:9px 12px;font-size:9px;z-index:120;transition:.2s}.toast.show{opacity:1;transform:translateX(-50%)}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.68);display:none;place-items:center;z-index:100;padding:15px}.modal.show{display:grid}.modal-box{width:min(560px,100%);background:#0b1324;border:1px solid var(--line2);border-radius:18px;padding:16px}.modal-box h3{margin:0 0 6px;font-size:15px}.modal-box p{font-size:10px;color:var(--muted);line-height:1.55}.modal-actions{display:flex;justify-content:flex-end;gap:7px;margin-top:10px}.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(14px);opacity:0;pointer-events:none;background:#111c30;border:1px solid #3c4e6a;border-radius:11px;padding:9px 12px;font-size:9px;z-index:120;transition:.2s}.toast.show{opacity:1;transform:translateX(-50%)}.app-notification{position:fixed;top:14px;left:50%;transform:translate(-50%,-18px) scale(.98);width:min(430px,calc(100vw - 24px));background:rgba(11,18,34,.98);border:1px solid #3b506f;border-radius:17px;box-shadow:0 22px 60px rgba(0,0,0,.5);padding:11px 12px;z-index:150;opacity:0;pointer-events:none;transition:.22s;backdrop-filter:blur(18px)}.app-notification.show{opacity:1;transform:translate(-50%,0) scale(1);pointer-events:auto}.app-notification .an-head{display:flex;align-items:center;gap:8px}.app-notification .an-icon{width:30px;height:30px;border-radius:9px;background:#17253b;display:grid;place-items:center;font-size:16px}.app-notification .an-title{font-size:11px;font-weight:950;line-height:1.2}.app-notification .an-time{margin-left:auto;color:#7f8da6;font-size:8px}.app-notification .an-body{color:#cbd5e4;font-size:9px;line-height:1.45;margin:7px 0 0 38px}.app-notification .an-actions{display:flex;justify-content:flex-end;gap:6px;margin-top:8px}.app-notification .an-actions button{border:1px solid #2c405e;background:#0b1527;color:#e7eef8;border-radius:9px;padding:6px 9px;font-size:8px;font-weight:850}.app-notification.bullish{border-color:rgba(255,255,255,.45)}.app-notification.bearish{border-color:rgba(255,95,128,.6)}.app-notification.neutral{border-color:rgba(255,207,103,.5)}
 .bottom{display:none}
 @media(max-width:1150px){.hero-grid,.layout{grid-template-columns:1fr}.rightcol{display:grid;grid-template-columns:1fr 1fr}.global{grid-template-columns:1fr 1fr}}
 @media(max-width:760px){
@@ -1040,7 +1040,7 @@ body{-webkit-overflow-scrolling:touch}
     <div class="modal-actions"><button class="btn" onclick="closeSettings()">Close</button><button class="btn primary" onclick="pingBackend()">Test backend</button></div>
   </div>
 </div>
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast"></div><div class="app-notification neutral" id="appNotification" role="status" aria-live="polite"><div class="an-head"><div class="an-icon">🔔</div><div class="an-title" id="anTitle">PARTHAVI TRADE DESK</div><div class="an-time" id="anTime">—</div></div><div class="an-body" id="anBody">Notifications will appear here.</div><div class="an-actions"><button onclick="hideAppNotification()">Dismiss</button><button onclick="document.getElementById('alerts')?.scrollIntoView({behavior:'smooth'});hideAppNotification()">View Alerts</button></div></div>
 
 <script>
 /* Connection-safe bootstrap: captures the Angel button before the rest of the dashboard,
@@ -1330,53 +1330,77 @@ async function refreshExpiries(){
   }catch(e){ toast('Expiry load failed'); }
 }
 window.testAngelFeed = async function testAngelFeed(){
+  const testSymbol=String(window.symbol||'NIFTY').toUpperCase();
   try{
     const health=await getJSON('/api/health');
     setGate('cxBackend',!!health.ok,'ON');
     const st=await angelStatus();
-    setGate('cxLogin',!!st.connected,'ON');
-    if(!st.connected){ setGate('cxQuote',false,'OFF'); setGate('cxWs',false,'OFF'); $('angelTestBadge').textContent='LOGIN REQUIRED'; $('angelTestNote').textContent='Enter Client Code + PIN + TOTP above, then run Test Live Feed.'; return; }
-    const q=await getJSON('/api/angel/connection-test?symbol='+encodeURIComponent(symbol));
+    if(!st.connected){
+      setGate('cxLogin',false,'OFF'); setGate('cxQuote',false,'OFF'); setGate('cxWs',false,'OFF');
+      $('angelTestBadge').textContent='LOGIN REQUIRED'; $('angelTestBadge').className='badge danger';
+      $('angelTestNote').textContent='Enter Client Code + PIN + TOTP above, then run Test Live Feed.';
+      if(typeof addAlert==='function') addAlert('🔌 Angel One disconnected','Connection is not active. Reconnect Angel One before testing live feed.','neutral','angel-disconnected-test');
+      return;
+    }
+    setGate('cxLogin',true,'ON');
+    const q=await getJSON('/api/angel/connection-test?symbol='+encodeURIComponent(testSymbol));
     const ok=!!q.ok;
     setGate('cxQuote',ok,ok?'LIVE':'FAIL');
     $('angelTestBadge').textContent=ok?'LIVE QUOTE OK':'QUOTE TEST FAILED';
     $('angelTestBadge').className='badge '+(ok?'ok':'danger');
-    $('angelTestNote').textContent=ok?`Live quote received: ${q.symbol} • LTP ${q.data?.ltp??'—'} • token ${q.token}`:(q.error||'Quote test failed');
-    if(ok){
-      const sr=await getJSON('/api/angel/stream-test?symbol='+encodeURIComponent(symbol));
-      const connected=!!sr.streamVerified;
-      const tickVerified=!!sr.tickVerified;
-      setGate('cxWs',connected,connected?'LIVE':'WAIT');
-      $('feed').textContent=connected?(tickVerified?'STREAM VERIFIED':'STREAM CONNECTED'):'LIVE QUOTE';
-      $('angelTestNote').textContent += connected
-        ? (tickVerified
-          ? ` • WebSocket tick verified • ${sr.tickCount||0} ticks`
-          : (sr.marketOpen
-            ? ' • WebSocket connected • waiting for next market tick'
-            : ' • WebSocket connected • market closed, no fresh tick expected'))
-        : ` • WebSocket not connected: ${sr.error||sr.websocketError||'stream unavailable'}`;
-      await refreshExpiries();
-      await loadAll().catch(()=>{});
-      if(typeof window.loadPrediction==='function') await window.loadPrediction(false).catch(()=>{});
-      if(typeof window.loadPhase11Shield==='function') await window.loadPhase11Shield().catch(()=>{});
-      if(typeof window.loadPhase12Readiness==='function') await window.loadPhase12Readiness().catch(()=>{});
-      drawChart();
-      toast(connected?'Angel One REST + WebSocket connection verified':'Angel One live REST quote verified; WebSocket still waiting');
-      if(typeof addAlert==='function'){
-        addAlert(connected?'Angel One live feed verified':'Angel One REST quote verified',
-          connected ? (tickVerified?'REST + WebSocket tick are live.':'WebSocket connected; waiting for a fresh market tick.') : 'REST quote is live; WebSocket stream is still waiting.',
-          connected?'bullish':'neutral','angel-feed-'+(connected?'live':'rest'));
-      }
+    $('angelTestNote').textContent=ok
+      ? `Live quote received: ${q.symbol||testSymbol} • LTP ${q.data?.ltp??'—'} • token ${q.token||'—'}`
+      : (q.error||'Quote test failed');
+    if(!ok){
+      if(typeof addAlert==='function') addAlert('⚠ Live quote failed',q.error||'Angel One REST quote test failed. Automatic session recovery will retry.','neutral','quote-fail-'+Math.floor(Date.now()/60000));
+      return;
     }
-  }catch(e){ setGate('cxQuote',false,'FAIL'); $('angelTestBadge').textContent='TEST FAILED'; $('angelTestBadge').className='badge danger'; $('angelTestNote').textContent=e.message||'Live feed test failed'; }
+    const sr=await getJSON('/api/angel/stream-test?symbol='+encodeURIComponent(testSymbol));
+    const connected=!!sr.streamVerified;
+    const tickVerified=!!sr.tickVerified;
+    setGate('cxWs',connected,connected?'LIVE':'WAIT');
+    $('feed').textContent=connected?(tickVerified?'STREAM VERIFIED':'STREAM CONNECTED'):'LIVE QUOTE';
+    $('angelTestNote').textContent += connected
+      ? (tickVerified
+        ? ` • WebSocket tick verified • ${sr.tickCount||0} ticks`
+        : (sr.marketOpen
+          ? ' • WebSocket connected • waiting for next market tick'
+          : ' • WebSocket connected • market closed, no fresh tick expected'))
+      : ` • WebSocket not connected: ${sr.error||sr.websocketError||'stream unavailable'}`;
+    if(connected && typeof addAlert==='function') addAlert('✅ LIVE FEED VERIFIED',`${testSymbol} • REST quote + WebSocket stream verified • ${sr.tickCount||0} ticks`,'bullish','live-verified-'+Math.floor(Date.now()/60000));
+    await refreshExpiries().catch(()=>{});
+    await loadAll().catch(()=>{});
+    if(typeof window.loadPrediction==='function') await window.loadPrediction(false).catch(()=>{});
+    if(typeof window.loadPhase11Shield==='function') await window.loadPhase11Shield().catch(()=>{});
+    if(typeof window.loadPhase12Readiness==='function') await window.loadPhase12Readiness().catch(()=>{});
+    drawChart();
+    toast(connected?'Angel One REST + WebSocket connection verified':'Angel One live REST quote verified; stream still waiting');
+  }catch(e){
+    setGate('cxQuote',false,'FAIL');
+    $('angelTestBadge').textContent='TEST FAILED';
+    $('angelTestBadge').className='badge danger';
+    $('angelTestNote').textContent=e.message||'Live feed test failed';
+    if(typeof addAlert==='function') addAlert('❌ Live Feed Test Failed',e.message||'Unknown live-feed error.','bearish','feed-test-fail-'+Math.floor(Date.now()/60000));
+  }
 };
 
 const alertState={lastPrice:null,lastR1:null,lastS1:null,lastAction:'',lastRsi:null,lastVwap:null,seen:new Set(),enabled:true,lastConfirmedBar:null};
+function showAppNotification(title,detail,tone='neutral'){
+  const box=$('appNotification'); if(!box)return;
+  box.className='app-notification '+(tone||'neutral')+' show';
+  $('anTitle').textContent=title||'PARTHAVI TRADE DESK';
+  $('anBody').textContent=detail||'';
+  $('anTime').textContent=indiaNow();
+  clearTimeout(window.__appNoticeTimer);
+  window.__appNoticeTimer=setTimeout(()=>hideAppNotification(),9000);
+}
+function hideAppNotification(){ const box=$('appNotification'); if(box)box.classList.remove('show'); }
 function addAlert(title,detail,tone='neutral',key=''){ 
   if(key && alertState.seen.has(key)) return; if(key) alertState.seen.add(key);
   const feed=$('alertFeed'); if(!feed)return; const el=document.createElement('div'); el.className='alert-item '+tone;
   el.innerHTML='<b>'+escapeHtml(title)+'</b><span>'+escapeHtml(detail)+'</span>'; feed.prepend(el); while(feed.children.length>30)feed.lastChild.remove();
   ptdAlertVibrate(tone);
+  showAppNotification(title,detail,tone);
   toast('🔔 '+title);
   if((document.hidden || window.__notifyAlways) && 'Notification' in window && Notification.permission==='granted'){
     ptdSystemNotify(title,detail,key);
