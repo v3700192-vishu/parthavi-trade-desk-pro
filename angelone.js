@@ -21,6 +21,7 @@ let tokenRefreshTimer = null;
 let watchdogTimer = null;
 let wsConnectBusy = false;
 let wsConnectPromise=null;
+let reconnectDelayMs=5000;
 let latestTicks = new Map();
 let lastTickAt = null;
 let wsGeneration = 0;
@@ -69,6 +70,7 @@ export async function logoutAngel(){
   if(watchdogTimer){ clearInterval(watchdogTimer); watchdogTimer=null; }
   if(ws){ try{ws.close?.()}catch{}; try{ws.closeConnection?.()}catch{}; ws=null; }
   wsConnected=false; wsConnectBusy=false; wsError=null; lastTickAt=null;
+  reconnectDelayMs=5000;
   api=null; session={connected:false,clientCode:null,loginAt:null,jwtToken:null,refreshToken:null,feedToken:null,profile:null}; latestTicks.clear();
   wsConnectBusy=false;
   return angelStatus();
@@ -287,10 +289,21 @@ export async function cancelOrder(orderid){
   return await secureJson('https://apiconnect.angelone.in/rest/secure/angelbroking/order/v1/cancelOrder',{method:'POST',headers:secureHeaders(),body:JSON.stringify(payload)});
 }
 
-export async function findInstrumentByToken(token){
-  const items=await loadMaster();
-  const t=String(token||'');
-  return items.find(x=>String(x.token||'')===t) || null;
+export async function findInstrumentByToken(token, hint={}){
+  const t=String(token||'').trim();
+  if(!t) return null;
+  // Do not materialize the full instrument master on the 512 MB runtime.
+  // Authenticated LTP validates the broker-recognized token/symbol pair.
+  const symbol=String(hint.symbol||hint.tradingsymbol||'').trim();
+  const exchange=String(hint.exchange||'').toUpperCase();
+  if(!symbol || !exchange) return null;
+  try{
+    const checked=await ltp({exchange,tradingsymbol:symbol,symboltoken:t});
+    const d=checked?.data||checked;
+    if(d?.ltp==null) return null;
+    const exchSeg=exchange==='NFO'?'nse_fo':exchange==='NSE'?'nse_cm':exchange==='BFO'?'bse_fo':exchange==='BSE'?'bse_cm':String(hint.exch_seg||'');
+    return {token:t,symbol,name:String(hint.name||''),expiry:String(hint.expiry||''),strike:hint.strike??'',lotsize:Number(hint.lotsize||hint.lotSize||1)||1,instrumenttype:String(hint.instrumenttype||''),exch_seg:exchSeg,exchange,tick_size:hint.tick_size};
+  }catch{return null;}
 }
 
 export function getLatestTicks(){ return [...latestTicks.values()].sort((a,b)=>b.at-a.at).slice(0,200); }
@@ -405,7 +418,48 @@ export async function findLightContracts({underlying='',expiry='',optionType='',
   }).slice(0,300);
 }
 
+const lightFutureCache=new Map();
+const lightFutureInflight=new Map();
+
+export async function findLightFutures({underlying='',expiry='',query=''}={}){
+  const key=normalizeUnderlyingName(underlying||query);
+  const cached=lightFutureCache.get(key);
+  if(cached && Date.now()-cached.loadedAt<15*60*1000) return cached.items;
+  if(lightFutureInflight.has(key)) return await lightFutureInflight.get(key);
+  const job=(async()=>{
+    const r=await fetch(MASTER_URL,{headers:{accept:'application/json','user-agent':'PARTHAVI-TRADE-DESK-PRO/2.0'}});
+    if(!r.ok) throw new Error(`Instrument master HTTP ${r.status}`);
+    const text=await r.text();
+    const items=[];
+    let start=-1,depth=0,inString=false,escaped=false;
+    for(let i=0;i<text.length;i++){
+      const ch=text[i];
+      if(inString){
+        if(escaped) escaped=false;
+        else if(ch==='\\\\') escaped=true;
+        else if(ch==='"') inString=false;
+        continue;
+      }
+      if(ch==='"'){inString=true;continue;}
+      if(ch==='{'){if(depth===0) start=i;depth++;}
+      else if(ch==='}'&&depth>0){depth--;if(depth===0&&start>=0){
+        const segment=text.slice(start,i+1);
+        if(segment.includes(`"name":"${key}"`) && /"exch_seg":"nse_fo"/i.test(segment) && /"instrumenttype":"FUTIDX"/i.test(segment)){
+          try{const x=JSON.parse(segment);items.push({token:x?.token,symbol:x?.symbol,name:x?.name,expiry:x?.expiry,strike:x?.strike,lotsize:x?.lotsize,instrumenttype:x?.instrumenttype,exch_seg:x?.exch_seg,exchange:x?.exchange,tick_size:x?.tick_size});}catch{}
+        }
+        start=-1;
+      }}
+    }
+    if(!items.length) throw new Error(`No NFO futures found for ${key}`);
+    lightFutureCache.set(key,{loadedAt:Date.now(),items});
+    return items;
+  })();
+  lightFutureInflight.set(key,job);
+  try{return await job;}finally{lightFutureInflight.delete(key);}
+}
+
 export async function loadMaster(force=false){
+  if(String(process.env.ALLOW_FULL_MASTER||'false').toLowerCase()!=='true') throw new Error('Full instrument master is disabled on the memory-constrained runtime. Use the light contract lookup.');
   if(!force && masterCache.items.length && Date.now()-masterCache.loadedAt < 6*60*60*1000) return masterCache.items;
   if(masterInflight) return await masterInflight;
 
@@ -469,9 +523,11 @@ export async function loadMaster(force=false){
 }
 
 export async function findContracts({exchange="NSE", segment="OPTIDX", underlying="", expiry="", optionType="", strike="", query=""}){
-  const items=await loadMaster();
   const ex=exchange.toUpperCase();
   const seg=segment.toUpperCase();
+  if(ex==='NSE' && (seg==='OPTIDX'||seg==='OPTSTK')) return await findLightContracts({underlying,expiry,optionType,strike,query});
+  if(ex==='NSE' && seg==='FUTIDX') return await findLightFutures({underlying,expiry,query});
+  const items=await loadMaster();
   const targetSeg=ex==='BSE'?'bse_fo':seg==='EQUITY'?'nse_cm':'nse_fo';
   const q=(query||underlying||"").trim().toUpperCase();
   const ot=(optionType||"").trim().toUpperCase();
@@ -592,7 +648,7 @@ function startConnectionGuards(){
   if(watchdogTimer) clearInterval(watchdogTimer);
   watchdogTimer=setInterval(async()=>{
     if(!session.connected) return;
-    if(!wsConnected){scheduleReconnect();return;}
+    if(!wsConnected){if(marketHoursNow()) scheduleReconnect();return;}
     if(marketHoursNow() && (!lastTickAt || Date.now()-lastTickAt>75000)){
       wsConnected=false;
       wsError='Live tick stale — reconnecting automatically';
@@ -605,14 +661,20 @@ function startConnectionGuards(){
 
 function scheduleReconnect(){
   if(!session.connected || reconnectTimer) return;
+  const delay=Math.min(Math.max(reconnectDelayMs,5000),60000);
   reconnectTimer=setTimeout(async()=>{
     reconnectTimer=null;
     if(!session.connected) return;
-    try { await connectMarketWebSocket(); } catch (e) {
+    if(!marketHoursNow()) return;
+    try {
+      await connectMarketWebSocket();
+      reconnectDelayMs=5000;
+    } catch (e) {
       wsError=e?.message||"WebSocket reconnect failed";
+      reconnectDelayMs=Math.min(Math.max(reconnectDelayMs*2,5000),60000);
       scheduleReconnect();
     }
-  },5000);
+  },delay);
 }
 
 async function connectMarketWebSocket(){
@@ -660,6 +722,7 @@ async function connectMarketWebSocket(){
       if(generation!==wsGeneration || ws!==socket) throw new Error('Stale WebSocket connection discarded');
       wsConnected=true;
       wsError=null;
+      reconnectDelayMs=5000;
       console.log('[ANGEL_WS] connected');
 
       const sub=await subscribeOnSocket(["99926000","99926009","99926017","99926037","99926074"],1,1);
