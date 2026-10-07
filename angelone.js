@@ -40,6 +40,7 @@ export async function loginAngel({clientCode, pin, totp}){
   const cc = clientCode || (process.env.ANGEL_CLIENT_CODE || process.env.ANGELONE_CLIENT_CODE);
   if(!cc || !pin || !totp) throw new Error("Client code, PIN and TOTP are required");
   api = new SmartAPI({api_key:apiKey});
+  try{ api.setSessionExpiryHook?.(()=>{ void refreshSessionTokens(); }); }catch{}
   const data = await api.generateSession(cc, pin, totp);
   if(!data?.status) throw new Error(data?.message || "Angel One login failed");
   session = {connected:true, clientCode:cc, loginAt:new Date().toISOString(), jwtToken:data.data?.jwtToken||null, refreshToken:data.data?.refreshToken||null, feedToken:data.data?.feedToken||null, profile:null};
