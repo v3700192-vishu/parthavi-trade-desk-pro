@@ -590,6 +590,7 @@ body{-webkit-overflow-scrolling:touch}
   <div class="card-head"><h3>FINAL TRADE PLAN • SL / TARGET SEPARATE</h3><span id="finalPlanBar">WAIT • CLOSED 5M</span></div>
   <div class="finalplan">
     <div class="plan-card main"><small>Action</small><b id="finalPlanDirection" class="neutral">NO TRADE</b><span>Only shown as a usable plan when the confirmation engine approves the setup.</span></div>
+    <div class="plan-card"><small>Recommended Contract</small><b id="finalPlanContract">—</b><span id="finalPlanContractMeta">Live option premium target band ₹25–₹50</span></div>
     <div class="plan-card"><small>Entry / Trigger</small><b id="finalPlanEntry">—</b><span>Underlying index level</span></div>
     <div class="plan-card"><small>Stop Loss</small><b id="finalPlanSL">—</b><span>1.0 × ATR planning risk</span></div>
     <div class="plan-card"><small>Target 1</small><b id="finalPlanT1">—</b><span>2.0R minimum planning level</span></div>
@@ -1299,8 +1300,9 @@ function renderContracts(rows){
   $('cfResult').innerHTML='<table class="contract-table"><thead><tr><th>Contract</th><th>LTP</th><th>Chg</th><th>Bid/Ask</th><th>OI</th><th>ΔOI</th><th>Vol</th><th>IV</th><th></th></tr></thead><tbody>'+rows.map(x=>'<tr><td>'+escapeHtml(x.contract)+'</td><td>'+escapeHtml(x.ltp??'—')+'</td><td>'+escapeHtml(x.change??'—')+'</td><td>'+escapeHtml((x.bid??'—')+' / '+(x.ask??'—'))+'</td><td>'+escapeHtml(x.oi??'—')+'</td><td>'+escapeHtml(x.doi??'—')+'</td><td>'+escapeHtml(x.volume??'—')+'</td><td>'+escapeHtml(x.iv??'—')+'</td><td><button class="btn" onclick="analyseContract('+JSON.stringify(x).replace(/</g,'\u003c')+')">Analyse</button></td></tr>').join('')+'</tbody></table>'
 }
 async function analyseContract(x){
+  window.selectedContract=x||null;
   $('cfUnderlying').value=x.underlying||$('cfUnderlying').value;$('cfExpiry').value=x.expiry||$('cfExpiry').value;$('cfType').value=x.optionType||'CE';$('cfStrike').value=x.strike||'';
-  try{const q=new URLSearchParams({exchange:x.exchange||$('cfExchange').value,underlying:x.underlying||'',expiry:x.expiry||'',optionType:x.optionType||'CE',strike:x.strike||''});const r=await getJSON('/api/contract/analyze?'+q.toString());toast(r.connected?'Contract loaded':'NO TRADE • live contract feed required')}catch(e){toast('Contract analysis unavailable')}}
+  try{const q=new URLSearchParams({exchange:x.exchange||$('cfExchange').value,underlying:x.underlying||'',expiry:x.expiry||'',optionType:x.optionType||'CE',strike:x.strike||''});const r=await getJSON('/api/contract/analyze?'+q.toString());toast(r.connected?'Contract loaded':'NO TRADE • live contract feed required');if(r.connected&&typeof window.loadPrediction==='function')await window.loadPrediction(false).catch(()=>{});}catch(e){toast('Contract analysis unavailable')}}
 $('cfUnderlying')?.addEventListener('change',()=>{ $('cfExpiry').innerHTML='<option value="">Load expiries</option>'; refreshExpiries(); });
 
 
@@ -1499,22 +1501,31 @@ function formatPct(v){ return Number.isFinite(Number(v))?Number(v).toFixed(1)+'%
 async function loadRiskSizing(p){
   const state=$('riskGreekState'), budget=$('riskBudgetLive');
   try{const rs=await getJSON('/api/risk/status'); budget.textContent=money(rs.riskBudgetRupees||1000);}catch{}
-  const c=window.selectedContract, plan=p?.finalPlan||{};
-  if(!c?.expiry||c.strike==null||!c.optionType||p?.signalState!=='CONFIRMED'||!plan.entry||!plan.sl){
-    state.textContent=p?.signalState==='CONFIRMED'?'SELECT OPTION':'WAIT';
-    $('riskLots').textContent='—'; $('riskQty').textContent='—'; $('riskUsed').textContent='—'; return;
+  const plan=p?.optionPlan||{};
+  const usable=!!plan.available && p?.signalState==='CONFIRMED' && p?.action!=='NO TRADE';
+  if(!usable){
+    state.textContent=p?.signalState==='CONFIRMED'?'OPTION WAIT':'WAIT';
+    $('riskLots').textContent='—'; $('riskQty').textContent='—'; $('riskUsed').textContent='—';
+    return;
   }
+  window.selectedContract={contract:plan.contract,symbol:plan.symbol,token:plan.token,underlying:plan.underlying,expiry:plan.expiry,optionType:plan.optionType,strike:plan.strike,exchange:'NFO',lotsize:plan.lotSize,ltp:plan.entry};
   try{
     const rs=await getJSON('/api/risk/status');
-    const body={symbol,expiry:c.expiry,strike:Number(c.strike)/100,optionType:String(c.optionType).toUpperCase(),riskBudget:Number(rs.riskBudgetRupees||1000),underlyingStopPoints:Math.abs(Number(plan.entry)-Number(plan.sl))};
+    const body={symbol,expiry:plan.expiry,strike:Number(plan.strike),optionType:String(plan.optionType).toUpperCase(),riskBudget:Number(rs.riskBudgetRupees||1000),underlyingStopPoints:Math.abs(Number(plan.underlyingEntry)-Number(plan.underlyingStop))};
     const r=await postJSON('/api/risk/position-size',body);
     state.textContent=r.greekRisk?.status||'PASS';
-    $('riskLots').textContent=r.sizing?.recommendedLots??'—'; $('riskQty').textContent=r.sizing?.recommendedQuantity??'—'; $('riskUsed').textContent=r.sizing?.usedRisk!=null?money(r.sizing.usedRisk):'—';
-    $('riskDelta').textContent=r.delta!=null?Number(r.delta).toFixed(3):'—'; $('riskTheta').textContent=r.theta!=null?Number(r.theta).toFixed(2):'—'; $('riskIV').textContent=r.iv!=null?Number(r.iv).toFixed(2)+'%':'—';
-    $('riskGreekGuard').textContent=r.greekRisk?.status||'WAIT'; setP10Tone($('riskGreekGuard'),r.greekRisk?.status==='PASS'?'BULLISH':r.greekRisk?.status==='NO TRADE'?'BEARISH':'NEUTRAL');
-    $('riskGreekMessage').textContent=(r.greekRisk?.message||'')+' • Entry ₹'+Number(r.entry).toFixed(2)+' • Option SL ₹'+Number(r.optionStopLoss).toFixed(2)+' • Lot '+r.lotSize;
+    $('riskLots').textContent=r.sizing?.recommendedLots??'—';
+    $('riskQty').textContent=r.sizing?.recommendedQuantity??'—';
+    $('riskUsed').textContent=r.sizing?.usedRisk!=null?money(r.sizing.usedRisk):'—';
+    $('riskDelta').textContent=r.delta!=null?Number(r.delta).toFixed(3):'—';
+    $('riskTheta').textContent=r.theta!=null?Number(r.theta).toFixed(2):'—';
+    $('riskIV').textContent=r.iv!=null?Number(r.iv).toFixed(2)+'%':'—';
+    $('riskGreekGuard').textContent=r.greekRisk?.status||'WAIT';
+    setP10Tone($('riskGreekGuard'),r.greekRisk?.status==='PASS'?'BULLISH':r.greekRisk?.status==='NO TRADE'?'BEARISH':'NEUTRAL');
+    $('riskGreekMessage').textContent=(r.greekRisk?.message||'')+' • Contract '+(r.contract||plan.contract)+' • Entry ₹'+Number(r.entry).toFixed(2)+' • Option SL ₹'+Number(r.optionStopLoss).toFixed(2)+' • Lot '+r.lotSize;
   }catch(e){
-    state.textContent='WAIT'; $('riskLots').textContent='—'; $('riskQty').textContent='—'; $('riskUsed').textContent='—'; $('riskGreekMessage').textContent=e.message||'Live risk sizing unavailable.';
+    state.textContent='WAIT'; $('riskLots').textContent='—'; $('riskQty').textContent='—'; $('riskUsed').textContent='—';
+    $('riskGreekMessage').textContent=e.message||'Live risk sizing unavailable.';
   }
 }
 function renderPredictionPanel(r){
@@ -1538,18 +1549,20 @@ function renderPredictionPanel(r){
   $('riskGreekGuard').textContent=gr; setP10Tone($('riskGreekGuard'),gr==='PASS'?'BULLISH':gr==='NO TRADE'?'BEARISH':'NEUTRAL');
   $('riskGreekMessage').textContent=p.greekRisk?.message||((p.noTradeReasons||[]).find(x=>String(x).includes('Theta'))||'Select a live option contract after a confirmed setup.');
 
-  const plan=p.finalPlan||{};
+  const plan=p?.optionPlan||{};
   $('finalPlanDirection').textContent=p.action||'NO TRADE'; setP10Tone($('finalPlanDirection'),p.action);
-  const usable=!!plan.available && p.signalState==='CONFIRMED';
+  const usable=!!plan.available && p.signalState==='CONFIRMED' && p.action!=='NO TRADE';
+  $('finalPlanContract').textContent=usable?(plan.contract||'—'):'—';
+  $('finalPlanContractMeta').textContent=usable ? ('₹'+Number(plan.entry||0).toFixed(2)+' • '+(plan.optionType||'')+' • Strike '+(plan.strike||'—')+' • Lot '+(plan.lotSize||'—')) : 'Live option premium target band ₹25–₹50';
   $('finalPlanEntry').textContent=usable?(plan.entry??'—'):'—';
-  $('finalPlanSL').textContent=usable?(plan.sl??'—'):'—';
+  $('finalPlanSL').textContent=usable?(plan.stopLoss??'—'):'—';
   $('finalPlanT1').textContent=usable?(plan.target1??'—'):'—';
   $('finalPlanT2').textContent=usable?(plan.target2??'—'):'—';
-  $('finalPlanRR').textContent=usable?`1:${plan.rr1||'2.0'} / 1:${plan.rr2||'2.5'}`:'—';
+  $('finalPlanRR').textContent=usable?('1:'+(plan.rr1||'2.0')+' / 1:'+(plan.rr2||'2.5')):'—';
   $('finalPlanBar').textContent=p.signalState==='CONFIRMED'?`CONFIRMED • ${p.signalBarTime?chartTime(p.signalBarTime):'CLOSED 5M'}`:(p.signalState||'WAIT')+' • CLOSED 5M';
   $('finalPlanNote').textContent=usable
-    ? `${plan.mode||'UNDERLYING TRIGGER'} • ${plan.invalidation||'Wait for invalidation/SL hit.'}. Final SL and targets are shown separately so they are not confused with the entry signal. Option premium levels still require the selected live contract.`
-    : 'NO TRADE right now. Entry, Stop Loss and Targets stay blank until a confirmed setup on a closed 5M candle passes the multi-timeframe, options, news, global and event gates.';
+    ? ('BUY '+plan.contract+' only in the live quoted ₹25–₹50 band. Entry ₹'+Number(plan.entry).toFixed(2)+' • SL ₹'+Number(plan.stopLoss).toFixed(2)+' • T1 ₹'+Number(plan.target1).toFixed(2)+' • T2 ₹'+Number(plan.target2).toFixed(2)+' • Delta '+plan.delta+' • Theta/day '+plan.theta+'. Levels are calculated from the live contract and underlying ATR/Delta; they are planning levels, not guaranteed profit.')
+    : 'NO TRADE right now. The system will not recommend a contract until the live confirmed signal passes all required gates and a quoted option in ₹25–₹50 also passes Delta/Theta/liquidity checks.';
 
   const labels={trend:'1H trend',setup:'15M setup',trigger:'5M trigger',momentum:'Momentum',volume:'Volume',strength:'ADX',options:'Options / OI',greeks:'Theta / Delta',news:'News / macro',global:'Global risk',eventSafe:'Event safe'};
   const grid=$('p10ConfirmGrid');  grid.innerHTML=Object.entries(labels).map(([k,label])=>{const yes=!!p.confirmations?.[k];return `<div class="confirm-item"><span>${label}</span><b class="${yes?'yes':'no'}">${yes?'✓ CONFIRMED':'WAIT'}</b></div>`}).join('');
