@@ -977,7 +977,9 @@ app.get("/api/health",(req,res)=>res.json({ok:true,service:"PARTHAVI TRADE DESK 
 app.get("/api/keepalive",async(req,res)=>{
   try{
     const st=angelStatus();
-    if(st.connected && !st.websocket){ try{ await angelReconnectWebSocket(); }catch{} }
+    // Keepalive must not create an off-hours WebSocket attempt. During NSE closed hours
+    // the session is simply reported and allowed to remain quiet until the next market open.
+    if(st.connected && !st.websocket && marketSession()){ try{ await angelReconnectWebSocket(); }catch{} }
     const after=angelStatus();
     res.json({ok:true,service:"PARTHAVI TRADE DESK PRO",keepalive:true,angelConnected:after.connected,websocket:after.websocket,lastTickAt:after.lastTickAt,time:nowISO()});
   }catch(e){res.json({ok:true,service:"PARTHAVI TRADE DESK PRO",keepalive:true,angelConnected:false,websocket:false,error:e?.message||"keepalive check failed",time:nowISO()});}
