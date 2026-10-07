@@ -6,8 +6,8 @@ function b(v, d=false){ if(v==null) return d; return ['1','true','yes','on'].inc
 function present(v){ return Boolean(v && !/^replace_|^change_me|^your_/i.test(String(v).trim())); }
 function productionReadiness({angelConnected=false, marketOpen=false, exchange='NSE'}={}){
   const env={
-    apiKey: present(process.env.ANGEL_API_KEY),
-    clientCode: present(process.env.ANGEL_CLIENT_CODE),
+    apiKey: present(process.env.ANGEL_API_KEY || process.env.ANGELONE_API_KEY),
+    clientCode: present(process.env.ANGEL_CLIENT_CODE || process.env.ANGELONE_CLIENT_CODE),
     phase11Secret: present(process.env.PHASE11_SECRET),
     httpsConfigured: b(process.env.FORCE_HTTPS,false) || b(process.env.ALLOW_HTTP_LOCAL,true),
     orderExecution: b(process.env.ORDER_EXECUTION_ENABLED,false),
