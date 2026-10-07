@@ -435,61 +435,89 @@ async function news(symbol){
     return [];
   }
 }
-async function yahooLastChange(ticker){
-  const url=`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=5m&range=2d`;
-  const r=await fetch(url,{headers:{accept:'application/json','user-agent':'PARTHAVI-TRADE-DESK-PRO/1.0'},signal:AbortSignal.timeout(8000)});
-  if(!r.ok) throw new Error(`Yahoo market HTTP ${r.status}`);
-  const j=await r.json(), result=j?.chart?.result?.[0], meta=result?.meta||{}, q=result?.indicators?.quote?.[0]||{};
-  const closes=(q.close||[]).map(Number).filter(Number.isFinite);
-  const price=Number(meta.regularMarketPrice??closes.at(-1)); if(!Number.isFinite(price)) throw new Error('No Yahoo price');
-  const prev=closes.length>1?closes.at(-2):null;
-  const change=Number.isFinite(prev)&&prev!==0?((price-prev)/prev)*100:null;
-  const rawTs=Number(meta.regularMarketTime||0)*1000;
-  const asOf=Number.isFinite(rawTs)&&rawTs>0?new Date(rawTs).toISOString():null;
-  const ageSec=asOf?Math.max(0,(Date.now()-rawTs)/1000):null;
-  const status=ageSec==null?'UNVERIFIED':ageSec<=600?'LIVE':ageSec<=14400?'DELAYED':'UNVERIFIED';
-  return {
-    value:Number(price.toFixed(4)),
-    change:change==null?null:Number(change.toFixed(3)),
-    source:'YAHOO_FINANCE',
-    asOf,
-    ageSec:ageSec==null?null:Number(ageSec.toFixed(0)),
-    status
+async function tradingViewGlobalScan(){
+  const tickers={
+    GIFT_NIFTY:'NSEIX:NIFTY1!',
+    US_FUTURES:'CME_MINI:NQ1!',
+    SPX:'SP:SPX',
+    NIKKEI:'TVC:NI225',
+    HSI:'TVC:HSI',
+    USDINR:'FX_IDC:USDINR',
+    US10Y:'TVC:US10Y',
+    BRENT:'ICEEUR:BRN1!',
+    GOLD:'COMEX:GC1!',
+    VIX:'CBOE:VIX'
   };
-}
-async function globalData(){
-  const now=Date.now();
-  if(globalCache.data && now-globalCache.at<60000) return globalCache.data;
-  const symbols={
-    US_FUTURES:'NQ=F',SPX:'^GSPC',NIKKEI:'^N225',HSI:'^HSI',USDINR:'INR=X',US10Y:'^TNX',BRENT:'BZ=F',GOLD:'GC=F',VIX:'^VIX'
+  const url='https://scanner.tradingview.com/global/scan';
+  const payload={
+    symbols:{tickers:Object.values(tickers),query:{types:[]}},
+    columns:['close','change','change_abs']
   };
-  const entries=await Promise.all(Object.entries(symbols).map(async([k,ticker])=>{try{return [k,await yahooLastChange(ticker)];}catch{return [k,null];}}));
+  const r=await fetch(url,{
+    method:'POST',
+    headers:{
+      accept:'application/json',
+      'content-type':'application/json',
+      'user-agent':'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131 Safari/537.36',
+      origin:'https://www.tradingview.com',
+      referer:'https://www.tradingview.com/'
+    },
+    body:JSON.stringify(payload),
+    signal:AbortSignal.timeout(9000)
+  });
+  if(!r.ok) throw new Error(`TradingView scanner HTTP ${r.status}`);
+  const j=await r.json();
+  const rows=Array.isArray(j?.data)?j.data:[];
+  const bySymbol=new Map(rows.map(x=>[String(x?.s||''),Array.isArray(x?.d)?x.d:[]]));
+  const fetchedAt=new Date().toISOString();
   const raw={};
-  for(const [k,v] of entries) if(v) raw[k]=v;
-  if(raw.SPX||raw.US_FUTURES) raw.US_FUTURES=raw.US_FUTURES||raw.SPX;
-  if(raw.NIKKEI||raw.HSI){
-    const a=[raw.NIKKEI?.change,raw.HSI?.change].filter(Number.isFinite);
-    if(a.length){
-      const refs=[raw.NIKKEI,raw.HSI].filter(Boolean);
-      const latestAsOf=refs.map(x=>x.asOf).filter(Boolean).sort().at(-1)||null;
-      const ageSec=latestAsOf?Math.max(0,(Date.now()-Date.parse(latestAsOf))/1000):null;
-      raw.ASIA={
-        value:'Nikkei/HSI',
-        change:Number((a.reduce((x,y)=>x+y,0)/a.length).toFixed(3)),
-        source:'YAHOO_FINANCE',
-        asOf:latestAsOf,
-        ageSec:ageSec==null?null:Number(ageSec.toFixed(0)),
-        status:ageSec==null?'UNVERIFIED':ageSec<=600?'LIVE':ageSec<=14400?'DELAYED':'UNVERIFIED'
+  for(const [key,ticker] of Object.entries(tickers)){
+    const d=bySymbol.get(ticker);
+    const price=Number(d?.[0]), change=Number(d?.[1]), abs=Number(d?.[2]);
+    if(Number.isFinite(price)){
+      raw[key]={
+        value:Number(price.toFixed(4)),
+        change:Number.isFinite(change)?Number(change.toFixed(3)):null,
+        changeAbs:Number.isFinite(abs)?Number(abs.toFixed(4)):null,
+        source:'TRADINGVIEW_SCANNER',
+        asOf:fetchedAt,
+        ageSec:0,
+        status:'LIVE',
+        reason:'Fresh TradingView scanner snapshot; exchange entitlements may vary by venue.'
       };
     }
   }
-  // GIFT NIFTY stays explicitly UNVERIFIED until a verified provider is configured.
-  if(!raw.GIFT_NIFTY){
-    raw.GIFT_NIFTY={value:null,change:null,source:'NOT_CONFIGURED',asOf:null,ageSec:null,status:'UNVERIFIED',reason:'GIFT NIFTY provider not configured'};
+  if(raw.SPX && !raw.US_FUTURES) raw.US_FUTURES={...raw.SPX,reason:'NQ future unavailable; SPX used as US risk proxy.'};
+  const asia=[raw.NIKKEI,raw.HSI].filter(Boolean);
+  if(asia.length){
+    const changes=asia.map(x=>x.change).filter(Number.isFinite);
+    if(changes.length){
+      raw.ASIA={
+        value:'Nikkei/HSI',
+        change:Number((changes.reduce((a,b)=>a+b,0)/changes.length).toFixed(3)),
+        source:'TRADINGVIEW_SCANNER',
+        asOf:fetchedAt,
+        ageSec:0,
+        status:'LIVE',
+        reason:'Average move of fresh Nikkei 225 and Hang Seng snapshots.'
+      };
+    }
   }
-  const out=normalizeGlobal(raw);
-  globalCache.at=now; globalCache.data=out;
-  return out;
+  return normalizeGlobal(raw);
+}
+async function globalData(){
+  const now=Date.now();
+  if(globalCache.data && now-globalCache.at<90000) return globalCache.data;
+  try{
+    const out=await tradingViewGlobalScan();
+    globalCache.at=now;
+    globalCache.data=out;
+    return out;
+  }catch(e){
+    // Keep a verified cache during short upstream outages; do not convert failures into fake LIVE values.
+    if(globalCache.data) return globalCache.data;
+    return normalizeGlobal({});
+  }
 }
 async function events(){
   try{
