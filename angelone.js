@@ -362,30 +362,21 @@ function marketHoursNow(){
 async function refreshSessionTokens(){
   if(!session.connected || !session.refreshToken || !angelApiKey()) return false;
   try{
-    const headers={
-      'Content-Type':'application/json','Accept':'application/json',
-      'Authorization':`Bearer ${session.jwtToken||''}`,'X-UserType':'USER','X-SourceID':'WEB',
-      'X-ClientLocalIP':(process.env.ANGEL_CLIENT_LOCAL_IP || process.env.ANGELONE_CLIENT_LOCAL_IP || '127.0.0.1'),
-      'X-ClientPublicIP':(process.env.ANGEL_CLIENT_PUBLIC_IP || process.env.ANGELONE_PUBLIC_IP || '127.0.0.1'),
-      'X-MACAddress':(process.env.ANGEL_MAC_ADDRESS || process.env.ANGELONE_MAC_ADDRESS || '00:00:00:00:00:00'),
-      'X-PrivateKey':angelApiKey()
-    };
-    const r=await fetch('https://apiconnect.angelone.in/rest/auth/angelbroking/jwt/v1/generateTokens',{method:'POST',headers,body:JSON.stringify({refreshToken:session.refreshToken}),signal:AbortSignal.timeout(8000)});
-    const out=await r.json().catch(()=>({}));
-    if(!r.ok || !out?.status || !out?.data?.jwtToken || !out?.data?.feedToken) throw new Error(out?.message||`Token refresh HTTP ${r.status}`);
+    const out=api && typeof api.generateToken==='function'
+      ? await api.generateToken(session.refreshToken)
+      : null;
+    if(!out?.status || !out?.data?.jwtToken || !out?.data?.feedToken) throw new Error(out?.message||'Angel One token refresh failed');
     session.jwtToken=out.data.jwtToken;
     session.refreshToken=out.data.refreshToken||session.refreshToken;
     session.feedToken=out.data.feedToken;
-    if(api){
-      try{ api.setAccessToken?.(session.jwtToken); }catch{}
-      try{ api.setRefreshToken?.(session.refreshToken); }catch{}
-      try{ api.setFeedToken?.(session.feedToken); }catch{}
-    }
+    try{ api?.setAccessToken?.(session.jwtToken); }catch{}
+    try{ api?.setRefreshToken?.(session.refreshToken); }catch{}
+    try{ api?.setFeedToken?.(session.feedToken); }catch{}
     wsConnected=false; wsError=null;
     try{ if(ws){ws.close?.();ws.closeConnection?.();} }catch{}
     ws=null;
     await connectMarketWebSocket();
-    console.log('[ANGEL_AUTH] tokens refreshed + websocket restored');
+    console.log('[ANGEL_AUTH] token refreshed + websocket restored');
     scheduleTokenRefresh();
     return true;
   }catch(e){
