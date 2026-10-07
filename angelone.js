@@ -2,6 +2,11 @@ import SmartApiPackage from "smartapi-javascript";
 import address from "address";
 
 const { SmartAPI, WebSocketV2 } = SmartApiPackage;
+
+function angelApiKey(){
+  return String(process.env.ANGEL_API_KEY || process.env.ANGELONE_API_KEY || '').trim();
+}
+
 const MASTER_URL = "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json";
 
 let api = null;
@@ -27,10 +32,11 @@ export function angelStatus(){
 }
 
 export async function loginAngel({clientCode, pin, totp}){
-  if(!(process.env.ANGEL_API_KEY || process.env.ANGELONE_API_KEY)) throw new Error("ANGEL_API_KEY is not configured on the server");
+  const apiKey=angelApiKey();
+  if(!apiKey) throw new Error("ANGEL_API_KEY / ANGELONE_API_KEY is not configured on the server");
   const cc = clientCode || (process.env.ANGEL_CLIENT_CODE || process.env.ANGELONE_CLIENT_CODE);
   if(!cc || !pin || !totp) throw new Error("Client code, PIN and TOTP are required");
-  api = new SmartAPI({api_key:process.env.ANGEL_API_KEY});
+  api = new SmartAPI({api_key:apiKey});
   const data = await api.generateSession(cc, pin, totp);
   if(!data?.status) throw new Error(data?.message || "Angel One login failed");
   session = {connected:true, clientCode:cc, loginAt:new Date().toISOString(), jwtToken:data.data?.jwtToken||null, feedToken:data.data?.feedToken||null, profile:null};
@@ -153,7 +159,7 @@ export async function optionGreeks({name, expirydate}){
   const headers={
     'Content-Type':'application/json',
     'Accept':'application/json',
-    'X-PrivateKey':String(process.env.ANGEL_API_KEY||''),
+    'X-PrivateKey':angelApiKey(),
     'Authorization':`Bearer ${jwtToken}`,
     'X-SourceID':'WEB',
     'X-ClientLocalIP':'127.0.0.1',
@@ -169,13 +175,13 @@ export async function optionGreeks({name, expirydate}){
 
 
 function secureHeaders(){
-  if(!session.jwtToken || !process.env.ANGEL_API_KEY) throw new Error("Angel One secure session is not ready");
+  if(!session.jwtToken || !angelApiKey()) throw new Error("Angel One secure session is not ready");
   return {
     'Content-Type':'application/json',
     'Accept':'application/json',
     'X-UserType':'USER',
     'X-SourceID':'WEB',
-    'X-PrivateKey':String(process.env.ANGEL_API_KEY).trim(),
+    'X-PrivateKey':angelApiKey(),
     'Authorization':`Bearer ${session.jwtToken}`,
     'X-ClientLocalIP':(process.env.ANGEL_CLIENT_LOCAL_IP || process.env.ANGELONE_CLIENT_LOCAL_IP) || '127.0.0.1',
     'X-ClientPublicIP':(process.env.ANGEL_CLIENT_PUBLIC_IP || process.env.ANGELONE_PUBLIC_IP) || '127.0.0.1',
@@ -350,7 +356,7 @@ async function connectMarketWebSocket(){
 
   const socket=new WebSocketV2({
     jwttoken:session.jwtToken,
-    apikey:process.env.ANGEL_API_KEY,
+    apikey:angelApiKey(),
     clientcode:session.clientCode,
     feedtype:session.feedToken
   });
