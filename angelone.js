@@ -449,10 +449,29 @@ async function refreshSessionTokens(){
 function scheduleTokenRefresh(delayOverride=0){
   if(tokenRefreshTimer){clearTimeout(tokenRefreshTimer);tokenRefreshTimer=null;}
   if(!session.connected) return;
+
+  // Do not rotate a fresh JWT immediately after login. SmartAPI sessions can
+  // have short-lived JWTs, and reconnecting the WebSocket during that window
+  // can create a second socket while the first is still settling.
   const exp=jwtExpiryMs(session.jwtToken);
-  let delay=Number(delayOverride)>0?Number(delayOverride):(exp?Math.max(60000,exp-Date.now()-120000):30*60*1000);
+  let delay;
+  if(Number(delayOverride)>0){
+    delay=Number(delayOverride);
+  }else if(exp){
+    const untilExpiry=exp-Date.now();
+    // Refresh once near expiry, not two minutes before expiry.
+    // If the token is already close to expiry, wait at least 60s.
+    delay=Math.max(60000,untilExpiry-30000);
+  }else{
+    // If no expiry is exposed, rely on the SDK/session-expiry hook and
+    // authenticated REST retry instead of periodic forced WebSocket churn.
+    return;
+  }
   delay=Math.min(Math.max(delay,60000),55*60*1000);
-  tokenRefreshTimer=setTimeout(async()=>{tokenRefreshTimer=null;await refreshSessionTokens();},delay);
+  tokenRefreshTimer=setTimeout(async()=>{
+    tokenRefreshTimer=null;
+    await refreshSessionTokens();
+  },delay);
 }
 function startConnectionGuards(){
   scheduleTokenRefresh();
