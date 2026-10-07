@@ -568,12 +568,21 @@ app.post("/api/angel/ltp", async (req,res)=>{ try { res.json({ok:true,data:await
 app.post("/api/angel/quote", async (req,res)=>{ try { res.json({ok:true,data:await angelQuote(req.body?.mode||"FULL", req.body?.exchangeTokens||{})}); } catch(e){ res.status(401).json({ok:false,error:e?.message||"Quote failed"}); } });
 app.post("/api/angel/candles", async (req,res)=>{ try { res.json({ok:true,data:await angelCandles(req.body||{})}); } catch(e){ res.status(401).json({ok:false,error:e?.message||"Candle request failed"}); } });
 app.post("/api/angel/search", async (req,res)=>{ try { res.json({ok:true,data:await angelSearchScrip(req.body||{})}); } catch(e){ res.status(401).json({ok:false,error:e?.message||"Search failed"}); } });
-app.get("/api/angel/master", async (req,res)=>{ try { const items=await loadMaster(req.query.force==="1"); res.json({ok:true,count:items.length,loadedAt:new Date().toISOString()}); } catch(e){ res.status(502).json({ok:false,error:e?.message||"Instrument master unavailable"}); } });
+app.get("/api/angel/master", async (req,res)=>{
+  if(!boolEnv('ALLOW_FULL_MASTER',false)) return res.status(423).json({ok:false,error:'FULL_MASTER_DISABLED_ON_FREE_TIER',message:'Full instrument-master endpoint is disabled on the 512 MB runtime.'});
+  try { const items=await loadMaster(req.query.force==="1"); res.json({ok:true,count:items.length,loadedAt:new Date().toISOString()}); } catch(e){ res.status(502).json({ok:false,error:e?.message||"Instrument master unavailable"}); }
+});
 app.get("/api/angel/expiries", async (req,res)=>{
   try{
     const exchange=(req.query.exchange||"NSE").toUpperCase();
     const segment=(req.query.segment||"OPTIDX").toUpperCase();
     const underlying=String(req.query.underlying||"").trim().toUpperCase();
+    if(exchange==='NSE' && (segment==='OPTIDX'||segment==='OPTSTK')){
+      const items=await findLightContracts({underlying});
+      const expiries=[...new Set(items.map(x=>String(x.expiry||'').trim().toUpperCase()).filter(Boolean))].sort();
+      return res.json({ok:true,connected:angelStatus().connected,exchange,segment,underlying,expiries:expiries.slice(0,24)});
+    }
+    if(!boolEnv('ALLOW_FULL_MASTER',false)) return res.status(423).json({ok:false,error:'FULL_MASTER_DISABLED_ON_FREE_TIER',message:'This exchange/segment requires the full instrument master, which is disabled on the 512 MB runtime.'});
     const items=await loadMaster();
     const q=underlying;
     const optionLike=segment==='OPTIDX'||segment==='OPTSTK';
@@ -639,12 +648,15 @@ app.get("/api/angel/connection-test",async(req,res)=>{
     const target=String(req.query.symbol||"NIFTY").toUpperCase();
     const known={NIFTY:["Nifty 50","99926000"],BANKNIFTY:["Nifty Bank","99926009"],FINNIFTY:["Nifty Fin Service","99926037"],MIDCPNIFTY:["NIFTY MID SELECT","99926074"],VIX:["India VIX","99926017"]};
     let match=known[target]?{symbol:known[target][0],token:known[target][1],exchange:"NSE"}:null;
-    const items=match?[]:await loadMaster();
     if(!match){
       const aliases={NIFTY:["NIFTY","NIFTY 50"],BANKNIFTY:["BANKNIFTY","BANK NIFTY"],FINNIFTY:["FINNIFTY","NIFTY FIN SERVICE"],MIDCPNIFTY:["MIDCPNIFTY","NIFTY MID SELECT"],SENSEX:["SENSEX"],VIX:["INDIAVIX","INDIA VIX","VIX"]};
       const aliasesFor=aliases[target]||[target];
-      match=items.find(x=>String(x.exch_seg).toLowerCase()==="nse_cm" && aliasesFor.some(a=>String(x.name||"").toUpperCase()===a || String(x.symbol||"").toUpperCase().includes(a)));
-      if(match) match={symbol:match.symbol,token:match.token,exchange:"NSE"};
+      try{
+        const sr=await angelSearchScrip({exchange:'NSE',searchscrip:aliasesFor[0]});
+        const candidates=Array.isArray(sr?.data)?sr.data:[];
+        const x=candidates.find(z=>aliasesFor.some(a=>String(z.name||z.symbol||'').toUpperCase().includes(a)));
+        if(x) match={symbol:x.symbol,token:x.token,exchange:'NSE'};
+      }catch{}
     }
     if(!match) return res.status(404).json({ok:false,connected:true,error:`${target} instrument not found in master`});
     const q=await angelLtp({exchange:"NSE",tradingsymbol:match.symbol,symboltoken:match.token});
@@ -802,7 +814,7 @@ app.post('/api/order/modify',async(req,res)=>{
     if(!gate.executionEnabled||!gate.staticIpVerified) return res.status(423).json({ok:false,error:'ORDER_EXECUTION_GATE_BLOCKED'});
     if(String(req.body?.confirmation||'').trim().toUpperCase()!=='MODIFY LIVE ORDER') return res.status(400).json({ok:false,error:'EXPLICIT_CONFIRMATION_REQUIRED'});
     const p=req.body||{}; const orderid=String(p.orderid||''); if(!orderid) return res.status(400).json({ok:false,error:'ORDER_ID_REQUIRED'});
-    const instrument=await findInstrumentByToken(p.symboltoken); if(!instrument) return res.status(400).json({ok:false,error:'INVALID_INSTRUMENT'});
+    const instrument=await findInstrumentByToken(p.symboltoken,{symbol:p.tradingsymbol||p.symbol,exchange:p.exchange,lotsize:p.lotsize||p.lotSize,expiry:p.expiry,strike:p.strike,optionType:p.optionType}); if(!instrument) return res.status(400).json({ok:false,error:'INVALID_INSTRUMENT'});
     const ordertype=String(p.ordertype||'LIMIT').toUpperCase();
     const quantity=Number(p.quantity); if(!Number.isInteger(quantity)||quantity<=0) return res.status(400).json({ok:false,error:'INVALID_QUANTITY'});
     const price=ordertype==='MARKET'?0:positiveNumber(p.price); if(ordertype!=='MARKET'&&!price) return res.status(400).json({ok:false,error:'PRICE_REQUIRED'});
@@ -819,7 +831,7 @@ app.post('/api/position/exit/preview',async(req,res)=>{
     if(!row) return res.status(404).json({ok:false,error:'OPEN_POSITION_NOT_FOUND'});
     const netQty=Number(row.netqty??((Number(row.buyqty)||0)-(Number(row.sellqty)||0)));
     const side=netQty>0?'SELL':'BUY'; const qty=Math.abs(netQty);
-    const instrument=await findInstrumentByToken(token); if(!instrument) return res.status(400).json({ok:false,error:'INVALID_INSTRUMENT'});
+    const instrument=await findInstrumentByToken(token,{symbol:row.tradingsymbol,exchange:row.exchange,lotsize:row.lotsize||row.lotSize}); if(!instrument) return res.status(400).json({ok:false,error:'INVALID_INSTRUMENT'});
     const id=`PTD9-EXIT-${Date.now()}-${Math.random().toString(36).slice(2,8).toUpperCase()}`;
     execution.previews.set(id,{id,createdAt:Date.now(),expiresAt:Date.now()+60000,order:{variety:'NORMAL',tradingsymbol:String(instrument.symbol),symboltoken:String(instrument.token),transactiontype:side,exchange:String(row.exchange||executionStatus().exchange),ordertype:'MARKET',producttype:String(row.producttype||'INTRADAY').toUpperCase(),duration:'DAY',price:'0',squareoff:'0',stoploss:'0',quantity:String(qty),scripconsent:'yes'},maxLoss:null,allowedRisk:null,instrument:{symbol:instrument.symbol,token:String(instrument.token),exchange:row.exchange,lotSize:Number(instrument.lotsize||1)}});
     res.json({ok:true,previewId:id,expiresInSec:60,position:{symbol:row.tradingsymbol,netQty,avgPrice:row.avgnetprice||row.buyavgprice||row.sellavgprice||0,pnl:row.pnl||row.m2m||0},order:execution.previews.get(id).order,message:'Exit preview ready. No broker order has been placed.'});
@@ -853,7 +865,7 @@ app.post('/api/order/preview',async(req,res)=>{
     if(!gate.executionEnabled) return res.status(423).json({ok:false,error:'ORDER_EXECUTION_DISABLED'});
     if(!gate.staticIpVerified) return res.status(423).json({ok:false,error:'STATIC_IP_NOT_VERIFIED'});
     const p=req.body||{};
-    const instrument=await findInstrumentByToken(p.symboltoken||p.token);
+    const instrument=await findInstrumentByToken(p.symboltoken||p.token,{symbol:p.tradingsymbol||p.symbol,exchange:exchangeHint,lotsize:p.lotsize||p.lotSize,expiry:p.expiry,strike:p.strike,optionType:p.optionType});
     const v=validateOrderInput(p,instrument);
     if(v.errors.length) return res.status(400).json({ok:false,error:'ORDER_VALIDATION_FAILED',errors:v.errors});
     let openPositions=0;
@@ -890,7 +902,7 @@ app.post('/api/order/execute',async(req,res)=>{
     if(String(req.body?.confirmation||'').trim().toUpperCase()!=='PLACE LIVE ORDER') return res.status(400).json({ok:false,error:'EXPLICIT_CONFIRMATION_REQUIRED'});
     const id=String(req.body?.previewId||''); const pv=execution.previews.get(id);
     if(!pv) return res.status(404).json({ok:false,error:'PREVIEW_NOT_FOUND_OR_EXPIRED'});
-    const fresh=await findInstrumentByToken(pv.order.symboltoken);
+    const fresh=await findInstrumentByToken(pv.order.symboltoken,{symbol:pv.order.tradingsymbol,exchange:pv.order.exchange,lotsize:pv.instrument?.lotSize});
     if(!fresh || String(fresh.symbol)!==String(pv.order.tradingsymbol)) return res.status(409).json({ok:false,error:'INSTRUMENT_CHANGED'});
     if(pv.order.transactiontype==='BUY' && isOptionSymbol(fresh.symbol)){
       const snap=pv.phase11?.signalSnapshot||null;
@@ -1073,7 +1085,13 @@ async function resolveIndexToken(symbol){
  const s=String(symbol||'NIFTY').toUpperCase();
  const known={NIFTY:['99926000','Nifty 50'],BANKNIFTY:['99926009','Nifty Bank'],FINNIFTY:['99926037','Nifty Fin Service'],MIDCPNIFTY:['99926074','NIFTY MID SELECT'],VIX:['99926017','India VIX']};
  if(known[s]) return {token:known[s][0],symbol:known[s][1],exchange:'NSE'};
- const items=await loadMaster();
+ try{
+   const sr=await angelSearchScrip({exchange:'NSE',searchscrip:s});
+   const rows=Array.isArray(sr?.data)?sr.data:[];
+   const x=rows.find(z=>String(z.tradingsymbol||z.symbol||z.name||'').toUpperCase().includes(s));
+   if(x) return {token:String(x.token||x.symboltoken),symbol:String(x.tradingsymbol||x.symbol||x.name),exchange:'NSE'};
+ }catch{}
+ throw new Error('Index instrument not found');
  const aliases={NIFTY:['NIFTY','NIFTY 50'],BANKNIFTY:['BANKNIFTY','BANK NIFTY'],FINNIFTY:['FINNIFTY','NIFTY FIN SERVICE'],MIDCPNIFTY:['MIDCPNIFTY','NIFTY MID SELECT'],SENSEX:['SENSEX'],VIX:['INDIAVIX','INDIA VIX','VIX']};
  const arr=aliases[s]||[s];
  let x=items.find(z=>arr.includes(String(z.name||'').toUpperCase())&&(String(z.exch_seg||'').toLowerCase()==='nse_cm'||String(z.exch_seg||'').toUpperCase()==='NSE'));
