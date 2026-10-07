@@ -48,7 +48,7 @@ export async function loginAngel({clientCode, pin, totp}){
   api = new SmartAPI({api_key:apiKey});
   try{ api.setSessionExpiryHook?.(()=>{
     const age=Date.now()-(session.loginAt?Date.parse(session.loginAt):Date.now());
-    if(age<60000) return;
+    if(age<AUTH_REFRESH_GRACE_MS) return;
     void refreshSessionTokens();
   }); }catch{}
   const data = await api.generateSession(cc, pin, totp);
@@ -328,6 +328,83 @@ export async function searchScrip({exchange, searchscrip}){
   return await secureJson("https://apiconnect.angelone.in/rest/secure/angelbroking/order/v1/searchScrip",{method:"POST",headers:secureHeaders(),body:JSON.stringify({exchange,searchscrip})});
 }
 
+const lightMasterCache=new Map();
+const lightMasterInflight=new Map();
+
+function normalizeUnderlyingName(value){
+  const s=String(value||'').trim().toUpperCase();
+  const map={NIFTY:'NIFTY',BANKNIFTY:'BANKNIFTY',FINNIFTY:'FINNIFTY',MIDCPNIFTY:'MIDCPNIFTY',SENSEX:'SENSEX'};
+  return map[s]||s;
+}
+
+async function loadUnderlyingMaster(underlying){
+  const key=normalizeUnderlyingName(underlying);
+  const cached=lightMasterCache.get(key);
+  if(cached && Date.now()-cached.loadedAt<15*60*1000) return cached.items;
+  if(lightMasterInflight.has(key)) return await lightMasterInflight.get(key);
+
+  const job=(async()=>{
+    const r=await fetch(MASTER_URL,{headers:{accept:'application/json','user-agent':'PARTHAVI-TRADE-DESK-PRO/2.0'}});
+    if(!r.ok) throw new Error(`Instrument master HTTP ${r.status}`);
+    const text=await r.text();
+    const items=[];
+    let start=-1,depth=0,inString=false,escaped=false;
+    for(let i=0;i<text.length;i++){
+      const ch=text[i];
+      if(inString){
+        if(escaped) escaped=false;
+        else if(ch==='\\\\') escaped=true;
+        else if(ch==='"') inString=false;
+        continue;
+      }
+      if(ch==='"'){inString=true;continue;}
+      if(ch==='{'){
+        if(depth===0) start=i;
+        depth++;
+      }else if(ch==='}'&&depth>0){
+        depth--;
+        if(depth===0&&start>=0){
+          const end=i+1;
+          const segment=text.slice(start,end);
+          // Only parse the tiny subset belonging to this index's NFO options.
+          if(segment.includes(`"name":"${key}"`) && /"exch_seg":"nse_fo"/i.test(segment) && /"(?:symbol|tradingSymbol)":"[^"]*(?:CE|PE)"/i.test(segment)){
+            try{
+              const x=JSON.parse(segment);
+              items.push({
+                token:x?.token,symbol:x?.symbol,name:x?.name,expiry:x?.expiry,
+                strike:x?.strike,lotsize:x?.lotsize,instrumenttype:x?.instrumenttype,
+                exch_seg:x?.exch_seg,exchange:x?.exchange,tick_size:x?.tick_size
+              });
+            }catch{}
+          }
+          start=-1;
+        }
+      }
+    }
+    if(!items.length) throw new Error(`No NFO contracts found for ${key}`);
+    lightMasterCache.set(key,{loadedAt:Date.now(),items});
+    return items;
+  })();
+
+  lightMasterInflight.set(key,job);
+  try{return await job;}finally{lightMasterInflight.delete(key);}
+}
+
+export async function findLightContracts({underlying='',expiry='',optionType='',strike='',query='' }={}){
+  const key=normalizeUnderlyingName(underlying||query);
+  const items=await loadUnderlyingMaster(key);
+  const ot=String(optionType||'').trim().toUpperCase();
+  const st=strike!==''&&strike!=null?Number(strike):null;
+  return items.filter(x=>{
+    const sym=String(x.symbol||'').toUpperCase();
+    if(!/(?:CE|PE)$/.test(sym)) return false;
+    if(expiry && String(x.expiry||'').toUpperCase()!==String(expiry).toUpperCase()) return false;
+    if(ot && !sym.endsWith(ot)) return false;
+    if(st!==null && Number(x.strike)/100!==st && Number(x.strike)!==st) return false;
+    return true;
+  }).slice(0,300);
+}
+
 export async function loadMaster(force=false){
   if(!force && masterCache.items.length && Date.now()-masterCache.loadedAt < 6*60*60*1000) return masterCache.items;
   if(masterInflight) return await masterInflight;
@@ -444,6 +521,8 @@ function marketHoursNow(){
 async function refreshSessionTokens(){
   if(refreshPromise) return await refreshPromise;
   if(!session.connected || !session.refreshToken || !angelApiKey()) return false;
+  const sessionAge=Date.now()-(session.loginAt?Date.parse(session.loginAt):Date.now());
+  if(sessionAge<AUTH_REFRESH_GRACE_MS) return false;
   if(Date.now()-lastRefreshAt<90000) return false;
   lastRefreshAt=Date.now();
   refreshPromise=(async()=>{
