@@ -962,6 +962,14 @@ app.get('/api/phase6/order-events', async (req,res)=>{
 });
 
 app.get("/api/health",(req,res)=>res.json({ok:true,service:"PARTHAVI TRADE DESK PRO",phase:12,demo:DEMO,time:nowISO(),pid:process.pid,uptimeSec:Math.round(process.uptime())}));
+app.get("/api/keepalive",async(req,res)=>{
+  try{
+    const st=angelStatus();
+    if(st.connected && !st.websocket){ try{ await angelReconnectWebSocket(); }catch{} }
+    const after=angelStatus();
+    res.json({ok:true,service:"PARTHAVI TRADE DESK PRO",keepalive:true,angelConnected:after.connected,websocket:after.websocket,lastTickAt:after.lastTickAt,time:nowISO()});
+  }catch(e){res.json({ok:true,service:"PARTHAVI TRADE DESK PRO",keepalive:true,angelConnected:false,websocket:false,error:e?.message||"keepalive check failed",time:nowISO()});}
+});
 app.get("/api/phase12/readiness",(req,res)=>{
   const exchange=String(req.query.exchange||"NSE").toUpperCase()==="BSE"?"BSE":"NSE";
   const gate=executionStatus(exchange);
