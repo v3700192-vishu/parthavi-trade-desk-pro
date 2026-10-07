@@ -1138,12 +1138,15 @@ body{-webkit-overflow-scrolling:touch}
       }catch(e){
         badge('LOGIN OK • TEST FAILED','danger');note('Angel session connected, but quote/stream verification failed: '+(e?.message||'Unknown error'));
       }
-      if(typeof window.loadBrokerAccount==='function')await window.loadBrokerAccount().catch(()=>{});
-      if(typeof window.loadAll==='function')setTimeout(()=>window.loadAll().catch(()=>{}),250);
-      if(typeof window.loadPrediction==='function')setTimeout(()=>window.loadPrediction(false).catch(()=>{}),350);
-      if(typeof window.loadPhase11Shield==='function')setTimeout(()=>window.loadPhase11Shield().catch(()=>{}),450);
-      if(typeof window.loadPhase12Readiness==='function')setTimeout(()=>window.loadPhase12Readiness().catch(()=>{}),550);
-      if(typeof window.refreshExpiries==='function')setTimeout(()=>window.refreshExpiries().catch(()=>{}),650);
+      // Keep the newly authenticated session quiet while the WebSocket
+      // settles. Heavy dashboard calls are staggered so login does not trigger
+      // a request burst on the small Render free instance.
+      if(typeof window.loadBrokerAccount==='function')setTimeout(()=>window.loadBrokerAccount().catch(()=>{}),1500);
+      if(typeof window.loadAll==='function')setTimeout(()=>window.loadAll().catch(()=>{}),3000);
+      if(typeof window.loadPrediction==='function')setTimeout(()=>window.loadPrediction(false).catch(()=>{}),7000);
+      if(typeof window.loadPhase11Shield==='function')setTimeout(()=>window.loadPhase11Shield().catch(()=>{}),7500);
+      if(typeof window.loadPhase12Readiness==='function')setTimeout(()=>window.loadPhase12Readiness().catch(()=>{}),8000);
+      if(typeof window.refreshExpiries==='function')setTimeout(()=>window.refreshExpiries().catch(()=>{}),9000);
     }catch(e){
       const msg=e?.name==='AbortError'?'Connection timed out after 25 seconds.':(e?.message||'Connection failed');
       badge('CONNECTION ERROR','danger');note('Angel One connection error: '+msg);
