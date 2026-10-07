@@ -1529,8 +1529,7 @@ function renderPredictionPanel(r){
   $('p10HitRate').textContent=hist.available&&hist.targetHitRate!=null?String(hist.targetHitRate)+'%':'NOT CALIBRATED';
   $('p10Signals').textContent=hist.signals??'—'; $('p10Resolved').textContent=hist.resolved??'—'; $('p10WinsLosses').textContent=(hist.wins??'—')+' / '+(hist.losses??'—');
   const exp=hist.available&&hist.targetHitRate!=null?((Number(hist.targetHitRate)/100*1.25)-(1-Number(hist.targetHitRate)/100)).toFixed(2):null; $('p10ExpectedR').textContent=exp==null?'—':(Number(exp)>0?'+':'')+exp+'R';
-  const gateText=(p.noTradeReasons||[]).join(' • ');
-  $('p10Reason').textContent=(p.reasoning||'Waiting for prediction engine.')+(gateText?' | '+gateText:'');
+  $('p10Reason').textContent=p.reasoning||((p.noTradeReasons||[]).join(' • ')||'Waiting for prediction engine.');
   $('p10Meter').style.width=Math.max(0,Math.min(100,Number(p.confirmationPct||0)))+'%';
   $('riskDelta').textContent=p.delta!=null?Number(p.delta).toFixed(3):'—';
   $('riskTheta').textContent=p.theta!=null?Number(p.theta).toFixed(2):'—';
@@ -1554,7 +1553,8 @@ function renderPredictionPanel(r){
 
   const labels={trend:'1H trend',setup:'15M setup',trigger:'5M trigger',momentum:'Momentum',volume:'Volume',strength:'ADX',options:'Options / OI',greeks:'Theta / Delta',news:'News / macro',global:'Global risk',eventSafe:'Event safe'};
   const grid=$('p10ConfirmGrid');  grid.innerHTML=Object.entries(labels).map(([k,label])=>{const yes=!!p.confirmations?.[k];return `<div class="confirm-item"><span>${label}</span><b class="${yes?'yes':'no'}">${yes?'✓ CONFIRMED':'WAIT'}</b></div>`}).join('');
-  $('p10Note').textContent=p.note||'Model output is not a guaranteed probability of profit.';
+  $('p10Note').textContent=(p.note||'Model output is not a guaranteed probability of profit.')
+    + (p.volumeSource ? ' • Volume benchmark source: '+p.volumeSource : (p.volumeUnavailable ? ' • Index volume unavailable; futures proxy is being used when available.' : ''));
   loadRiskSizing(p);
 }
 async function loadPrediction(showToast=false){
