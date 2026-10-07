@@ -1049,6 +1049,89 @@ async function loadBase5m(symbol){
   candleInflight.set(key,job);
   try{return await job;}finally{candleInflight.delete(key);}
 }
+const futuresVolumeCache=new Map();
+const futuresVolumeInflight=new Map();
+
+function istMinuteKey(ts){
+  const d=new Date(ts);
+  if(Number.isNaN(d.getTime())) return null;
+  const p=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(d);
+  const m=Object.fromEntries(p.map(x=>[x.type,x.value]));
+  return `${m.year}-${m.month}-${m.day} ${m.hour}:${m.minute}`;
+}
+function istDayKey(ts){
+  const d=new Date(ts);
+  if(Number.isNaN(d.getTime())) return null;
+  return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);
+}
+function formatAngelDate(ts){
+  const d=new Date(ts);
+  const p=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(d);
+  const m=Object.fromEntries(p.map(x=>[x.type,x.value]));
+  return `${m.year}-${m.month}-${m.day} ${m.hour}:${m.minute}`;
+}
+function fiveMinuteVolumeBenchmark(rows){
+  const usable=(rows||[]).filter(x=>Number.isFinite(Number(x.v))&&Number(x.v)>0&&istDayKey(x.t));
+  if(usable.length<11) return {ratio10d:null,source:null,benchmarkDays:0};
+  const last=usable.at(-1);
+  const slot=istMinuteKey(last.t);
+  const priorDays=[...new Set(usable.slice(0,-1).map(x=>istDayKey(x.t)).filter(Boolean))].slice(-10);
+  const samples=[];
+  for(const day of priorDays){
+    const m=usable.filter(x=>istDayKey(x.t)===day&&istMinuteKey(x.t)===slot);
+    if(m.length) samples.push(Number(m.at(-1).v));
+  }
+  if(!samples.length) return {ratio10d:null,source:null,benchmarkDays:0};
+  const avg=samples.reduce((a,b)=>a+b,0)/samples.length;
+  return {ratio10d:avg>0?Number((Number(last.v)/avg).toFixed(3)):null,source:'NIFTY FUTURES 5M',benchmarkDays:samples.length};
+}
+async function loadFuturesVolume(symbol){
+  const key=String(symbol||'NIFTY').toUpperCase();
+  const cached=futuresVolumeCache.get(key);
+  if(cached&&Date.now()-cached.at<15000) return cached.data;
+  if(futuresVolumeInflight.has(key)) return await futuresVolumeInflight.get(key);
+  const job=(async()=>{
+    try{
+      if(!angelStatus().connected) return {ratio10d:null,source:null,benchmarkDays:0};
+      const contracts=await findContracts({exchange:'NSE',segment:'FUTIDX',underlying:key});
+      const now=Date.now();
+      const parseExpiry=x=>{
+        const m=String(x||'').match(/^(\\d{2})([A-Z]{3})(\\d{4})$/i);
+        if(!m) return 0;
+        const mo={JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11}[m[2].toUpperCase()];
+        return mo==null?0:new Date(Number(m[3]),mo,Number(m[1]),23,59,59).getTime();
+      };
+      const fut=(contracts||[])
+        .filter(x=>String(x.instrumenttype||'').toUpperCase()==='FUTIDX')
+        .filter(x=>parseExpiry(x.expiry)>=now)
+        .sort((a,b)=>parseExpiry(a.expiry)-parseExpiry(b.expiry))[0];
+      if(!fut?.token) return {ratio10d:null,source:null,benchmarkDays:0};
+      const end=new Date(), start=new Date(end.getTime()-15*86400000);
+      let rows=[];
+      for(let cursor=start;cursor<end;cursor=new Date(Math.min(end.getTime(),cursor.getTime()+7*86400000))){
+        const chunkEnd=new Date(Math.min(end.getTime(),cursor.getTime()+7*86400000));
+        try{
+          const raw=await angelCandles({exchange:'NFO',symboltoken:String(fut.token),interval:'FIVE_MINUTE',fromdate:formatAngelDate(cursor),todate:formatAngelDate(chunkEnd)});
+          rows=rows.concat(candleRows(raw));
+        }catch{}
+        if(chunkEnd.getTime()>=end.getTime()) break;
+      }
+      rows=[...new Map(rows.map(x=>[x.t,x])).values()].sort((a,b)=>Date.parse(a.t)-Date.parse(b.t));
+      const result=fiveMinuteVolumeBenchmark(dropIncompleteCandle(rows,5));
+      result.source=result.source?result.source+' • '+String(fut.symbol):null;
+      result.contract=String(fut.symbol||'');
+      result.expiry=String(fut.expiry||'');
+      result.token=String(fut.token||'');
+      futuresVolumeCache.set(key,{at:Date.now(),data:result});
+      return result;
+    }catch{
+      return {ratio10d:null,source:null,benchmarkDays:0};
+    }
+  })();
+  futuresVolumeInflight.set(key,job);
+  try{return await job;}finally{futuresVolumeInflight.delete(key);}
+}
+
 async function loadTfSummary(symbol, interval, days){
   const ins=await resolveIndexToken(symbol); let rows=[];
   if(interval==='FIVE_MINUTE') rows=dropIncompleteCandle(await loadBase5m(symbol),5);
@@ -1117,6 +1200,13 @@ app.get('/api/phase10/prediction',async(req,res)=>{
     }catch{}
     const historical=backtestFiveMinute(m5.rows||[]);
     const vix=Number(md?.VIX?.ltp);
+    const futuresVol=await loadFuturesVolume(symbol);
+    if(Number.isFinite(Number(futuresVol?.ratio10d))){
+      m5.summary.volumeRatio10d=Number(futuresVol.ratio10d);
+      m5.summary.volumeBreakout=Number(futuresVol.ratio10d)>=1.5;
+      m5.summary.volumeUnavailable=false;
+      m5.summary.volumeSource=futuresVol.source;
+    }
     const prediction=buildPrediction({h1:h1.summary,m15:m15.summary,m5:m5.summary,rows5:m5.rows,news:ns,global:gs,events:es,options:opt,marketOpen:marketSession(),backtest:historical,vix:Number.isFinite(vix)?vix:null,oi:opt});
     const candleConnected=Array.isArray(m5.rows)&&m5.rows.length>0;
     res.json({ok:true,phase:10,symbol,prediction,health:{market:candleConnected,options:opt.connected,news:ns.connected,global:gs.connected,eventBlocked:es.hardBlock,eventDayBlock:es.eventDayBlock,vix:Number.isFinite(vix)?vix:null},greeks:opt.greeks||null,greekRisk:opt.greekRisk||{status:'WAIT',message:'Live option Greeks not verified.'},backtest:historical,checkedAt:nowISO()});
@@ -1128,12 +1218,19 @@ app.get("/api/analyze",async(req,res)=>{
   let h={market:false,options:false,news:false,global:false}, packs={};
   try{
     if(angelStatus().connected){
-      const [h1,m15,m5,opt]=await Promise.all([
+      const [h1,m15,m5,opt,volProxy]=await Promise.all([
         loadTfSummary(symbol,'ONE_HOUR',10),
         loadTfSummary(symbol,'FIFTEEN_MINUTE',10),
         loadTfSummary(symbol,'FIVE_MINUTE',10),
-        options(symbol)
+        options(symbol),
+        loadFuturesVolume(symbol)
       ]);
+      if(Number.isFinite(Number(volProxy?.ratio10d))){
+        m5.summary.volumeRatio10d=Number(volProxy.ratio10d);
+        m5.summary.volumeBreakout=Number(volProxy.ratio10d)>=1.5;
+        m5.summary.volumeUnavailable=false;
+        m5.summary.volumeSource=volProxy.source;
+      }
       packs={h1,m15,m5,opt}; h.market=!!(m5?.rows?.length); h.options=!!opt?.connected;
     }
   }catch(e){ packs.error=e.message; }
@@ -1153,7 +1250,8 @@ app.get("/api/analyze",async(req,res)=>{
   let trend=s1?.trend||'WAIT',setup=s15?.trend||'WAIT',trigger=s5?.candle||'WAIT';
   const bullishVotes=[trend==='BULLISH',setup==='BULLISH',s5?.rsi>50,s5?.macd?.hist>0,s5?.last>s5?.vwap,s5?.adx>=20].filter(Boolean).length;
   const bearishVotes=[trend==='BEARISH',setup==='BEARISH',s5?.rsi<50,s5?.macd?.hist<0,s5?.last<s5?.vwap,s5?.adx>=20].filter(Boolean).length;
-  const techSigned = h.market ? ((bullishVotes-bearishVotes)/6)*100 : 0;
+  const voteDenom=Math.max(1,bullishVotes+bearishVotes);
+  const techSigned = h.market ? Number((((bullishVotes-bearishVotes)/Math.max(6,voteDenom))*100).toFixed(1)) : 0;
   const fused=fuse({technicalScore:techSigned,newsScore:newsStrat.score,globalScore:globalStrat.score,eventRisk:eventStrat.hardBlock,marketOpen:marketSession(),feeds:{market:h.market,options:h.options,news:newsStrat.connected,global:globalStrat.connected}});
   score=Math.round(Math.abs(fused.score)); confidence=h.market?(score>=67?'SETUP':score>=45?'WATCH':'WAIT'):'LOCKED';
   if(h.market) reason=`Technical confluence ${Math.round(Math.abs(techSigned))} • News ${newsStrat.bias} • Global ${globalStrat.bias}. ${eventStrat.reason}`;
