@@ -161,10 +161,11 @@ export async function optionGreeks({name, expirydate}){
     'Accept':'application/json',
     'X-PrivateKey':angelApiKey(),
     'Authorization':`Bearer ${jwtToken}`,
+    'X-UserType':'USER',
     'X-SourceID':'WEB',
-    'X-ClientLocalIP':'127.0.0.1',
-    'X-ClientPublicIP':'127.0.0.1',
-    'X-MACAddress':'00:00:00:00:00:00'
+    'X-ClientLocalIP':(process.env.ANGEL_CLIENT_LOCAL_IP || process.env.ANGELONE_CLIENT_LOCAL_IP || '127.0.0.1'),
+    'X-ClientPublicIP':(process.env.ANGEL_CLIENT_PUBLIC_IP || process.env.ANGELONE_PUBLIC_IP || '127.0.0.1'),
+    'X-MACAddress':(process.env.ANGEL_MAC_ADDRESS || process.env.ANGELONE_MAC_ADDRESS || '00:00:00:00:00:00')
   };
   const r=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({name,expirydate:normalizeExpiry(expirydate)})});
   const out=await r.json().catch(()=>({status:false,message:'Invalid JSON'}));
