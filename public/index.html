@@ -347,6 +347,15 @@ body{-webkit-overflow-scrolling:touch}
     transform: none !important;
   }
 }
+
+.live-refresh-wrap{display:flex;align-items:center;gap:6px;border:1px solid var(--line);background:#070d18;border-radius:12px;padding:5px 8px;font-size:8px;color:#9aa8bf}
+.live-refresh-wrap .live-label{letter-spacing:.5px;font-weight:800}
+.live-switch{position:relative;width:34px;height:19px;display:inline-block}
+.live-switch input{opacity:0;width:0;height:0}
+.live-switch span{position:absolute;inset:0;background:#26334a;border-radius:999px;cursor:pointer;transition:.2s}
+.live-switch span:before{content:'';position:absolute;width:15px;height:15px;left:2px;top:2px;background:#fff;border-radius:50%;transition:.2s}
+.live-switch input:checked+span{background:#1dbb83}
+.live-switch input:checked+span:before{transform:translateX(15px)}
 </style>
 
 </head>
@@ -443,7 +452,7 @@ body{-webkit-overflow-scrolling:touch}
     </svg></div>
     <div><h1>PARTHAVI TRADE DESK PRO</h1><p>LIVE MARKET • OPTIONS FUSION • NEWS • GLOBAL RISK • CONTROLLED EXECUTION</p></div>
   </div>
-  <div class="top-actions"><button class="btn primary" id="installAppBtn" style="display:none">📲 Install App</button>
+  <div class="top-actions"><button class="btn primary" id="installAppBtn" style="display:none">📲 Install App</button><div class="live-refresh-wrap"><span class="live-label">LIVE AUTO</span><label class="live-switch"><input id="liveRefreshToggle" type="checkbox" checked><span></span></label></div><button class="btn" onclick="manualLiveRefresh()" title="Refresh live data">↻</button>
     <div class="pill"><span class="dot" id="dot"></span><b id="status">CHECKING</b></div>
     <div class="pill">FEED <b id="feed">OFFLINE</b></div>
     <button class="btn primary" onclick="openSettings()">⚙</button>
@@ -1853,8 +1862,27 @@ function updateRisk(){
 ['capital','riskPct','dailyCap','maxPos'].forEach(id=>$(id).addEventListener('input',updateRisk));
 window.addEventListener('resize',drawChart);
 let ptdAutoRefreshBusy=false;
+let ptdAutoRefreshEnabled=localStorage.getItem('PTD_LIVE_AUTO_REFRESH')!=='off';
+function syncLiveRefreshUI(){
+  const el=$('liveRefreshToggle'); if(el) el.checked=ptdAutoRefreshEnabled;
+}
+function setLiveAutoRefresh(on){
+  ptdAutoRefreshEnabled=!!on;
+  localStorage.setItem('PTD_LIVE_AUTO_REFRESH',ptdAutoRefreshEnabled?'on':'off');
+  syncLiveRefreshUI();
+  toast(ptdAutoRefreshEnabled?'✅ Live auto-refresh ON':'⏸ Live auto-refresh OFF');
+}
+async function manualLiveRefresh(){
+  const busy=ptdAutoRefreshBusy;
+  if(busy)return;
+  ptdAutoRefreshBusy=true;
+  try{
+    await Promise.allSettled([angelStatus(),loadAll(),loadPrediction(false),refreshLiveChart(),loadPhase11Shield(),loadPhase12Readiness()]);
+    toast('↻ Live data refreshed');
+  }finally{ptdAutoRefreshBusy=false;}
+}
 async function ptdAutoRefresh(){
-  if(ptdAutoRefreshBusy)return;
+  if(!ptdAutoRefreshEnabled||ptdAutoRefreshBusy)return;
   ptdAutoRefreshBusy=true;
   try{ await Promise.allSettled([loadAll(),loadPrediction(false),refreshLiveChart()]); }
   finally{ ptdAutoRefreshBusy=false; }
@@ -1863,7 +1891,12 @@ angelStatus();setInterval(angelStatus,5000);
 loadAll();loadPrediction(false);loadPhase11Shield();updateRisk();drawChart();loadExecutionStatus();loadPhase12Readiness();phase6Monitor();renderTradeJournal();
 ptdAutoRefresh();
 setInterval(ptdAutoRefresh,12000);
-setInterval(refreshLiveTicker,5000);
+setInterval(()=>{if(ptdAutoRefreshEnabled)refreshLiveTicker()},5000);
+document.addEventListener('DOMContentLoaded',()=>{
+  syncLiveRefreshUI();
+  const el=$('liveRefreshToggle'); if(el) el.addEventListener('change',()=>setLiveAutoRefresh(el.checked));
+});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&ptdAutoRefreshEnabled)manualLiveRefresh()});
 setInterval(loadPhase11Shield,10000);
 setInterval(loadBrokerAccount,10000);
 setInterval(loadExecutionStatus,15000);
