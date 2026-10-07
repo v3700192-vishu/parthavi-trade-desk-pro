@@ -119,7 +119,7 @@ function phase11PolicyForOrder({p,instrument,signalSnapshot=null,openPositions=0
     modelConfidence:signalSnapshot?.modelConfidence,confirmationPct:signalSnapshot?.confirmationPct,
     spreadPct:Number.isFinite(spreadPct)?spreadPct:null,openPositions,side:orderType,
     signalAction:signalSnapshot?.action||'',isOption,hasStopLoss:sl>0,
-    vix:signalSnapshot?.vix,adx:signalSnapshot?.adx,volumeRatio10d:signalSnapshot?.volumeRatio10d,eventDayBlock:!!signalSnapshot?.eventDayBlock,theta:signalSnapshot?.theta,delta:signalSnapshot?.delta
+    vix:signalSnapshot?.vix,adx:signalSnapshot?.adx,volumeRatio10d:signalSnapshot?.volumeRatio10d,volumeMode:signalSnapshot?.volumeMode||'BREAKOUT',eventDayBlock:!!signalSnapshot?.eventDayBlock,theta:signalSnapshot?.theta,delta:signalSnapshot?.delta
   });
 }
 function modelSafe(x){return Number.isFinite(x)&&x>0?x:0;}
@@ -773,7 +773,7 @@ app.get('/api/phase11/signal-token',async(req,res)=>{
     const optionPlan=await findBuyableOptionPlan(symbol,prediction.action,prediction.finalPlan?.entry,prediction.finalPlan?.sl,prediction.finalPlan?.target1,prediction.finalPlan?.target2);
     prediction.optionPlan=optionPlan;
     if(!optionPlan.available) return res.status(409).json({ok:false,error:'BUYABLE_OPTION_NOT_FOUND',prediction});
-    const payload={version:2,symbol,prediction:prediction.prediction,action:prediction.action,modelConfidence:prediction.modelConfidence,confirmationPct:prediction.confirmationPct,vix:prediction.vix,adx:prediction.adx,volumeRatio10d:prediction.volumeRatio10d,eventDayBlock:prediction.eventBlocked||prediction.noTradeReasons?.some(x=>String(x).includes('event')),theta:optionPlan.theta,delta:optionPlan.delta,optionPlan,rrGate:'1:2+',createdAt:Date.now(),expiresAt:Date.now()+60000};
+    const payload={version:2,symbol,prediction:prediction.prediction,action:prediction.action,modelConfidence:prediction.modelConfidence,confirmationPct:prediction.confirmationPct,vix:prediction.vix,adx:prediction.adx,volumeRatio10d:prediction.volumeRatio10d,volumeMode:prediction.tradeFinder?.volumeMode||'BREAKOUT',eventDayBlock:prediction.eventBlocked||prediction.noTradeReasons?.some(x=>String(x).includes('event')),theta:optionPlan.theta,delta:optionPlan.delta,optionPlan,rrGate:'1:2+',createdAt:Date.now(),expiresAt:Date.now()+60000};
     res.json({ok:true,phase:11,token:signedPayload(payload),snapshot:payload,prediction});
   }catch(e){res.status(502).json({ok:false,error:e?.message||'Phase 11 signal unavailable'});}
 });
