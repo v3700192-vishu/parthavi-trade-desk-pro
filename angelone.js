@@ -133,15 +133,19 @@ export async function quoteInstruments(instruments){
     (exchangeTokens[ex] ||= []).push(token);
   }
   for(const k of Object.keys(exchangeTokens)) exchangeTokens[k]=[...new Set(exchangeTokens[k])].slice(0,50);
-  const data=await a.getMarketData('FULL', exchangeTokens);
-  let rows=mergeMarketData(data?.data?.fetched||[]);
-  // SmartAPI FULL may omit a contract even when the session is healthy.
-  // Fill only missing quotes with the authenticated LTP endpoint so the contract
-  // finder/paper-trading panels do not stay blank.
+  let rows=[];
+  try{
+    const data=await a.getMarketData('FULL', exchangeTokens);
+    rows=mergeMarketData(data?.data?.fetched||[]);
+  }catch(e){
+    console.warn('[ANGEL_QUOTE] FULL quote unavailable:',e?.message||e);
+  }
+  // FULL can omit contracts or fail transiently while authenticated REST is still usable.
+  // Fill every missing contract through the authenticated LTP endpoint.
   const seen=new Set(rows.map(x=>String(x.symbolToken||'')));
-  const missing=list.filter(x=>String(x.token||x.symboltoken||'') && !seen.has(String(x.token||x.symboltoken))).slice(0,10);
+  const missing=list.filter(x=>String(x.token||x.symboltoken||'') && !seen.has(String(x.token||x.symboltoken)));
   if(missing.length){
-    const extra=await Promise.allSettled(missing.map(async x=>{
+    const extra=await Promise.allSettled(missing.slice(0,20).map(async x=>{
       const ex=String(x.exchange||exchangeForSegment(x.exch_seg)||'').toUpperCase();
       const token=String(x.symboltoken||x.token||'');
       if(!ex||!token) return null;
@@ -160,7 +164,6 @@ export async function quoteInstruments(instruments){
   }
   return rows;
 }
-
 export async function optionGreeks({name, expirydate}){
   const {jwtToken}=requireSession();
   const endpoint='https://apiconnect.angelone.in/rest/secure/angelbroking/marketData/v1/optionGreek';
@@ -198,10 +201,18 @@ function secureHeaders(){
   };
 }
 
-async function secureJson(url, options={}){
-  const r=await fetch(url,{...options,signal:AbortSignal.timeout(8000)});
+async function secureJson(url, options={}, retryAuth=true){
+  const r=await fetch(url,{...options,headers:{...(options.headers||secureHeaders())},signal:AbortSignal.timeout(8000)});
   const out=await r.json().catch(()=>({status:false,message:`HTTP ${r.status}`}));
-  if(!r.ok || out?.status===false) throw new Error(out?.message || `Angel One HTTP ${r.status}`);
+  const message=String(out?.message||out?.error||'').toLowerCase();
+  const authFailure=(r.status===401||r.status===403||/token|jwt|authoriz|session|login|expired|invalid credential/.test(message));
+  if((!r.ok||out?.status===false)&&authFailure&&retryAuth&&session.connected&&session.refreshToken){
+    const refreshed=await refreshSessionTokens();
+    if(refreshed){
+      return await secureJson(url,{...options,headers:secureHeaders()},false);
+    }
+  }
+  if(!r.ok||out?.status===false) throw new Error(out?.message||out?.error||`Angel One HTTP ${r.status}`);
   return out;
 }
 
