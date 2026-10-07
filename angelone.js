@@ -437,58 +437,56 @@ async function connectMarketWebSocket(){
   if(ws && wsConnected) return angelStatus();
   if(wsConnectBusy) return angelStatus();
   wsConnectBusy=true;
-
-  if(ws){ try{ws.closeConnection?.()}catch{}; ws=null; }
-  wsConnected=false; wsError=null;
-
-  const socket=new WebSocketV2({
-    jwttoken:session.jwtToken,
-    apikey:angelApiKey(),
-    clientcode:session.clientCode,
-    feedtype:session.feedToken
-  });
-  ws=socket;
-
-  // smartapi-javascript WebSocketV2 exposes only "connect" and "tick" through .on().
-  // Enable its custom error path so connection failures reject instead of hanging silently.
-  try{ socket.customError?.(); }catch{}
-  try{ socket.reconnection?.('simple',15000,1); }catch{}
   try{
-    socket.on('tick', data=>{
-      try{
-        const token=String(data?.token ?? data?.symbolToken ?? data?.symboltoken ?? JSON.stringify(data));
-        latestTicks.set(token,{data,at:Date.now()});
-        lastTickAt=Date.now();
-        wsConnected=true;
-        wsError=null;
-      }catch{}
+    if(ws){ try{ws.closeConnection?.()}catch{}; ws=null; }
+    wsConnected=false; wsError=null;
+
+    const socket=new WebSocketV2({
+      jwttoken:session.jwtToken,
+      apikey:angelApiKey(),
+      clientcode:session.clientCode,
+      feedtype:session.feedToken
     });
-  }catch{}
+    ws=socket;
 
-  console.log('[ANGEL_WS] connecting client='+String(session.clientCode||'').slice(0,24));
+    try{ socket.customError?.(); }catch{}
+    try{ socket.reconnection?.('simple',15000,1); }catch{}
+    try{
+      socket.on('tick', data=>{
+        try{
+          const token=String(data?.token ?? data?.symbolToken ?? data?.symboltoken ?? JSON.stringify(data));
+          latestTicks.set(token,{data,at:Date.now()});
+          lastTickAt=Date.now();
+          wsConnected=true;
+          wsError=null;
+        }catch{}
+      });
+    }catch{}
 
-  const timeoutMs=12000;
-  try{
+    console.log('[ANGEL_WS] connecting client='+String(session.clientCode||'').slice(0,24));
+    const timeoutMs=12000;
     await Promise.race([
       socket.connect(),
       new Promise((_,reject)=>setTimeout(()=>reject(new Error('Angel One WebSocket connect timeout after 12 seconds')),timeoutMs))
     ]);
+
+    wsConnected=true;
+    wsError=null;
+    console.log('[ANGEL_WS] connected');
+
+    const sub=await subscribeOnSocket(["99926000","99926009","99926017","99926037","99926074"],1,1);
+    console.log('[ANGEL_WS] subscribed index tokens='+sub.tokens);
+    return angelStatus();
   }catch(e){
-    wsConnectBusy=false;
+    wsConnected=false;
     wsError=e?.message||'Angel One WebSocket connection failed';
+    try{if(ws){ws.close?.();ws.closeConnection?.();}}catch{}
+    ws=null;
     throw e;
+  }finally{
+    wsConnectBusy=false;
   }
-
-  wsConnected=true;
-  wsError=null;
-  console.log('[ANGEL_WS] connected');
-
-  const sub=await subscribeOnSocket(["99926000","99926009","99926017","99926037","99926074"],1,1);
-  console.log('[ANGEL_WS] subscribed index tokens='+sub.tokens);
-
-  return angelStatus();
 }
-
 export async function reconnectWebSocket(){
   if(!session.connected) throw new Error("Angel One is not connected");
   return await connectMarketWebSocket();
