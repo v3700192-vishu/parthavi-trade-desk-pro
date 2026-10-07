@@ -101,6 +101,7 @@ button,input,select{font:inherit} button{cursor:pointer}
  .bottom a{color:#8e9bb2;text-decoration:none;text-align:center;font-size:7px;padding:6px 2px;border-radius:9px}.bottom a.active{color:#fff;background:#0e182a}
 }
 
+.p10-time{font-size:8px;color:#91a0b8;white-space:nowrap;letter-spacing:.2px}
 .finder-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.finder-grid label{font-size:11px;color:#91a0b8;font-weight:700;display:grid;gap:5px}.finder-grid input,.finder-grid select{width:100%;box-sizing:border-box;background:#0b1020;color:#f4f7ff;border:1px solid #26334d;border-radius:10px;padding:11px;font:inherit}.finder-grid .btn{align-self:end;min-height:42px}.finder-note{margin-top:10px;color:#7f8da6;font-size:11px;line-height:1.5}.contract-result{margin-top:10px}.contract-table{width:100%;border-collapse:collapse;font-size:11px}.contract-table th,.contract-table td{padding:9px 7px;border-bottom:1px solid #202b40;text-align:right}.contract-table th:first-child,.contract-table td:first-child{text-align:left}@media(max-width:760px){.finder-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.finder-grid .btn{grid-column:1/-1}.contract-table{display:block;overflow-x:auto;white-space:nowrap}}
 
 .strategy-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:8px}.strategy-box{border:1px solid var(--line);background:#070d18;border-radius:12px;padding:9px}.strategy-box small{display:block;color:var(--muted);font-size:7px;text-transform:uppercase;letter-spacing:.5px}.strategy-box b{display:block;font-size:12px;margin-top:4px}.strategy-box span{display:block;color:var(--muted);font-size:7px;margin-top:3px;line-height:1.35}.riskbar{height:8px;background:#111a2a;border:1px solid var(--line);border-radius:999px;overflow:hidden;margin-top:7px}.riskbar i{display:block;height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,#ffffff,#ffcf67,#ff5f80)}
@@ -625,7 +626,7 @@ body{-webkit-overflow-scrolling:touch}
 </section>
 
 <section class="card" id="phase10Prediction">
-  <div class="card-head"><h3>Phase 10 • Advanced Prediction & Confirmation</h3><span id="p10State">LOCKED</span></div>
+  <div class="card-head"><h3>Phase 10 • Advanced Prediction & Confirmation</h3><span id="p10Time" class="p10-time">Updated • --:--:-- --</span><span id="p10State">LOCKED</span></div>
   <div class="prediction-grid">
     <div class="prediction-hero">
       <div class="eyebrow">PB Predictive Fusion</div>
@@ -1573,6 +1574,15 @@ async function loadRiskSizing(p){
     $('riskGreekMessage').textContent=e.message||'Live risk sizing unavailable.';
   }
 }
+function p10Clock(ts=Date.now()){
+  try{
+    return new Intl.DateTimeFormat('en-IN',{
+      hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true,timeZone:'Asia/Kolkata'
+    }).format(new Date(ts)).replace(/^24:/,'12:');
+  }catch{
+    return new Date(ts).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true});
+  }
+}
 function p10TodayKey(){
   return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
 }
@@ -1610,6 +1620,8 @@ function registerP10Opportunity(p){
 }
 function renderPredictionPanel(r){
   const p=r?.prediction||{}; const hist=r?.backtest||p?.historical||{};
+  const p10Time=$('p10Time');
+  if(p10Time) p10Time.textContent='Updated • '+p10Clock();
   registerP10Opportunity(p);
   const pred=$('p10Prediction'), act=$('p10Action');
   updateStickyPrediction(p);
