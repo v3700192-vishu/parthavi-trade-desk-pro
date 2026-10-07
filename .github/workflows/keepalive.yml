@@ -1,0 +1,19 @@
+name: Keep PARTHAVI Trade Desk PRO awake
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Render backend
+        run: |
+          curl --fail --silent --show-error --max-time 30 \
+            "https://parthavi-trade-desk-pro.onrender.com/api/keepalive" \
+            -H "Cache-Control: no-cache"
