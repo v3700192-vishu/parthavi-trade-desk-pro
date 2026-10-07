@@ -633,11 +633,12 @@ body{-webkit-overflow-scrolling:touch}
       <div id="p10Reason" class="prediction-sub">Connect Angel One and verified market/news/global/options feeds to calculate the live model.</div>
       <div class="prediction-stats">
         <div class="prediction-stat"><small>Suggested action</small><b id="p10Action" class="neutral">NO TRADE</b></div>
-        <div class="prediction-stat"><small>Model confidence</small><b id="p10Confidence">—</b></div>
+        <div class="prediction-stat"><small>Model confidence • directional</small><b id="p10Confidence">—</b></div>
         <div class="prediction-stat"><small>Confirmation</small><b id="p10Confirmation">—</b></div>
         <div class="prediction-stat"><small>Backtest target-hit</small><b id="p10HitRate">—</b></div>
       </div>
       <div class="prediction-meter"><i id="p10Meter"></i></div>
+      <div class="finder-note" id="p10TradeFinder">🎯 <b>TWO-TRADE FINDER ACTIVE</b> • Confirmed opportunities today: <b id="p10OpportunityCount">0 / 2</b> • Scanner keeps searching during the NSE session and never manufactures a weak second trade.</div>
       <div class="finder-note" id="p10Note">Confidence is a rule-based confluence estimate. Historical target-hit rate is based on the displayed rolling 5M backtest and is not a guarantee of future profit.</div>
     </div>
     <div>
@@ -991,7 +992,7 @@ body{-webkit-overflow-scrolling:touch}
   <div class="note" id="journalSummary">Journal: 0 trades • Wins 0 • Losses 0 • Net P&L ₹0</div>
 </div>
 
-<footer class="footer"><span>PARTHAVI TRADE DESK PRO • PB SIGNATURE</span><span>LIVE DATA + BROKER BACKEND REQUIRED • PHASE 10 ACTIVE • NO GUARANTEED PROFIT</span></footer>
+<footer class="footer"><span>PARTHAVI TRADE DESK PRO • PB SIGNATURE</span><span>LIVE DATA + BROKER BACKEND REQUIRED • PHASE 10 ACTIVE • TWO-TRADE FINDER • NO GUARANTEED PROFIT</span></footer>
 </div>
 
 <nav class="bottom">
@@ -1572,8 +1573,44 @@ async function loadRiskSizing(p){
     $('riskGreekMessage').textContent=e.message||'Live risk sizing unavailable.';
   }
 }
+function p10TodayKey(){
+  return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+}
+function p10OpportunityState(){
+  const key=p10TodayKey();
+  try{
+    const raw=JSON.parse(localStorage.getItem("PTD_TWO_TRADE_FINDER")||"{}");
+    if(raw.date!==key) return {date:key,count:0,seen:[]};
+    return {date:key,count:Math.min(2,Number(raw.count)||0),seen:Array.isArray(raw.seen)?raw.seen:[]};
+  }catch{return {date:key,count:0,seen:[]}}
+}
+function renderP10OpportunityCount(){
+  const el=$("p10OpportunityCount"); if(!el)return;
+  const s=p10OpportunityState(); el.textContent=s.count+" / 2";
+}
+function registerP10Opportunity(p){
+  if(String(p?.signalState||"").toUpperCase()!=="CONFIRMED" || !p?.optionPlan?.available){renderP10OpportunityCount();return;}
+  const s=p10OpportunityState();
+  const bar=String(p.signalBarTime||"");
+  const contract=String(p.optionPlan.contract||"");
+  const fp=[s.date,symbol,String(p.action||""),bar,contract].join("|");
+  const now=Date.now();
+  const recent=s.seen.find(x=>x.fp===fp);
+  if(!recent && s.count<2){
+    const duplicateRecent=s.seen.some(x=>x.action===String(p.action||"")&&x.contract===contract&&(now-Number(x.at||0))<20*60000);
+    if(!duplicateRecent){
+      s.count+=1;
+      s.seen.push({fp,action:String(p.action||""),contract,at:now});
+      s.seen=s.seen.slice(-20);
+      try{localStorage.setItem("PTD_TWO_TRADE_FINDER",JSON.stringify(s))}catch{}
+      addAlert("🎯 TRADE OPPORTUNITY "+s.count+"/2",symbol+" • "+String(p.action||"")+" • "+contract+" • live confirmed setup found.","bullish","p10-opportunity-"+fp);
+    }
+  }
+  renderP10OpportunityCount();
+}
 function renderPredictionPanel(r){
   const p=r?.prediction||{}; const hist=r?.backtest||p?.historical||{};
+  registerP10Opportunity(p);
   const pred=$('p10Prediction'), act=$('p10Action');
   updateStickyPrediction(p);
   pred.textContent=p.prediction||'NO TRADE'; setP10Tone(pred,p.prediction);
@@ -1581,6 +1618,7 @@ function renderPredictionPanel(r){
   $('p10State').textContent=p.signalState||'LOCKED'; setP10Tone($('p10State'),p.signalState);
   $('p10Confidence').textContent=p.modelConfidence!=null?String(p.modelConfidence)+'%':'—';
   $('p10Confirmation').textContent=(p.confirmedCount!=null?`${p.confirmedCount}/${p.confirmationTotal||10}`:'—')+(p.confirmationPct!=null?` • ${p.confirmationPct}%`:'');
+  renderP10OpportunityCount();
   $('p10HitRate').textContent=hist.available&&hist.targetHitRate!=null?String(hist.targetHitRate)+'%':'NOT CALIBRATED';
   $('p10Signals').textContent=hist.signals??'—'; $('p10Resolved').textContent=hist.resolved??'—'; $('p10WinsLosses').textContent=(hist.wins??'—')+' / '+(hist.losses??'—');
   const exp=hist.available&&hist.targetHitRate!=null?((Number(hist.targetHitRate)/100*1.25)-(1-Number(hist.targetHitRate)/100)).toFixed(2):null; $('p10ExpectedR').textContent=exp==null?'—':(Number(exp)>0?'+':'')+exp+'R';
@@ -1603,7 +1641,8 @@ function renderPredictionPanel(r){
   $('finalPlanT1').textContent=usable?(plan.target1??'—'):'—';
   $('finalPlanT2').textContent=usable?(plan.target2??'—'):'—';
   $('finalPlanRR').textContent=usable?('1:'+(plan.rr1||'2.0')+' / 1:'+(plan.rr2||'2.5')):'—';
-  $('finalPlanBar').textContent=p.signalState==='CONFIRMED'?`CONFIRMED • ${p.signalBarTime?chartTime(p.signalBarTime):'CLOSED 5M'}`:(p.signalState||'WAIT')+' • CLOSED 5M';
+  const opp=p10OpportunityState();
+  $('finalPlanBar').textContent=p.signalState==='CONFIRMED'?`CONFIRMED • ${p.signalBarTime?chartTime(p.signalBarTime):'LIVE'} • Finder ${Math.min(2,Math.max(1,opp.count))}/2`:(p.signalState||'WAIT')+' • TWO-TRADE FINDER';
   $('finalPlanNote').textContent=usable
     ? ('BUY '+plan.contract+' only in the live quoted ₹25–₹50 band. Entry ₹'+Number(plan.entry).toFixed(2)+' • SL ₹'+Number(plan.stopLoss).toFixed(2)+' • T1 ₹'+Number(plan.target1).toFixed(2)+' • T2 ₹'+Number(plan.target2).toFixed(2)+' • Delta '+plan.delta+' • Theta/day '+plan.theta+'. Levels are calculated from the live contract and underlying ATR/Delta; they are planning levels, not guaranteed profit.')
     : 'NO TRADE right now. The system will not recommend a contract until the live confirmed signal passes all required gates and a quoted option in ₹25–₹50 also passes Delta/Theta/liquidity checks.';
@@ -1938,6 +1977,7 @@ async function ptdAutoRefresh(){
   finally{ ptdAutoRefreshBusy=false; }
 }
 angelStatus();setInterval(()=>{if(!document.hidden)angelStatus()},15000);
+renderP10OpportunityCount();
 loadAll();loadPrediction(false);loadPhase11Shield();updateRisk();drawChart();loadExecutionStatus();loadPhase12Readiness();phase6Monitor();renderTradeJournal();
 ptdAutoRefresh();
 setInterval(()=>{if(!document.hidden)ptdAutoRefresh()},20000);
