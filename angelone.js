@@ -10,12 +10,15 @@ function angelApiKey(){
 const MASTER_URL = "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json";
 
 let api = null;
-let session = { connected:false, clientCode:null, loginAt:null, jwtToken:null, feedToken:null, profile:null };
+let session = { connected:false, clientCode:null, loginAt:null, jwtToken:null, refreshToken:null, feedToken:null, profile:null };
 let masterCache = { loadedAt:0, items:[] };
 let ws = null;
 let wsConnected = false;
 let wsError = null;
 let reconnectTimer = null;
+let tokenRefreshTimer = null;
+let watchdogTimer = null;
+let wsConnectBusy = false;
 let latestTicks = new Map();
 let lastTickAt = null;
 
@@ -39,7 +42,8 @@ export async function loginAngel({clientCode, pin, totp}){
   api = new SmartAPI({api_key:apiKey});
   const data = await api.generateSession(cc, pin, totp);
   if(!data?.status) throw new Error(data?.message || "Angel One login failed");
-  session = {connected:true, clientCode:cc, loginAt:new Date().toISOString(), jwtToken:data.data?.jwtToken||null, feedToken:data.data?.feedToken||null, profile:null};
+  session = {connected:true, clientCode:cc, loginAt:new Date().toISOString(), jwtToken:data.data?.jwtToken||null, refreshToken:data.data?.refreshToken||null, feedToken:data.data?.feedToken||null, profile:null};
+  startConnectionGuards();
   try { session.profile = await api.getProfile(); } catch {}
   // Do not block REST login on the streaming socket. Angel One login succeeds first;
   // WebSocket connection is established in the background and can retry independently.
@@ -50,9 +54,12 @@ export async function loginAngel({clientCode, pin, totp}){
 export async function logoutAngel(){
   try { if(api && session.connected) await api.logout({clientcode:session.clientCode}); } catch {}
   if(reconnectTimer){ clearTimeout(reconnectTimer); reconnectTimer=null; }
+  if(tokenRefreshTimer){ clearTimeout(tokenRefreshTimer); tokenRefreshTimer=null; }
+  if(watchdogTimer){ clearInterval(watchdogTimer); watchdogTimer=null; }
   if(ws){ try{ws.close?.()}catch{}; try{ws.closeConnection?.()}catch{}; ws=null; }
-  wsConnected=false; wsError=null; lastTickAt=null;
-  api=null; session={connected:false,clientCode:null,loginAt:null,jwtToken:null,feedToken:null,profile:null}; latestTicks.clear();
+  wsConnected=false; wsConnectBusy=false; wsError=null; lastTickAt=null;
+  api=null; session={connected:false,clientCode:null,loginAt:null,jwtToken:null,refreshToken:null,feedToken:null,profile:null}; latestTicks.clear();
+  wsConnectBusy=false;
   return angelStatus();
 }
 
@@ -336,6 +343,83 @@ async function subscribeOnSocket(tokens, exchangeType=1, mode=1){
   return {subscribed:true,tokens:clean.length,exchangeType:Number(exchangeType),mode:Number(mode)};
 }
 
+function jwtExpiryMs(token){
+  try{
+    const part=String(token||'').split('.')[1];
+    if(!part) return 0;
+    const json=JSON.parse(Buffer.from(part.replace(/-/g,'+').replace(/_/g,'/'),'base64').toString('utf8'));
+    const exp=Number(json?.exp||0);
+    return exp>0?exp*1000:0;
+  }catch{return 0;}
+}
+function marketHoursNow(){
+  const d=new Date();
+  const s=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',weekday:'short',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(d);
+  const m=Object.fromEntries(s.map(x=>[x.type,x.value]));
+  const mins=Number(m.hour)*60+Number(m.minute);
+  return !['Sat','Sun'].includes(m.weekday) && mins>=555 && mins<940;
+}
+async function refreshSessionTokens(){
+  if(!session.connected || !session.refreshToken || !angelApiKey()) return false;
+  try{
+    const headers={
+      'Content-Type':'application/json','Accept':'application/json',
+      'Authorization':`Bearer ${session.jwtToken||''}`,'X-UserType':'USER','X-SourceID':'WEB',
+      'X-ClientLocalIP':(process.env.ANGEL_CLIENT_LOCAL_IP || process.env.ANGELONE_CLIENT_LOCAL_IP || '127.0.0.1'),
+      'X-ClientPublicIP':(process.env.ANGEL_CLIENT_PUBLIC_IP || process.env.ANGELONE_PUBLIC_IP || '127.0.0.1'),
+      'X-MACAddress':(process.env.ANGEL_MAC_ADDRESS || process.env.ANGELONE_MAC_ADDRESS || '00:00:00:00:00:00'),
+      'X-PrivateKey':angelApiKey()
+    };
+    const r=await fetch('https://apiconnect.angelone.in/rest/auth/angelbroking/jwt/v1/generateTokens',{method:'POST',headers,body:JSON.stringify({refreshToken:session.refreshToken}),signal:AbortSignal.timeout(8000)});
+    const out=await r.json().catch(()=>({}));
+    if(!r.ok || !out?.status || !out?.data?.jwtToken || !out?.data?.feedToken) throw new Error(out?.message||`Token refresh HTTP ${r.status}`);
+    session.jwtToken=out.data.jwtToken;
+    session.refreshToken=out.data.refreshToken||session.refreshToken;
+    session.feedToken=out.data.feedToken;
+    if(api){
+      try{ api.setAccessToken?.(session.jwtToken); }catch{}
+      try{ api.setRefreshToken?.(session.refreshToken); }catch{}
+      try{ api.setFeedToken?.(session.feedToken); }catch{}
+    }
+    wsConnected=false; wsError=null;
+    try{ if(ws){ws.close?.();ws.closeConnection?.();} }catch{}
+    ws=null;
+    await connectMarketWebSocket();
+    console.log('[ANGEL_AUTH] tokens refreshed + websocket restored');
+    scheduleTokenRefresh();
+    return true;
+  }catch(e){
+    wsError=e?.message||'Angel One token refresh failed';
+    console.warn('[ANGEL_AUTH] refresh failed:',wsError);
+    scheduleTokenRefresh(60000);
+    scheduleReconnect();
+    return false;
+  }
+}
+function scheduleTokenRefresh(delayOverride=0){
+  if(tokenRefreshTimer){clearTimeout(tokenRefreshTimer);tokenRefreshTimer=null;}
+  if(!session.connected) return;
+  const exp=jwtExpiryMs(session.jwtToken);
+  let delay=Number(delayOverride)>0?Number(delayOverride):(exp?Math.max(60000,exp-Date.now()-120000):30*60*1000);
+  delay=Math.min(Math.max(delay,60000),55*60*1000);
+  tokenRefreshTimer=setTimeout(async()=>{tokenRefreshTimer=null;await refreshSessionTokens();},delay);
+}
+function startConnectionGuards(){
+  scheduleTokenRefresh();
+  if(watchdogTimer) clearInterval(watchdogTimer);
+  watchdogTimer=setInterval(async()=>{
+    if(!session.connected) return;
+    if(!wsConnected){scheduleReconnect();return;}
+    if(marketHoursNow() && (!lastTickAt || Date.now()-lastTickAt>75000)){
+      wsConnected=false;
+      wsError='Live tick stale — reconnecting automatically';
+      try{if(ws){ws.close?.();ws.closeConnection?.();}}catch{}
+      ws=null;
+      scheduleReconnect();
+    }
+  },10000);
+}
+
 function scheduleReconnect(){
   if(!session.connected || reconnectTimer) return;
   reconnectTimer=setTimeout(async()=>{
@@ -351,6 +435,8 @@ function scheduleReconnect(){
 async function connectMarketWebSocket(){
   if(!session.connected || !session.jwtToken || !session.feedToken) throw new Error("Angel One session is not connected");
   if(ws && wsConnected) return angelStatus();
+  if(wsConnectBusy) return angelStatus();
+  wsConnectBusy=true;
 
   if(ws){ try{ws.closeConnection?.()}catch{}; ws=null; }
   wsConnected=false; wsError=null;
@@ -382,10 +468,16 @@ async function connectMarketWebSocket(){
   console.log('[ANGEL_WS] connecting client='+String(session.clientCode||'').slice(0,24));
 
   const timeoutMs=12000;
-  await Promise.race([
-    socket.connect(),
-    new Promise((_,reject)=>setTimeout(()=>reject(new Error('Angel One WebSocket connect timeout after 12 seconds')),timeoutMs))
-  ]);
+  try{
+    await Promise.race([
+      socket.connect(),
+      new Promise((_,reject)=>setTimeout(()=>reject(new Error('Angel One WebSocket connect timeout after 12 seconds')),timeoutMs))
+    ]);
+  }catch(e){
+    wsConnectBusy=false;
+    wsError=e?.message||'Angel One WebSocket connection failed';
+    throw e;
+  }
 
   wsConnected=true;
   wsError=null;
