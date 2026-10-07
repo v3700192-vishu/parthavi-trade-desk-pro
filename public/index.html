@@ -362,6 +362,43 @@ body{-webkit-overflow-scrolling:touch}
 .live-switch input:checked+span:before{transform:translateX(15px)}
 </style>
 
+<style id="angel-one-mobile-chart-style">
+.chart-head-live{display:flex;align-items:center;gap:6px;font-size:8px;color:#7f8da6;white-space:nowrap}
+.chart-head-live i{width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 10px rgba(33,230,161,.45)}
+.chart-head-live b{font-size:9px;color:var(--green);letter-spacing:.4px}
+.angel-chart{background:#070b11;border:1px solid #26344b;border-radius:18px;overflow:hidden}
+.angel-chart .a1-head{background:#090d14;padding:11px 14px 9px;border-bottom:1px solid #1d2839}
+.angel-chart .a1-symbol b{font-size:16px;letter-spacing:.1px}
+.angel-chart .a1-symbol span{font-size:9px;font-weight:900;letter-spacing:.5px}
+.angel-chart .a1-price{font-size:26px;font-weight:950;letter-spacing:-.5px}
+.angel-chart .a1-ohlc{font-size:9px;line-height:1.35}
+.angel-chart .a1-toolbar{background:#080c13;padding:7px 9px;border-bottom:1px solid #1c2738}
+.angel-chart .angel-tools button{height:34px;min-width:36px;border-radius:8px;background:#0b111c;border-color:#2a3a53;font-size:14px}
+.angel-chart .a1-timeframes{background:#090e16;padding:7px 8px;border-bottom:1px solid #202b3d;gap:2px}
+.angel-chart .a1-timeframes .tf{font-size:10px;min-width:48px;padding:8px 10px;border-radius:8px}
+.angel-chart .a1-workspace{min-height:430px;background:#080b0f}
+.angel-chart #cv{height:500px}
+.angel-chart .a1-footer{background:#0a0e15;gap:7px;padding:8px 9px;min-height:44px;overflow:hidden}
+.angel-footer{font-size:10px;white-space:nowrap}
+.angel-footer .range-btn{font-size:10px;padding:6px 9px!important}
+.angel-footer button{font-size:10px!important;padding:6px 8px!important}
+.angel-footer #chartSource{font-size:8px;margin-left:auto;max-width:36%}
+.angel-divider{width:1px;height:18px;background:#29374e;display:inline-block}
+@media(max-width:760px){
+  .angel-chart .a1-head{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .angel-chart .a1-price{grid-column:1/-1;font-size:27px;padding-top:3px}
+  .angel-chart .a1-toolbar{overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none}
+  .angel-chart .a1-toolbar::-webkit-scrollbar{display:none}
+  .angel-chart .a1-timeframes{overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none}
+  .angel-chart .a1-timeframes::-webkit-scrollbar{display:none}
+  .angel-chart .a1-timeframes .tf{flex:0 0 54px}
+  .angel-chart .a1-workspace{min-height:500px}
+  .angel-chart #cv{height:500px!important}
+  .angel-footer{overflow-x:auto;scrollbar-width:none}
+  .angel-footer::-webkit-scrollbar{display:none}
+  .angel-footer #chartSource{margin-left:4px;max-width:none}
+}
+</style>
 </head>
 <body>
 <script id="ANDROID_LAYOUT_GUARD">
@@ -742,15 +779,7 @@ body{-webkit-overflow-scrolling:touch}
   <div class="card" id="chart">
     <div class="card-head">
       <div><h3 id="chartTitle">NIFTY 50 — LIVE CHART</h3><span>1H trend → 15M setup → 5M entry confirmation</span></div>
-      <div class="tfbar">
-        <button class="tf" onclick="setTF('1M',this)">1M</button>
-        <button class="tf" onclick="setTF('5M',this)">5M</button>
-        <button class="tf active" onclick="setTF('15M',this)">15M</button>
-        <button class="tf" onclick="setTF('30M',this)">30M</button>
-        <button class="tf" onclick="setTF('1H',this)">1H</button>
-        <button class="tf" onclick="setTF('4H',this)">4H</button>
-        <button class="tf" onclick="setTF('1D',this)">1D</button>
-      </div>
+      <div class="chart-head-live"><i></i><b id="chartHeaderLive">LIVE</b><span id="chartHeaderTime">—</span></div>
     </div>
     <div class="chartbox angel-chart">
       <div class="a1-head">
@@ -759,14 +788,14 @@ body{-webkit-overflow-scrolling:touch}
         <div class="a1-price" id="chartLast">—</div>
       </div>
 
-      <div class="a1-toolbar">
+      <div class="a1-toolbar angel-tools">
         <button onclick="chartSearch()" title="Search">⌕</button>
-        <button onclick="toggleCandleMenu()" title="Chart type">▥</button>
+        <button onclick="toggleCandleMenu()" title="Candles">▥</button>
         <button onclick="toggleIndicatorMenu()" title="Indicators">ƒx</button>
-        <button onclick="toggleDrawTools()" title="Drawing tools">✎</button>
-        <button onclick="toggleScaleMode()" title="Log / regular">%</button>
+        <button onclick="toggleDrawTools()" title="Draw">✎</button>
         <button onclick="toggleAutoScale()" title="Auto scale">A</button>
-        <button onclick="captureChart()" title="Screenshot">⌗</button>
+        <button onclick="toggleScaleMode()" title="Log / regular">%</button>
+        <button onclick="refreshLiveChart()" title="Refresh live chart">↻</button>
         <button onclick="fullChart()" title="Fullscreen">⛶</button>
       </div>
 
@@ -813,11 +842,18 @@ body{-webkit-overflow-scrolling:touch}
         <div class="a1-price-tag" id="chartPriceTag">—</div>
       </div>
 
-      <div class="a1-footer">
-        <button onclick="zoom(.86)">−</button><button onclick="zoom(1.18)">＋</button>
-        <button onclick="toggleCrosshair()">✛</button><button onclick="resetChart()">↺</button>
-        <button onclick="fitChart()">⇱</button>
+      <div class="a1-footer angel-footer">
+        <button class="range-btn" onclick="fitChart()">Date Range⌄</button>
+        <span id="angelChartClock">—</span>
+        <span class="angel-divider"></span>
         <span id="chartRangeLabel">15m • LIVE</span>
+        <button onclick="toggleScaleMode()">%</button>
+        <button onclick="toggleScaleMode()" id="logLabel">log</button>
+        <button onclick="toggleAutoScale()">auto</button>
+        <button onclick="zoom(.86)">−</button>
+        <button onclick="zoom(1.18)">＋</button>
+        <button onclick="toggleCrosshair()">✛</button>
+        <button onclick="resetChart()">↺</button>
         <span id="chartSource">LIVE ANGEL ONE CANDLES</span>
       </div>
     </div>
@@ -1246,6 +1282,15 @@ async function setTF(next,btn){tf=next;chartOffset=0;chartDay='';document.queryS
 function setSymbol(next){symbol=next;chartOffset=0;chartDay='';window.phase11SignalToken='';window.phase11Snapshot=null;$('p11SignalStatus').textContent='No live signal token loaded.';document.querySelectorAll('.chip').forEach(b=>b.classList.toggle('active',b.dataset.symbol===symbol));$('chartTitle').textContent=(symbol==='NIFTY'?'NIFTY 50':symbol)+' — LIVE CHART';$('instrumentLabel').textContent=symbol+' options';$('jSymbol').textContent=symbol;$('chartInstrument').textContent=(symbol==='NIFTY'?'NIFTY 50':symbol)+' · NSE';drawChart();loadAll()}
 document.querySelectorAll('.chip').forEach(b=>b.addEventListener('click',()=>setSymbol(b.dataset.symbol)));
 function indiaNow(){return new Intl.DateTimeFormat('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',weekday:'short',hour12:false,day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date())}
+function updateAngelChartClock(){
+  const now=new Date();
+  const f=new Intl.DateTimeFormat('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true});
+  const txt=f.format(now);
+  const a=$('angelChartClock'); if(a)a.textContent=txt+' IST';
+  const h=$('chartHeaderTime'); if(h)h.textContent=txt+' IST';
+}
+setInterval(updateAngelChartClock,1000); updateAngelChartClock();
+
 function setGate(id, ok, text){const el=$(id);el.textContent=text;el.className='badge '+(ok?'ok':'danger')}
 function renderStatus(s){
  $('status').textContent=s.open?'NSE OPEN':'NSE CLOSED'; $('dot').style.background=s.open?'var(--green)':'var(--red)';
@@ -1759,7 +1804,7 @@ function drawChart(){
  const c=$('cv');if(!c)return;const[ctx,w,h]=resizeCanvas(c),left=44,right=74,top=18,bottom=44,plotW=Math.max(1,w-left-right),plotH=Math.max(1,h-top-bottom);
  ctx.clearRect(0,0,w,h);ctx.fillStyle='#050a12';ctx.fillRect(0,0,w,h);ctx.strokeStyle='rgba(61,78,105,.30)';ctx.lineWidth=1;
  for(let i=0;i<=8;i++){const y=top+i*plotH/8;ctx.beginPath();ctx.moveTo(left,y);ctx.lineTo(left+plotW,y);ctx.stroke()}for(let i=0;i<=10;i++){const x=left+i*plotW/10;ctx.beginPath();ctx.moveTo(x,top);ctx.lineTo(x,top+plotH);ctx.stroke()}
- const raw=chartDataCache.get(tf)||liveData;if(!chartRowsOk(raw)){$('chartLoading').style.display='flex';$('chartLoading').textContent='NO LIVE CANDLES • CONNECT ANGEL ONE';$('chartOHLC').textContent='O — H — L — C —';$('chartLast').textContent='—';return}
+ const raw=chartDataCache.get(tf)||liveData||localRows(tf);if(!chartRowsOk(raw)){$('chartLoading').style.display='flex';$('chartLoading').textContent='NO LIVE CANDLES • CONNECT ANGEL ONE';$('chartOHLC').textContent='O — H — L — C —';$('chartLast').textContent='—';return}
  $('chartLoading').style.display='none';const dayRows=chartDay?raw.filter(x=>istDateKey(x.t)===chartDay):raw;const base=chartType==='heikin'?haRows(dayRows.length?dayRows:raw):dayRows.length?dayRows:raw;const mobileChart=w<700;const visible=Math.min(base.length,Math.max(mobileChart?26:35,Math.floor(plotW/(mobileChart?8:5)/Math.max(.55,scale)))),maxOffset=Math.max(0,base.length-visible);chartOffset=Math.max(0,Math.min(chartOffset,maxOffset));const end=base.length-chartOffset,start=Math.max(0,end-visible),view=base.slice(start,end);
  let min=Math.min(...view.map(x=>x.l)),max=Math.max(...view.map(x=>x.h));const pad=(max-min||1)*.06;min-=pad;max+=pad;
  const py=v=>{if(!logScale)return top+(max-v)*plotH/(max-min||1);const lo=Math.log(Math.max(.0001,min)),hi=Math.log(Math.max(.0001,max)),z=Math.log(Math.max(.0001,v));return top+(hi-z)*plotH/(hi-lo||1)};
@@ -1922,7 +1967,7 @@ angelStatus();setInterval(()=>{if(!document.hidden)angelStatus()},15000);
 renderP10OpportunityCount();
   stccRender(stccLoad());
   stccStartMonitor();
-loadAll();loadPrediction(false);loadPhase11Shield();updateRisk();drawChart();loadExecutionStatus();loadPhase12Readiness();phase6Monitor();renderTradeJournal();
+loadAll();loadPrediction(false);loadPhase11Shield();updateRisk();drawChart();loadChartTimeframe(tf);loadExecutionStatus();loadPhase12Readiness();phase6Monitor();renderTradeJournal();
 ptdAutoRefresh();
 setInterval(()=>{if(!document.hidden)ptdAutoRefresh()},20000);
 setInterval(()=>{if(!document.hidden&&ptdAutoRefreshEnabled)refreshLiveTicker()},10000);
