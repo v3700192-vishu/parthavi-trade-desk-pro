@@ -315,6 +315,98 @@ function positionSizeFromRisk({riskBudget=1000,entry,sl,lotSize,availableBudget=
   return {riskBudget:cap,entry:e,stopLoss:s,lossPerUnit:Number.isFinite(perUnit)?perUnit:null,lotSize:lot,lossPerLot:Number.isFinite(perLot)?perLot:null,recommendedLots:lots,recommendedQuantity:lots*lot,usedRisk:Number((lots*perLot).toFixed(2)),unusedRisk:Number(Math.max(0,cap-lots*perLot).toFixed(2))};
 }
 
+async function findBuyableOptionPlan(symbol, direction, underlyingEntry, underlyingSl, target1, target2){
+  const action=String(direction||'').toUpperCase();
+  const optionType=action==='CALL'?'CE':action==='PUT'?'PE':'';
+  if(!optionType) return {available:false,reason:'No directional option action available.'};
+  try{
+    if(!angelStatus().connected) return {available:false,reason:'Angel One is not connected.'};
+    const od=await options(symbol);
+    const expiry=String(od?.expiry||'').toUpperCase();
+    const atm=Number(od?.atm);
+    if(!expiry||!Number.isFinite(atm)) return {available:false,reason:'Live option chain/expiry is not verified.'};
+
+    let contracts=await findContracts({exchange:'NSE',segment:'OPTIDX',underlying:symbol,expiry,optionType});
+    contracts=contracts.map(x=>({...x,_strike:Number(x.strike)/100}))
+      .filter(x=>Number.isFinite(x._strike))
+      .sort((a,b)=>Math.abs(a._strike-atm)-Math.abs(b._strike-atm))
+      .slice(0,30);
+    if(!contracts.length) return {available:false,reason:'No live option contracts found for the selected expiry.'};
+
+    const quotes=await quoteInstruments(contracts);
+    const qmap=new Map((quotes||[]).map(x=>[String(x.symbolToken),x]));
+    const greeks=await liveOptionGreeks(symbol,expiry);
+    const gmap=new Map((greeks||[]).map(x=>[String(x.optionType)+'|'+Number(x.strike).toFixed(2),x]));
+
+    const candidates=contracts.map(x=>{
+      const q=qmap.get(String(x.token))||{};
+      const entry=Number(q.ltp);
+      const key=String(optionType)+'|'+Number(x._strike).toFixed(2);
+      const g=gmap.get(key)||null;
+      const delta=Math.abs(Number(g?.delta)), theta=Math.abs(Number(g?.theta));
+      const oi=Number(q.opnInterest??q.openInterest??q.oi);
+      const volume=Number(q.tradeVolume??q.volume);
+      const greekPass=Number.isFinite(delta)&&Number.isFinite(theta)&&theta<6&&delta>=0.35;
+      const premiumPass=Number.isFinite(entry)&&entry>=25&&entry<=50;
+      const liquidityScore=(Number.isFinite(oi)?Math.log10(Math.max(1,oi)):0)+(Number.isFinite(volume)&&volume>0?Math.log10(Math.max(1,volume)):0);
+      const deltaScore=Number.isFinite(delta)?Math.abs(delta-0.50):9;
+      const premiumScore=Number.isFinite(entry)?Math.abs(entry-35):99;
+      const score=(greekPass?0:100)+(premiumPass?0:100)+deltaScore*20+premiumScore+Math.max(0,5-liquidityScore);
+      return {x,q,g,entry,delta,theta,oi,volume,score,greekPass,premiumPass};
+    }).filter(v=>v.greekPass&&v.premiumPass&&Number.isFinite(v.entry)).sort((a,b)=>a.score-b.score);
+
+    const best=candidates[0];
+    if(!best) return {available:false,reason:'No live option in ₹25–₹50 passed Delta/Theta and liquidity checks.',expiry,atm,optionType};
+
+    const stopPoints=Math.abs(Number(underlyingEntry)-Number(underlyingSl));
+    const targetPoints1=Math.abs(Number(target1)-Number(underlyingEntry));
+    const targetPoints2=Math.abs(Number(target2)-Number(underlyingEntry));
+    if(!Number.isFinite(stopPoints)||stopPoints<=0) return {available:false,reason:'Underlying stop distance is unavailable.',expiry,atm,optionType};
+
+    // Premium planning uses live Delta to translate underlying movement into option-premium movement.
+    // A small floor avoids an unrealistically tiny stop on low-priced contracts.
+    const premiumRisk=Math.max(1.50,best.delta*stopPoints);
+    const entry=Number(best.entry.toFixed(2));
+    const sl=Number(Math.max(0.05,entry-premiumRisk).toFixed(2));
+    const t1=Number((entry+premiumRisk*2).toFixed(2));
+    const t2=Number((entry+premiumRisk*2.5).toFixed(2));
+    const premiumRR1=Number(((t1-entry)/(entry-sl)).toFixed(2));
+    const premiumRR2=Number(((t2-entry)/(entry-sl)).toFixed(2));
+
+    return {
+      available:true,
+      contract:best.x.symbol,
+      symbol:best.x.symbol,
+      token:String(best.x.token),
+      underlying:String(symbol).toUpperCase(),
+      expiry,
+      optionType,
+      strike:Number(best.x._strike),
+      lotSize:Math.max(1,Number(best.x.lotsize)||1),
+      entry,
+      stopLoss:sl,
+      target1:t1,
+      target2:t2,
+      rr1:premiumRR1,
+      rr2:premiumRR2,
+      premiumRiskPerUnit:Number(premiumRisk.toFixed(2)),
+      delta:Number(best.delta.toFixed(3)),
+      theta:Number(best.theta.toFixed(2)),
+      iv:Number.isFinite(Number(best.g?.iv))?Number(best.g.iv):null,
+      oi:Number.isFinite(best.oi)?best.oi:null,
+      volume:Number.isFinite(best.volume)?best.volume:null,
+      priceBand:'₹25–₹50',
+      selection:'Nearest-expiry live option • premium ₹25–₹50 • Delta ≥0.35 • Theta <6 • live quote/OI checked',
+      underlyingEntry:Number(Number(underlyingEntry).toFixed(2)),
+      underlyingStop:Number(Number(underlyingSl).toFixed(2)),
+      underlyingTarget1:Number(Number(target1).toFixed(2)),
+      underlyingTarget2:Number(Number(target2).toFixed(2))
+    };
+  }catch(e){
+    return {available:false,reason:e?.message||'Live option contract selection failed.'};
+  }
+}
+
 const newsCache=new Map();
 const globalCache={at:0,data:null};
 async function news(symbol){
@@ -666,7 +758,10 @@ app.get('/api/phase11/signal-token',async(req,res)=>{
     const vix=Number(md?.VIX?.ltp);
     const prediction=buildPrediction({h1:h1.summary,m15:m15.summary,m5:m5.summary,rows5:m5.rows,news:ns,global:gs,events:es,options:opt,marketOpen:true,backtest:historical,vix:Number.isFinite(vix)?vix:null,oi:opt});
     if(prediction.signalState!=='CONFIRMED') return res.status(409).json({ok:false,error:'SIGNAL_NOT_CONFIRMED',prediction});
-    const payload={version:2,symbol,prediction:prediction.prediction,action:prediction.action,modelConfidence:prediction.modelConfidence,confirmationPct:prediction.confirmationPct,vix:prediction.vix,adx:prediction.adx,volumeRatio10d:prediction.volumeRatio10d,eventDayBlock:prediction.eventBlocked||prediction.noTradeReasons?.some(x=>String(x).includes('event')),theta:prediction.theta,delta:prediction.delta,rrGate:'1:2+',createdAt:Date.now(),expiresAt:Date.now()+60000};
+    const optionPlan=await findBuyableOptionPlan(symbol,prediction.action,prediction.finalPlan?.entry,prediction.finalPlan?.sl,prediction.finalPlan?.target1,prediction.finalPlan?.target2);
+    prediction.optionPlan=optionPlan;
+    if(!optionPlan.available) return res.status(409).json({ok:false,error:'BUYABLE_OPTION_NOT_FOUND',prediction});
+    const payload={version:2,symbol,prediction:prediction.prediction,action:prediction.action,modelConfidence:prediction.modelConfidence,confirmationPct:prediction.confirmationPct,vix:prediction.vix,adx:prediction.adx,volumeRatio10d:prediction.volumeRatio10d,eventDayBlock:prediction.eventBlocked||prediction.noTradeReasons?.some(x=>String(x).includes('event')),theta:optionPlan.theta,delta:optionPlan.delta,optionPlan,rrGate:'1:2+',createdAt:Date.now(),expiresAt:Date.now()+60000};
     res.json({ok:true,phase:11,token:signedPayload(payload),snapshot:payload,prediction});
   }catch(e){res.status(502).json({ok:false,error:e?.message||'Phase 11 signal unavailable'});}
 });
@@ -1208,6 +1303,11 @@ app.get('/api/phase10/prediction',async(req,res)=>{
       m5.summary.volumeSource=futuresVol.source;
     }
     const prediction=buildPrediction({h1:h1.summary,m15:m15.summary,m5:m5.summary,rows5:m5.rows,news:ns,global:gs,events:es,options:opt,marketOpen:marketSession(),backtest:historical,vix:Number.isFinite(vix)?vix:null,oi:opt});
+    let optionPlan={available:false,reason:'Wait for a fully confirmed signal before selecting the buyable option.'};
+    if(prediction.signalState==='CONFIRMED' && prediction.finalPlan?.available){
+      optionPlan=await findBuyableOptionPlan(symbol,prediction.action,prediction.finalPlan.entry,prediction.finalPlan.sl,prediction.finalPlan.target1,prediction.finalPlan.target2);
+    }
+    prediction.optionPlan=optionPlan;
     const candleConnected=Array.isArray(m5.rows)&&m5.rows.length>0;
     res.json({ok:true,phase:10,symbol,prediction,health:{market:candleConnected,options:opt.connected,news:ns.connected,global:gs.connected,eventBlocked:es.hardBlock,eventDayBlock:es.eventDayBlock,vix:Number.isFinite(vix)?vix:null},greeks:opt.greeks||null,greekRisk:opt.greekRisk||{status:'WAIT',message:'Live option Greeks not verified.'},backtest:historical,checkedAt:nowISO()});
   }catch(e){res.status(502).json({ok:false,phase:10,error:e?.message||'Phase 10 prediction unavailable'});}
