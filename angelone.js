@@ -372,32 +372,42 @@ function marketHoursNow(){
   return !['Sat','Sun'].includes(m.weekday) && mins>=555 && mins<940;
 }
 async function refreshSessionTokens(){
+  if(refreshPromise) return await refreshPromise;
   if(!session.connected || !session.refreshToken || !angelApiKey()) return false;
-  try{
-    const out=api && typeof api.generateToken==='function'
-      ? await api.generateToken(session.refreshToken)
-      : null;
-    if(!out?.status || !out?.data?.jwtToken || !out?.data?.feedToken) throw new Error(out?.message||'Angel One token refresh failed');
-    session.jwtToken=out.data.jwtToken;
-    session.refreshToken=out.data.refreshToken||session.refreshToken;
-    session.feedToken=out.data.feedToken;
-    try{ api?.setAccessToken?.(session.jwtToken); }catch{}
-    try{ api?.setRefreshToken?.(session.refreshToken); }catch{}
-    try{ api?.setFeedToken?.(session.feedToken); }catch{}
-    wsConnected=false; wsError=null;
-    try{ if(ws){ws.close?.();ws.closeConnection?.();} }catch{}
-    ws=null;
-    await connectMarketWebSocket();
-    console.log('[ANGEL_AUTH] token refreshed + websocket restored');
-    scheduleTokenRefresh();
-    return true;
-  }catch(e){
-    wsError=e?.message||'Angel One token refresh failed';
-    console.warn('[ANGEL_AUTH] refresh failed:',wsError);
-    scheduleTokenRefresh(60000);
-    scheduleReconnect();
-    return false;
-  }
+  refreshPromise=(async()=>{
+    try{
+      // SmartAPI refresh tokens rotate. Only one refresh may run at a time;
+      // concurrent REST/WS failures must wait for the same refresh result.
+      const out=api && typeof api.generateToken==='function'
+        ? await api.generateToken(session.refreshToken)
+        : null;
+      if(!out?.status || !out?.data?.jwtToken || !out?.data?.feedToken){
+        throw new Error(out?.message||'Angel One token refresh failed');
+      }
+      session.jwtToken=out.data.jwtToken;
+      session.refreshToken=out.data.refreshToken||session.refreshToken;
+      session.feedToken=out.data.feedToken;
+      try{ api?.setAccessToken?.(session.jwtToken); }catch{}
+      try{ api?.setRefreshToken?.(session.refreshToken); }catch{}
+      try{ api?.setFeedToken?.(session.feedToken); }catch{}
+      // Replace the old socket exactly once after a successful token rotation.
+      wsConnected=false; wsError=null;
+      try{ if(ws){ws.close?.();ws.closeConnection?.();} }catch{}
+      ws=null;
+      await connectMarketWebSocket();
+      console.log('[ANGEL_AUTH] token refreshed + websocket restored');
+      scheduleTokenRefresh();
+      return true;
+    }catch(e){
+      wsError=e?.message||'Angel One token refresh failed';
+      console.warn('[ANGEL_AUTH] refresh failed:',wsError);
+      scheduleTokenRefresh(60000);
+      return false;
+    }finally{
+      refreshPromise=null;
+    }
+  })();
+  return await refreshPromise;
 }
 function scheduleTokenRefresh(delayOverride=0){
   if(tokenRefreshTimer){clearTimeout(tokenRefreshTimer);tokenRefreshTimer=null;}
