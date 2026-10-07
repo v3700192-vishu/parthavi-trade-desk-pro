@@ -19,6 +19,7 @@ let reconnectTimer = null;
 let tokenRefreshTimer = null;
 let watchdogTimer = null;
 let wsConnectBusy = false;
+let wsConnectPromise=null;
 let latestTicks = new Map();
 let lastTickAt = null;
 let wsGeneration = 0;
@@ -43,7 +44,11 @@ export async function loginAngel({clientCode, pin, totp}){
   const cc = clientCode || (process.env.ANGEL_CLIENT_CODE || process.env.ANGELONE_CLIENT_CODE);
   if(!cc || !pin || !totp) throw new Error("Client code, PIN and TOTP are required");
   api = new SmartAPI({api_key:apiKey});
-  try{ api.setSessionExpiryHook?.(()=>{ void refreshSessionTokens(); }); }catch{}
+  try{ api.setSessionExpiryHook?.(()=>{
+    const age=Date.now()-(session.loginAt?Date.parse(session.loginAt):Date.now());
+    if(age<60000) return;
+    void refreshSessionTokens();
+  }); }catch{}
   const data = await api.generateSession(cc, pin, totp);
   if(!data?.status) throw new Error(data?.message || "Angel One login failed");
   session = {connected:true, clientCode:cc, loginAt:new Date().toISOString(), jwtToken:data.data?.jwtToken||null, refreshToken:data.data?.refreshToken||null, feedToken:data.data?.feedToken||null, profile:null};
@@ -453,62 +458,65 @@ function scheduleReconnect(){
 async function connectMarketWebSocket(){
   if(!session.connected || !session.jwtToken || !session.feedToken) throw new Error("Angel One session is not connected");
   if(ws && wsConnected) return angelStatus();
-  if(wsConnectBusy) return angelStatus();
-  wsConnectBusy=true;
-  try{
-    if(ws){ try{ws.close?.(); ws.closeConnection?.()}catch{}; ws=null; }
-    wsGeneration++;
-    wsConnected=false; wsError=null;
-
-    const generation=++wsGeneration;
-    const socket=new WebSocketV2({
-      jwttoken:session.jwtToken,
-      apikey:angelApiKey(),
-      clientcode:session.clientCode,
-      feedtype:session.feedToken
-    });
-    ws=socket;
-
-    try{ socket.customError?.(); }catch{}
-    // Do not enable SmartAPI SDK auto-reconnection here. The server has a single
-    // guarded reconnect loop; SDK + server reconnecting simultaneously can create
-    // multiple sockets and exhaust the 512MB Render instance.
+  if(wsConnectPromise) return await wsConnectPromise;
+  wsConnectPromise=(async()=>{
+    wsConnectBusy=true;
     try{
-      socket.on('tick', data=>{
-        if(generation!==wsGeneration || ws!==socket) return;
-        try{
-          const token=String(data?.token ?? data?.symbolToken ?? data?.symboltoken ?? JSON.stringify(data));
-          latestTicks.set(token,{data,at:Date.now()});
-          lastTickAt=Date.now();
-          wsConnected=true;
-          wsError=null;
-        }catch{}
+      if(ws){ try{ws.close?.(); ws.closeConnection?.()}catch{}; ws=null; }
+      wsGeneration++;
+      wsConnected=false; wsError=null;
+
+      const generation=++wsGeneration;
+      const socket=new WebSocketV2({
+        jwttoken:session.jwtToken,
+        apikey:angelApiKey(),
+        clientcode:session.clientCode,
+        feedtype:session.feedToken
       });
-    }catch{}
+      ws=socket;
 
-    console.log('[ANGEL_WS] connecting client='+String(session.clientCode||'').slice(0,24));
-    const timeoutMs=12000;
-    await Promise.race([
-      socket.connect(),
-      new Promise((_,reject)=>setTimeout(()=>reject(new Error('Angel One WebSocket connect timeout after 12 seconds')),timeoutMs))
-    ]);
+      try{ socket.customError?.(); }catch{}
+      try{
+        socket.on('tick', data=>{
+          if(generation!==wsGeneration || ws!==socket) return;
+          try{
+            const token=String(data?.token ?? data?.symbolToken ?? data?.symboltoken ?? JSON.stringify(data));
+            latestTicks.set(token,{data,at:Date.now()});
+            lastTickAt=Date.now();
+            wsConnected=true;
+            wsError=null;
+          }catch{}
+        });
+      }catch{}
 
-    wsConnected=true;
-    wsError=null;
-    console.log('[ANGEL_WS] connected');
+      console.log('[ANGEL_WS] connecting client='+String(session.clientCode||'').slice(0,24));
+      const timeoutMs=12000;
+      await Promise.race([
+        socket.connect(),
+        new Promise((_,reject)=>setTimeout(()=>reject(new Error('Angel One WebSocket connect timeout after 12 seconds')),timeoutMs))
+      ]);
 
-    const sub=await subscribeOnSocket(["99926000","99926009","99926017","99926037","99926074"],1,1);
-    console.log('[ANGEL_WS] subscribed index tokens='+sub.tokens);
-    return angelStatus();
-  }catch(e){
-    wsConnected=false;
-    wsError=e?.message||'Angel One WebSocket connection failed';
-    try{if(ws){ws.close?.();ws.closeConnection?.();}}catch{}
-    ws=null;
-    throw e;
-  }finally{
-    wsConnectBusy=false;
-  }
+      // A newer connection may have replaced this socket while it was connecting.
+      if(generation!==wsGeneration || ws!==socket) throw new Error('Stale WebSocket connection discarded');
+      wsConnected=true;
+      wsError=null;
+      console.log('[ANGEL_WS] connected');
+
+      const sub=await subscribeOnSocket(["99926000","99926009","99926017","99926037","99926074"],1,1);
+      console.log('[ANGEL_WS] subscribed index tokens='+sub.tokens);
+      return angelStatus();
+    }catch(e){
+      wsConnected=false;
+      wsError=e?.message||'Angel One WebSocket connection failed';
+      try{if(ws){ws.close?.();ws.closeConnection?.();}}catch{}
+      ws=null;
+      throw e;
+    }finally{
+      wsConnectBusy=false;
+      wsConnectPromise=null;
+    }
+  })();
+  return await wsConnectPromise;
 }
 export async function reconnectWebSocket(){
   if(!session.connected) throw new Error("Angel One is not connected");
