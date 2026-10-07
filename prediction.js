@@ -23,6 +23,8 @@ function summarizeLatest(rows){
   if(!last) return {};
   const c=r.map(x=>n(x.c)).filter(Number.isFinite);
   const vol=r.map(x=>n(x.v)).filter(Number.isFinite);
+  const positiveVol=vol.filter(v=>v>0);
+  const volumeAvailable=positiveVol.length>0;
   const avgVol=vol.length>20?vol.slice(-21,-1).reduce((a,b)=>a+b,0)/20:null;
   const volumeRatio=avgVol&&avgVol>0?n(last.v)/avgVol:null;
 
@@ -45,6 +47,8 @@ function summarizeLatest(rows){
     volumeRatio10d,
     volumeBreakout,
     volumeBenchmarkDays:slotVolumes.length,
+    volumeAvailable,
+    volumeUnavailable:!volumeAvailable,
     candle:n(last.c)>n(last.o)?'BULLISH':n(last.c)<n(last.o)?'BEARISH':'DOJI',
     candleBodyRatio:range>0?body/range:null,
     range
@@ -107,7 +111,9 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
   else if(Number(vix)<12 || Number(vix)>22) noTradeReasons.push('No Trade: Market is too slow or too volatile.');
   if(adx!=null && Number.isFinite(adx) && adx<20)
     noTradeReasons.push('No Trade: ADX below 20 — market is choppy/sideways.');
-  if(vr10==null || !Number.isFinite(vr10)) noTradeReasons.push('No Trade: 10-day breakout volume benchmark is not verified.');
+  if(vr10==null || !Number.isFinite(vr10)) {
+    if(!x5.volumeUnavailable) noTradeReasons.push('No Trade: 10-day breakout volume benchmark is not verified.');
+  }
   else if(vr10<1.5) noTradeReasons.push(`No Trade: breakout volume is only ${vr10.toFixed(2)}x the 10-day same-slot average (<1.5x).`);
   if(!events?.connected) noTradeReasons.push('No Trade: economic-event calendar is not verified live.');
   else if(events?.eventDayBlock) noTradeReasons.push('No Trade: high-impact event day gate is active.');
@@ -126,7 +132,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
     setup: prediction!=='NEUTRAL' && m15d===prediction,
     trigger: prediction==='BULLISH'?bullTrigger:prediction==='BEARISH'?bearTrigger:false,
     momentum: prediction==='BULLISH'?(rsi!=null&&rsi>50&&macdHist!=null&&macdHist>0):(prediction==='BEARISH'?(rsi!=null&&rsi<50&&macdHist!=null&&macdHist<0):false),
-    volume: vr10!=null&&vr10>=1.5,
+    volume: (vr10!=null&&vr10>=1.5) || (x5.volumeUnavailable===false && vr10!=null&&vr10>=1.5),
     strength: adx!=null&&adx>=20,
     options: !!options?.connected && ((prediction==='BULLISH'&&optBull)||(prediction==='BEARISH'&&optBear)),
     greeks: Number.isFinite(theta)&&Number.isFinite(delta)&&theta<6&&delta>=0.35,
@@ -169,7 +175,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
     prediction, action, signalState, score,
     modelConfidence, confirmationPct, confirmedCount, confirmationTotal:required.length,
     confirmations, trend1h:h1d, setup15m:m15d, trigger5m:String(m5?.candle||'WAIT'),
-    volumeRatio:vr, volumeRatio10d:vr10, volumeBreakout:!!x5.volumeBreakout, rsi, adx, atr, vwap, last, vix:Number.isFinite(Number(vix))?Number(vix):null, delta:Number.isFinite(delta)?delta:null, theta:Number.isFinite(theta)?theta:null, greekRisk:options?.greekRisk||null, oi:oi||null, noTradeReasons, rrGate:'1:2 MINIMUM',
+    volumeRatio:vr, volumeRatio10d:vr10, volumeBreakout:!!x5.volumeBreakout, volumeSource:x5.volumeSource||'INDEX', volumeUnavailable:!!x5.volumeUnavailable, rsi, adx, atr, vwap, last, vix:Number.isFinite(Number(vix))?Number(vix):null, delta:Number.isFinite(delta)?delta:null, theta:Number.isFinite(theta)?theta:null, greekRisk:options?.greekRisk||null, oi:oi||null, noTradeReasons, rrGate:'1:2 MINIMUM',
     finalPlan:plan,
     signalBarTime:rows5?.at?.(-1)?.t||null,
     historical:backtest||{available:false,reason:'Historical backtest not available.'},
@@ -188,9 +194,13 @@ export function backtestFiveMinute(rows=[]){
   for(let i=220;i<r.length-25;i++){
     closes.push(r[i].c); const prev=r[i-1]?.c??r[i].c; trs.push(Math.max(r[i].h-r[i].l,Math.abs(r[i].h-prev),Math.abs(r[i].l-prev)));
     const e20=ema(r.slice(0,i+1).map(x=>x.c),20), e50=ema(r.slice(0,i+1).map(x=>x.c),50); const rr=rsiAt(r.slice(0,i+1).map(x=>x.c));
-    const volSlice=r.slice(Math.max(0,i-20),i).map(x=>x.v).filter(Number.isFinite); const av=volSlice.length?volSlice.reduce((a,b)=>a+b,0)/volSlice.length:0; const vr=av?Number(r[i].v)/av:null;
-    const bull=e20!=null&&e50!=null&&e20>e50&&rr!=null&&rr>52&&vr!=null&&vr>=1.0;
-    const bear=e20!=null&&e50!=null&&e20<e50&&rr!=null&&rr<48&&vr!=null&&vr>=1.0;
+    const volSlice=r.slice(Math.max(0,i-20),i).map(x=>x.v).filter(Number.isFinite);
+    const volumeAvailable=volSlice.some(v=>v>0);
+    const av=volSlice.length?volSlice.reduce((a,b)=>a+b,0)/volSlice.length:0;
+    const vr=av?Number(r[i].v)/av:null;
+    const volumePass=!volumeAvailable || (vr!=null&&vr>=1.0);
+    const bull=e20!=null&&e50!=null&&e20>e50&&rr!=null&&rr>52&&volumePass;
+    const bear=e20!=null&&e50!=null&&e20<e50&&rr!=null&&rr<48&&volumePass;
     if(!bull&&!bear) continue;
     candidates++;
     const trAvg=trs.slice(Math.max(0,trs.length-14)).reduce((a,b)=>a+b,0)/Math.max(1,Math.min(14,trs.length)); if(!Number.isFinite(trAvg)||trAvg<=0) continue;
