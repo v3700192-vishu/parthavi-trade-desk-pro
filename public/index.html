@@ -539,6 +539,15 @@ body.chart-fullscreen-open>.app>.bottom{
     min-height:0!important;
   }
 }
+</style><style id="bottom-nav-functional-v1">
+@media(max-width:760px){
+  html{scroll-behavior:smooth}
+  #home,#chart,#signals,#news,#trade{scroll-margin-top:12px}
+  .bottom{padding-bottom:max(6px,env(safe-area-inset-bottom))!important}
+  .bottom a{min-height:44px;display:flex!important;flex-direction:column;align-items:center;justify-content:center;gap:2px;touch-action:manipulation}
+  .bottom a:active{transform:scale(.96)}
+  .bottom a.active{color:#fff!important;background:#102039!important;box-shadow:inset 0 0 0 1px #344c6d}
+}
 </style></style></head>
 <body>
 <script id="ANDROID_LAYOUT_GUARD">
@@ -1214,8 +1223,12 @@ body.chart-fullscreen-open>.app>.bottom{
 <footer class="footer"><span>PARTHAVI TRADE DESK PRO • PB SIGNATURE</span><span>LIVE DATA + BROKER BACKEND REQUIRED • PHASE 10 ACTIVE • TWO-TRADE FINDER • NO GUARANTEED PROFIT</span></footer>
 </div>
 
-<nav class="bottom">
-  <a href="#home" class="active">⌂<br>Home</a><a href="#chart">◫<br>Chart</a><a href="#signals">◎<br>Signals</a><a href="#news">◌<br>News</a><a href="#trade">↗<br>Trade</a>
+<nav class="bottom" id="bottomNav">
+  <a href="#home" class="active" data-target="home">⌂<br>Home</a>
+  <a href="#chart" data-target="chart">◫<br>Chart</a>
+  <a href="#signals" data-target="signals">◎<br>Signals</a>
+  <a href="#news" data-target="news">◌<br>News</a>
+  <a href="#trade" data-target="trade">↗<br>Trade</a>
 </nav>
 
 
