@@ -193,11 +193,12 @@ body{-webkit-overflow-scrolling:touch}
 </style>
 
 <style id="chart-day-picker">
-.chart-days{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;padding:5px 8px;background:#07101b;border-bottom:1px solid #1b2a40}
-.chart-day{border:1px solid #26374f;border-radius:7px;background:#091321;color:#9aa9bd;padding:6px 4px;font-size:8px;font-weight:850;text-align:center}
+.chart-days{display:flex;gap:5px;padding:6px 8px;background:#07101b;border-bottom:1px solid #1b2a40;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+.chart-days::-webkit-scrollbar{display:none}
+.chart-day{flex:0 0 86px;border:1px solid #26374f;border-radius:8px;background:#091321;color:#9aa9bd;padding:7px 5px;font-size:8px;font-weight:850;text-align:center;white-space:nowrap}
 .chart-day.active{background:#1b2a40;color:#fff;border-color:#5c708e}
 .chart-day:disabled{opacity:.45}
-@media(max-width:760px){.chart-days{grid-template-columns:repeat(3,minmax(0,1fr));max-height:none;overflow:visible}.chart-day{min-width:0}.chart-day.active{box-shadow:inset 0 0 0 1px #fff}}
+@media(max-width:760px){.chart-days{padding:6px 7px}.chart-day{flex-basis:88px}.chart-day.active{box-shadow:inset 0 0 0 1px #fff}}
 </style>
 
 <style id="phase10-prediction-css">
@@ -1585,281 +1586,8 @@ function formatPct(v){ return Number.isFinite(Number(v))?Number(v).toFixed(1)+'%
 async function loadRiskSizing(p){
   const state=$('riskGreekState'), budget=$('riskBudgetLive');
   try{const rs=await getJSON('/api/risk/status'); budget.textContent=money(rs.riskBudgetRupees||1000);}catch{}
-  const plan=p?.optionPlan||{};
-  const usable=!!plan.available && p?.signalState==='CONFIRMED' && p?.action!=='NO TRADE';
-  if(!usable){
-    state.textContent=p?.signalState==='CONFIRMED'?'OPTION WAIT':'WAIT';
-    $('riskLots').textContent='—'; $('riskQty').textContent='—'; $('riskUsed').textContent='—';
-    return;
-  }
-  window.selectedContract={contract:plan.contract,symbol:plan.symbol,token:plan.token,underlying:plan.underlying,expiry:plan.expiry,optionType:plan.optionType,strike:plan.strike,exchange:'NFO',lotsize:plan.lotSize,ltp:plan.entry};
-  try{
-    const rs=await getJSON('/api/risk/status');
-    const body={symbol,expiry:plan.expiry,strike:Number(plan.strike),optionType:String(plan.optionType).toUpperCase(),riskBudget:Number(rs.riskBudgetRupees||1000),underlyingStopPoints:Math.abs(Number(plan.underlyingEntry)-Number(plan.underlyingStop))};
-    const r=await postJSON('/api/risk/position-size',body);
-    state.textContent=r.greekRisk?.status||'PASS';
-    $('riskLots').textContent=r.sizing?.recommendedLots??'—';
-    $('riskQty').textContent=r.sizing?.recommendedQuantity??'—';
-    $('riskUsed').textContent=r.sizing?.usedRisk!=null?money(r.sizing.usedRisk):'—';
-    $('riskDelta').textContent=r.delta!=null?Number(r.delta).toFixed(3):'—';
-    $('riskTheta').textContent=r.theta!=null?Number(r.theta).toFixed(2):'—';
-    $('riskIV').textContent=r.iv!=null?Number(r.iv).toFixed(2)+'%':'—';
-    $('riskGreekGuard').textContent=r.greekRisk?.status||'WAIT';
-    setP10Tone($('riskGreekGuard'),r.greekRisk?.status==='PASS'?'BULLISH':r.greekRisk?.status==='NO TRADE'?'BEARISH':'NEUTRAL');
-    $('riskGreekMessage').textContent=(r.greekRisk?.message||'')+' • Contract '+(r.contract||plan.contract)+' • Entry ₹'+Number(r.entry).toFixed(2)+' • Option SL ₹'+Number(r.optionStopLoss).toFixed(2)+' • Lot '+r.lotSize;
-  }catch(e){
-    state.textContent='WAIT'; $('riskLots').textContent='—'; $('riskQty').textContent='—'; $('riskUsed').textContent='—';
-    $('riskGreekMessage').textContent=e.message||'Live risk sizing unavailable.';
-  }
-}
-function p10Clock(ts=Date.now()){
-  try{
-    return new Intl.DateTimeFormat('en-IN',{
-      hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true,timeZone:'Asia/Kolkata'
-    }).format(new Date(ts)).replace(/^24:/,'12:');
-  }catch{
-    return new Date(ts).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true});
-  }
-}
-let stccPollTimer=null;
-function stccNow(){
-  try{return new Intl.DateTimeFormat('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true,timeZone:'Asia/Kolkata'}).format(new Date()).replace(/^24:/,'12:')}
-  catch{return new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true})}
-}
-function stccFmtTime(ts){
-  if(!ts)return '—';
-  try{return new Intl.DateTimeFormat('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true,timeZone:'Asia/Kolkata'}).format(new Date(ts)).replace(/^24:/,'12:')}
-  catch{return new Date(ts).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true})}
-}
-function stccLoad(){
-  try{return JSON.parse(localStorage.getItem('PTD_SUPER_TRADE_COMMAND')||'null')}catch{return null}
-}
-function stccSave(x){
-  try{localStorage.setItem('PTD_SUPER_TRADE_COMMAND',JSON.stringify(x));return true}catch{return false}
-}
-function stccClearClosed(){
-  const x=stccLoad();
-  if(x && x.active){toast('Active trade is locked • close it before starting a new scan');return}
-  try{localStorage.removeItem('PTD_SUPER_TRADE_COMMAND')}catch{}
-  stccRender(null);
-  loadPrediction(true);
-}
-function stccIsOpposite(a,b){return (a==='CALL'&&b==='PUT')||(a==='PUT'&&b==='CALL')||(a==='BUY CALL'&&b==='BUY PUT')||(a==='BUY PUT'&&b==='BUY CALL')}
-function stccCurrentPlan(p){
-  const plan=p?.optionPlan||{};
-  const action=String(p?.action||'NO TRADE').toUpperCase();
-  const usable=p?.signalState==='CONFIRMED' && !!plan.available && action!=='NO TRADE';
-  if(!usable)return null;
-  return {
-    symbol,
-    action,
-    prediction:p.prediction||action,
-    contract:plan.contract||'—',
-    optionType:plan.optionType||'',
-    strike:plan.strike??'—',
-    lotSize:plan.lotSize??'—',
-    entry:Number(plan.entry),
-    sl:Number(plan.stopLoss),
-    t1:Number(plan.target1),
-    t2:Number(plan.target2),
-    rr1:plan.rr1||'2.0',
-    rr2:plan.rr2||'2.5',
-    token:plan.token||plan.symboltoken||'',
-    exchange:plan.exchange||'NSE',
-    modelConfidence:p.modelConfidence??null,
-    confirmationPct:p.confirmationPct??null,
-    sourceTime:Date.now(),
-    reason:p.reasoning||'Confirmed live setup'
-  };
-}
-function stccLockPlan(mode='LOCKED'){
-  const existing=stccLoad(); if(existing?.active){toast('An active trade plan is already locked');return}
-  const p=window.__lastPrediction||{};
-  const plan=stccCurrentPlan(p);
-  if(!plan){toast('No confirmed live trade plan to lock');return}
-  const now=Date.now();
-  const rec={...plan,active:true,mode,status:'HOLD',lockedAt:now,lastCheck:now,exitReason:'',emergency:false};
-  stccSave(rec); stccRender(rec); stccStartMonitor(); addAlert('🔒 TRADE PLAN LOCKED',plan.symbol+' • '+plan.action+' • '+plan.contract+' • SL/Targets fixed.','bullish','stcc-lock-'+now); toast('Trade plan locked • SL/Targets will not auto-change');
-}
-function stccMarkTaken(){
-  const existing=stccLoad(); if(existing?.active){toast('Active trade already locked');return}
-  const p=window.__lastPrediction||{};
-  const plan=stccCurrentPlan(p);
-  if(!plan){toast('No confirmed live trade plan available');return}
-  const now=Date.now();
-  const rec={...plan,active:true,mode:'TAKEN',status:'HOLD',lockedAt:now,lastCheck:now,exitReason:'',emergency:false};
-  stccSave(rec); stccRender(rec); stccStartMonitor(); addAlert('✅ ACTIVE TRADE LOCKED',plan.symbol+' • '+plan.action+' • '+plan.contract+' • SL '+plan.sl+' • T1 '+plan.t1+' • T2 '+plan.t2,'bullish','stcc-taken-'+now); toast('Active trade locked • monitoring started');
-}
-function stccClose(reason){
-  const x=stccLoad(); if(!x){toast('No active trade');return}
-  const now=Date.now();
-  const closed={...x,active:false,status:'CLOSED • '+reason,closedAt:now,lastCheck:now};
-  stccSave(closed); stccRender(closed); stccStopMonitor(); addAlert('📕 TRADE CLOSED',x.contract+' • '+reason,'neutral','stcc-close-'+now); toast('Trade closed • new plan will wait for next confirmation');
-}
-function stccEmergencyExit(){
-  const x=stccLoad();
-  if(!x?.active){toast('No active trade');return}
-  const reason=x.exitReason||'Manual emergency exit confirmed by user';
-  stccClose('EXIT NOW • '+reason);
-}
-function stccEvaluate(p){
-  const x=stccLoad(); if(!x?.active)return;
-  let emergency='';
-  if(p?.signalState==='CONFIRMED' && stccIsOpposite(x.action,String(p.action||'')) && Number(p.confirmationPct||0)>=80) emergency='Opposite setup confirmed at ≥80% trade confirmation.';
-  x.emergency=!!emergency;
-  x.exitReason=emergency;
-  if(emergency){x.status='EXIT NOW';addAlert('🚨 EXIT NOW',x.contract+' • '+emergency,'bearish','stcc-emergency-'+(x.lockedAt||0));}
-  x.lastCheck=Date.now(); stccSave(x); stccRender(x);
-}
-function stccRender(x){
-  const clock=$('stccClock'); if(clock)clock.textContent=stccNow();
-  const p=window.__lastPrediction||{};
-  const live=!!x?.active;
-  const plan=live?x:stccCurrentPlan(p);
-  const decision=$('stccDecision'), state=$('stccState'), reason=$('stccReason');
-  if(!decision)return;
-  if(live){
-    decision.textContent=x.emergency?'🚨 EXIT NOW':('🟢 '+x.action+' • '+x.contract);
-    setP10Tone(decision,x.emergency?'BEARISH':'BULLISH');
-    state.textContent=x.emergency?'EMERGENCY':'PLAN LOCKED';
-    setP10Tone(state,x.emergency?'BEARISH':'BULLISH');
-    reason.textContent='ACTIVE TRADE: prediction may change, but this locked plan does not. SL, T1 and T2 stay fixed until hit or you close the trade.';
-  }else if(plan){
-    decision.textContent='🎯 TAKE '+plan.contract;
-    setP10Tone(decision,'BULLISH');
-    state.textContent='CONFIRMED • READY';
-    setP10Tone(state,'BULLISH');
-    reason.textContent='Confirmed setup. Review the exact entry, SL and targets below. Nothing is auto-placed; lock the plan when you decide to take it.';
-  }else{
-    decision.textContent='WAIT FOR CONFIRMED SETUP';
-    setP10Tone(decision,'NEUTRAL');
-    state.textContent='SCANNING';
-    setP10Tone(state,'NEUTRAL');
-    reason.textContent='No live confirmed option plan right now. The scanner keeps searching and will not manufacture a trade.';
-  }
-  $('stccContract').textContent=plan?.contract||'—';
-  $('stccContractMeta').textContent=plan?((plan.optionType||'OPTION')+' • Strike '+(plan.strike??'—')+' • Lot '+(plan.lotSize??'—')):'Live contract only';
-  $('stccEntry').textContent=Number.isFinite(Number(plan?.entry))?Number(plan.entry).toFixed(2):'—';
-  $('stccSL').textContent=Number.isFinite(Number(plan?.sl))?Number(plan.sl).toFixed(2):'—';
-  $('stccT1').textContent=Number.isFinite(Number(plan?.t1))?Number(plan.t1).toFixed(2):'—';
-  $('stccT2').textContent=Number.isFinite(Number(plan?.t2))?Number(plan.t2).toFixed(2):'—';
-  $('stccRR').textContent=plan?('1:'+plan.rr1+' / 1:'+plan.rr2):'—';
-  $('stccPlanTime').textContent=plan?.lockedAt?stccFmtTime(plan.lockedAt):plan?.sourceTime?stccFmtTime(plan.sourceTime):'—';
-  $('stccLastCheck').textContent=x?.lastCheck?stccFmtTime(x.lastCheck):stccNow();
-  $('stccLockTitle').textContent=live?'🔒 '+(x.mode==='TAKEN'?'ACTIVE TRADE':'LOCKED PLAN'):'No active trade';
-  $('stccLockMessage').textContent=live?'This exact plan is frozen. A new prediction cannot overwrite Entry / SL / T1 / T2.':(plan?'A confirmed plan is available. Lock it before taking the trade so the next predictions cannot move your levels.':'Prediction is still live-scanning.');
-  $('stccLiveStatus').textContent=live?(x.status||'HOLD'):'NOT ACTIVE';
-  setP10Tone($('stccLiveStatus'),x?.emergency?'BEARISH':live?'BULLISH':'NEUTRAL');
-  $('stccLockBtn').disabled=!!live;
-  $('stccTakenBtn').disabled=!!live;
-  $('stccExitBtn').disabled=!live;
-  $('stccExitReason').textContent=x?.exitReason
-    ? ('🚨 '+x.exitReason+' • Press EXIT NOW to close this command-center lock. No automatic broker order is sent.')
-    : 'EXIT NOW is reserved for a defined emergency condition or a manual immediate exit decision. Prediction changes alone never rewrite the locked plan.';
-}
-function stccStartMonitor(){
-  if(stccPollTimer)clearInterval(stccPollTimer);
-  stccPollTimer=setInterval(stccMonitorTick,15000);
-  stccMonitorTick();
-}
-function stccStopMonitor(){if(stccPollTimer){clearInterval(stccPollTimer);stccPollTimer=null}}
-async function stccMonitorTick(){
-  const x=stccLoad(); if(!x?.active){stccStopMonitor();return}
-  try{
-    if(!x.token){x.lastCheck=Date.now();stccSave(x);stccRender(x);return}
-    const q=await getJSON('/api/angel/ltp?exchange='+encodeURIComponent(x.exchange||'NSE')+'&tradingsymbol='+encodeURIComponent(x.contract||'')+'&symboltoken='+encodeURIComponent(x.token));
-    const d=q?.data?.data||q?.data||q;
-    const ltp=Number(d?.ltp);
-    if(Number.isFinite(ltp)){
-      x.lastLtp=ltp;
-      if(ltp<=x.sl){x.active=false;x.status='STOP HIT • CLOSED';x.exitReason='Option premium touched the locked Stop Loss ₹'+x.sl.toFixed(2);x.closedAt=Date.now();addAlert('🛑 STOP LOSS HIT',x.contract+' • LTP ₹'+ltp.toFixed(2)+' • locked SL ₹'+x.sl.toFixed(2),'bearish','stcc-sl-'+x.lockedAt);stccSave(x);stccRender(x);stccStopMonitor();return}
-      if(ltp>=x.t2){x.active=false;x.status='TARGET 2 HIT • CLOSED';x.exitReason='Option premium touched locked Target 2 ₹'+x.t2.toFixed(2);x.closedAt=Date.now();addAlert('🎯 TARGET 2 HIT',x.contract+' • LTP ₹'+ltp.toFixed(2)+' • locked T2 ₹'+x.t2.toFixed(2),'bullish','stcc-t2-'+x.lockedAt);stccSave(x);stccRender(x);stccStopMonitor();return}
-      if(ltp>=x.t1){x.status='T1 HIT • HOLDING T2';}
-      else if(x.status==='T1 HIT • HOLDING T2')x.status='HOLD';
-    }
-    x.lastCheck=Date.now();stccSave(x);stccRender(x);
-  }catch{
-    x.lastCheck=Date.now();stccSave(x);stccRender(x);
-  }
-}
-function p10TodayKey(){
-  return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
-}
-function p10OpportunityState(){
-  const key=p10TodayKey();
-  try{
-    const raw=JSON.parse(localStorage.getItem("PTD_TWO_TRADE_FINDER")||"{}");
-    if(raw.date!==key) return {date:key,count:0,seen:[]};
-    return {date:key,count:Math.min(2,Number(raw.count)||0),seen:Array.isArray(raw.seen)?raw.seen:[]};
-  }catch{return {date:key,count:0,seen:[]}}
-}
-function renderP10OpportunityCount(){
-  const el=$("p10OpportunityCount"); if(!el)return;
-  const s=p10OpportunityState(); el.textContent=s.count+" / 2";
-}
-function registerP10Opportunity(p){
-  if(String(p?.signalState||"").toUpperCase()!=="CONFIRMED" || !p?.optionPlan?.available){renderP10OpportunityCount();return;}
-  const s=p10OpportunityState();
-  const bar=String(p.signalBarTime||"");
-  const contract=String(p.optionPlan.contract||"");
-  const fp=[s.date,symbol,String(p.action||""),bar,contract].join("|");
-  const now=Date.now();
-  const recent=s.seen.find(x=>x.fp===fp);
-  if(!recent && s.count<2){
-    const duplicateRecent=s.seen.some(x=>x.action===String(p.action||"")&&x.contract===contract&&(now-Number(x.at||0))<20*60000);
-    if(!duplicateRecent){
-      s.count+=1;
-      s.seen.push({fp,action:String(p.action||""),contract,at:now});
-      s.seen=s.seen.slice(-20);
-      try{localStorage.setItem("PTD_TWO_TRADE_FINDER",JSON.stringify(s))}catch{}
-      addAlert("🎯 TRADE OPPORTUNITY "+s.count+"/2",symbol+" • "+String(p.action||"")+" • "+contract+" • live confirmed setup found.","bullish","p10-opportunity-"+fp);
-    }
-  }
-  renderP10OpportunityCount();
-}
-function renderPredictionPanel(r){
-  const p=r?.prediction||{}; const hist=r?.backtest||p?.historical||{};
-  window.__lastPrediction=p;
-  const p10Time=$('p10Time');
-  if(p10Time) p10Time.textContent='Updated • '+p10Clock();
-  registerP10Opportunity(p);
-  stccEvaluate(p);
-  stccRender(stccLoad());
-  const pred=$('p10Prediction'), act=$('p10Action');
-  updateStickyPrediction(p);
-  pred.textContent=p.prediction||'NO TRADE'; setP10Tone(pred,p.prediction);
-  act.textContent=p.action||'NO TRADE'; setP10Tone(act,p.action);
-  $('p10State').textContent=p.signalState||'LOCKED'; setP10Tone($('p10State'),p.signalState);
-  $('p10Confidence').textContent=p.modelConfidence!=null?String(p.modelConfidence)+'%':'—';
-  $('p10Confirmation').textContent=(p.confirmedCount!=null?`${p.confirmedCount}/${p.confirmationTotal||10}`:'—')+(p.confirmationPct!=null?` • ${p.confirmationPct}%`:'');
-  renderP10OpportunityCount();
-  $('p10HitRate').textContent=hist.available&&hist.targetHitRate!=null?String(hist.targetHitRate)+'%':'NOT CALIBRATED';
-  $('p10Signals').textContent=hist.signals??'—'; $('p10Resolved').textContent=hist.resolved??'—'; $('p10WinsLosses').textContent=(hist.wins??'—')+' / '+(hist.losses??'—');
-  const exp=hist.available&&hist.targetHitRate!=null?((Number(hist.targetHitRate)/100*1.25)-(1-Number(hist.targetHitRate)/100)).toFixed(2):null; $('p10ExpectedR').textContent=exp==null?'—':(Number(exp)>0?'+':'')+exp+'R';
-  $('p10Reason').textContent=p.reasoning||((p.noTradeReasons||[]).join(' • ')||'Waiting for prediction engine.');
-  $('p10Meter').style.width=Math.max(0,Math.min(100,Number(p.confirmationPct||0)))+'%';
-  $('riskDelta').textContent=p.delta!=null?Number(p.delta).toFixed(3):'—';
-  $('riskTheta').textContent=p.theta!=null?Number(p.theta).toFixed(2):'—';
-  $('riskIV').textContent=p.iv!=null?Number(p.iv).toFixed(2)+'%':'—';
-  const gr=p.greekRisk?.status||'WAIT';
-  $('riskGreekGuard').textContent=gr; setP10Tone($('riskGreekGuard'),gr==='PASS'?'BULLISH':gr==='NO TRADE'?'BEARISH':'NEUTRAL');
-  $('riskGreekMessage').textContent=p.greekRisk?.message||((p.noTradeReasons||[]).find(x=>String(x).includes('Theta'))||'Select a live option contract after a confirmed setup.');
-
-  const plan=p?.optionPlan||{};
-  $('finalPlanDirection').textContent=p.action||'NO TRADE'; setP10Tone($('finalPlanDirection'),p.action);
-  const usable=!!plan.available && p.signalState==='CONFIRMED' && p.action!=='NO TRADE';
-  $('finalPlanContract').textContent=usable?(plan.contract||'—'):'—';
-  $('finalPlanContractMeta').textContent=usable ? ('₹'+Number(plan.entry||0).toFixed(2)+' • '+(plan.optionType||'')+' • Strike '+(plan.strike||'—')+' • Lot '+(plan.lotSize||'—')) : 'Live option premium target band ₹25–₹50';
-  $('finalPlanEntry').textContent=usable?(plan.entry??'—'):'—';
-  $('finalPlanSL').textContent=usable?(plan.stopLoss??'—'):'—';
-  $('finalPlanT1').textContent=usable?(plan.target1??'—'):'—';
-  $('finalPlanT2').textContent=usable?(plan.target2??'—'):'—';
-  $('finalPlanRR').textContent=usable?('1:'+(plan.rr1||'2.0')+' / 1:'+(plan.rr2||'2.5')):'—';
-  const opp=p10OpportunityState();
-  $('finalPlanBar').textContent=p.signalState==='CONFIRMED'?`CONFIRMED • ${p.signalBarTime?chartTime(p.signalBarTime):'LIVE'} • Finder ${Math.min(2,Math.max(1,opp.count))}/2`:(p.signalState||'WAIT')+' • TWO-TRADE FINDER';
-  $('finalPlanNote').textContent=usable
-    ? ('BUY '+plan.contract+' only in the live quoted ₹25–₹50 band. Entry ₹'+Number(plan.entry).toFixed(2)+' • SL ₹'+Number(plan.stopLoss).toFixed(2)+' • T1 ₹'+Number(plan.target1).toFixed(2)+' • T2 ₹'+Number(plan.target2).toFixed(2)+' • Delta '+plan.delta+' • Theta/day '+plan.theta+'. Levels are calculated from the live contract and underlying ATR/Delta; they are planning levels, not guaranteed profit.')
-    : 'NO TRADE right now. The system will not recommend a contract until the live confirmed signal passes all required gates and a quoted option in ₹25–₹50 also passes Delta/Theta/liquidity checks.';
+  // The Trade Command Center is now the single source of the actionable plan.
+  // Keep Phase 10 prediction data separate so a new scan can never rewrite a locked trade.
 
   const labels={trend:'1H trend',setup:'15M setup',trigger:'5M trigger',momentum:'Momentum',volume:'Volume',strength:'ADX',options:'Options / OI',greeks:'Theta / Delta',news:'News / macro',global:'Global risk',eventSafe:'Event safe'};
   const grid=$('p10ConfirmGrid');  grid.innerHTML=Object.entries(labels).map(([k,label])=>{const yes=!!p.confirmations?.[k];return `<div class="confirm-item"><span>${label}</span><b class="${yes?'yes':'no'}">${yes?'✓ CONFIRMED':'WAIT'}</b></div>`}).join('');
@@ -2019,7 +1747,7 @@ function formatChartDay(v){
 }
 function renderChartDays(rows){
  const box=$('chartDays'); if(!box)return;
- const days=[...new Set((rows||[]).map(x=>istDateKey(x.t)).filter(Boolean))].slice(-15).reverse();
+ const days=[...new Set((rows||[]).map(x=>istDateKey(x.t)).filter(Boolean))].slice(-8).reverse();
  if(!days.length){box.innerHTML='';return}
  if(!chartDay || !days.includes(chartDay)) chartDay=days[0];
  box.innerHTML=days.map(day=>`<button class="chart-day ${day===chartDay?'active':''}" onclick="selectChartDay('${day}')">${day===days[0]?'TODAY • ':''}${formatChartDay(day)}</button>`).join('');
@@ -2032,7 +1760,7 @@ function drawChart(){
  ctx.clearRect(0,0,w,h);ctx.fillStyle='#050a12';ctx.fillRect(0,0,w,h);ctx.strokeStyle='rgba(61,78,105,.30)';ctx.lineWidth=1;
  for(let i=0;i<=8;i++){const y=top+i*plotH/8;ctx.beginPath();ctx.moveTo(left,y);ctx.lineTo(left+plotW,y);ctx.stroke()}for(let i=0;i<=10;i++){const x=left+i*plotW/10;ctx.beginPath();ctx.moveTo(x,top);ctx.lineTo(x,top+plotH);ctx.stroke()}
  const raw=chartDataCache.get(tf)||liveData;if(!chartRowsOk(raw)){$('chartLoading').style.display='flex';$('chartLoading').textContent='NO LIVE CANDLES • CONNECT ANGEL ONE';$('chartOHLC').textContent='O — H — L — C —';$('chartLast').textContent='—';return}
- $('chartLoading').style.display='none';const dayRows=chartDay?raw.filter(x=>istDateKey(x.t)===chartDay):raw;const base=chartType==='heikin'?haRows(dayRows.length?dayRows:raw):dayRows.length?dayRows:raw,visible=Math.min(base.length,Math.max(35,Math.floor(plotW/5/Math.max(.55,scale)))),maxOffset=Math.max(0,base.length-visible);chartOffset=Math.max(0,Math.min(chartOffset,maxOffset));const end=base.length-chartOffset,start=Math.max(0,end-visible),view=base.slice(start,end);
+ $('chartLoading').style.display='none';const dayRows=chartDay?raw.filter(x=>istDateKey(x.t)===chartDay):raw;const base=chartType==='heikin'?haRows(dayRows.length?dayRows:raw):dayRows.length?dayRows:raw;const mobileChart=w<700;const visible=Math.min(base.length,Math.max(mobileChart?26:35,Math.floor(plotW/(mobileChart?8:5)/Math.max(.55,scale)))),maxOffset=Math.max(0,base.length-visible);chartOffset=Math.max(0,Math.min(chartOffset,maxOffset));const end=base.length-chartOffset,start=Math.max(0,end-visible),view=base.slice(start,end);
  let min=Math.min(...view.map(x=>x.l)),max=Math.max(...view.map(x=>x.h));const pad=(max-min||1)*.06;min-=pad;max+=pad;
  const py=v=>{if(!logScale)return top+(max-v)*plotH/(max-min||1);const lo=Math.log(Math.max(.0001,min)),hi=Math.log(Math.max(.0001,max)),z=Math.log(Math.max(.0001,v));return top+(hi-z)*plotH/(hi-lo||1)};
  const step=plotW/view.length*scale*.94,baseX=left+Math.max(0,plotW-view.length*step),last=view.at(-1),prev=view.at(-2),lp=Number(last.c);
