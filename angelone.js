@@ -23,6 +23,7 @@ let latestTicks = new Map();
 let lastTickAt = null;
 let wsGeneration = 0;
 let lastRefreshAt = 0;
+let refreshPromise=null;
 
 export function angelStatus(){
   return {
