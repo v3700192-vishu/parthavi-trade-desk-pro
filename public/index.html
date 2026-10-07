@@ -102,6 +102,8 @@ button,input,select{font:inherit} button{cursor:pointer}
 }
 
 .p10-time{font-size:8px;color:#91a0b8;white-space:nowrap;letter-spacing:.2px}
+.stcc-hero{display:flex;justify-content:space-between;gap:12px;align-items:center;border:1px solid var(--line);background:linear-gradient(180deg,#0a1322,#070d18);border-radius:14px;padding:12px}
+.stcc-decision{font-size:22px;font-weight:1000;letter-spacing:.2px}.stcc-reason{color:var(--muted);font-size:9px;line-height:1.45;margin-top:5px;max-width:900px}.stcc-badge{font-size:9px;font-weight:950;border:1px solid var(--line2);border-radius:999px;padding:7px 10px;white-space:nowrap}.stcc-grid{margin-top:9px}.stcc-lockline{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-top:8px;padding:10px 11px;border:1px solid var(--line);background:#070d18;border-radius:12px}.stcc-lockline b{display:block;font-size:11px}.stcc-lockline span{display:block;color:var(--muted);font-size:8px;line-height:1.35;margin-top:3px}.stcc-lockline>div:last-child{font-size:8px;font-weight:950;white-space:nowrap}.stcc-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}.stcc-actions .btn{min-height:38px}.stcc-actions #stccExitBtn{border-color:rgba(255,95,128,.65)}.stcc-hit{border-color:rgba(255,207,103,.55)}@media(max-width:760px){.stcc-hero,.stcc-lockline{display:block}.stcc-badge{display:inline-block;margin-top:8px}.stcc-lockline>div:last-child{margin-top:7px}.stcc-actions{display:grid;grid-template-columns:1fr 1fr}.stcc-decision{font-size:18px}}
 .finder-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.finder-grid label{font-size:11px;color:#91a0b8;font-weight:700;display:grid;gap:5px}.finder-grid input,.finder-grid select{width:100%;box-sizing:border-box;background:#0b1020;color:#f4f7ff;border:1px solid #26334d;border-radius:10px;padding:11px;font:inherit}.finder-grid .btn{align-self:end;min-height:42px}.finder-note{margin-top:10px;color:#7f8da6;font-size:11px;line-height:1.5}.contract-result{margin-top:10px}.contract-table{width:100%;border-collapse:collapse;font-size:11px}.contract-table th,.contract-table td{padding:9px 7px;border-bottom:1px solid #202b40;text-align:right}.contract-table th:first-child,.contract-table td:first-child{text-align:left}@media(max-width:760px){.finder-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.finder-grid .btn{grid-column:1/-1}.contract-table{display:block;overflow-x:auto;white-space:nowrap}}
 
 .strategy-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:8px}.strategy-box{border:1px solid var(--line);background:#070d18;border-radius:12px;padding:9px}.strategy-box small{display:block;color:var(--muted);font-size:7px;text-transform:uppercase;letter-spacing:.5px}.strategy-box b{display:block;font-size:12px;margin-top:4px}.strategy-box span{display:block;color:var(--muted);font-size:7px;margin-top:3px;line-height:1.35}.riskbar{height:8px;background:#111a2a;border:1px solid var(--line);border-radius:999px;overflow:hidden;margin-top:7px}.riskbar i{display:block;height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,#ffffff,#ffcf67,#ff5f80)}
@@ -594,6 +596,42 @@ body{-webkit-overflow-scrolling:touch}
     <span class="shield-status" id="p11SignalStatus">No live signal token loaded.</span>
   </div>
   <div class="finder-note"><b>Performance view:</b> “Model confidence” is a rule-based confluence measure. “Historical target-hit” is a backtest statistic from Phase 10; it is not a forward probability of profit and does not include every real-world execution cost.</div>
+</section>
+
+<section class="card" id="superTradeCommandCenter">
+  <div class="card-head">
+    <h3>PARTHAVI super Trade Command Center</h3>
+    <span id="stccClock">--:--:-- --</span>
+  </div>
+  <div class="stcc-hero">
+    <div>
+      <div class="eyebrow">ONE PLAN • ONE LOCK • NO MOVING GOALPOSTS</div>
+      <div id="stccDecision" class="stcc-decision neutral">WAIT FOR CONFIRMED SETUP</div>
+      <div id="stccReason" class="stcc-reason">The command center will tell you exactly what to take only after a live confirmed setup passes the required gates.</div>
+    </div>
+    <div class="stcc-badge" id="stccState">SCANNING</div>
+  </div>
+  <div class="strategy-grid stcc-grid">
+    <div class="strategy-box"><small>Take</small><b id="stccContract">—</b><span id="stccContractMeta">Live contract only</span></div>
+    <div class="strategy-box"><small>Entry</small><b id="stccEntry">—</b><span>Option premium</span></div>
+    <div class="strategy-box"><small>Stop Loss</small><b id="stccSL">—</b><span>Locked after trade</span></div>
+    <div class="strategy-box"><small>Target 1</small><b id="stccT1">—</b><span>Do not change automatically</span></div>
+    <div class="strategy-box"><small>Target 2</small><b id="stccT2">—</b><span>Do not change automatically</span></div>
+    <div class="strategy-box"><small>R:R</small><b id="stccRR">—</b><span>Original plan</span></div>
+    <div class="strategy-box"><small>Plan time</small><b id="stccPlanTime">—</b><span>12-hour format</span></div>
+    <div class="strategy-box"><small>Last check</small><b id="stccLastCheck">—</b><span>12-hour format</span></div>
+  </div>
+  <div class="stcc-lockline">
+    <div><b id="stccLockTitle">No active trade</b><span id="stccLockMessage">Prediction may change while scanning. Once you lock/take a trade, the active plan stays fixed.</span></div>
+    <div id="stccLiveStatus" class="neutral">NOT ACTIVE</div>
+  </div>
+  <div class="stcc-actions">
+    <button class="btn primary" id="stccLockBtn" onclick="stccLockPlan()">🔒 Lock This Plan</button>
+    <button class="btn" id="stccTakenBtn" onclick="stccMarkTaken()">✅ I Took This Trade</button>
+    <button class="btn" id="stccExitBtn" onclick="stccEmergencyExit()">🚨 EXIT NOW</button>
+    <button class="btn" onclick="stccClearClosed()">↻ New Scan</button>
+  </div>
+  <div class="finder-note" id="stccExitReason">EXIT NOW remains inactive unless a defined emergency/target/SL condition is detected. A prediction change alone does not rewrite the locked plan.</div>
 </section>
 
 <section class="card" id="finalTradePlan">
@@ -1583,6 +1621,167 @@ function p10Clock(ts=Date.now()){
     return new Date(ts).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true});
   }
 }
+let stccPollTimer=null;
+function stccNow(){
+  try{return new Intl.DateTimeFormat('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true,timeZone:'Asia/Kolkata'}).format(new Date()).replace(/^24:/,'12:')}
+  catch{return new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true})}
+}
+function stccFmtTime(ts){
+  if(!ts)return '—';
+  try{return new Intl.DateTimeFormat('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true,timeZone:'Asia/Kolkata'}).format(new Date(ts)).replace(/^24:/,'12:')}
+  catch{return new Date(ts).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true})}
+}
+function stccLoad(){
+  try{return JSON.parse(localStorage.getItem('PTD_SUPER_TRADE_COMMAND')||'null')}catch{return null}
+}
+function stccSave(x){
+  try{localStorage.setItem('PTD_SUPER_TRADE_COMMAND',JSON.stringify(x));return true}catch{return false}
+}
+function stccClearClosed(){
+  const x=stccLoad();
+  if(x && x.active){toast('Active trade is locked • close it before starting a new scan');return}
+  try{localStorage.removeItem('PTD_SUPER_TRADE_COMMAND')}catch{}
+  stccRender(null);
+  loadPrediction(true);
+}
+function stccIsOpposite(a,b){return (a==='CALL'&&b==='PUT')||(a==='PUT'&&b==='CALL')||(a==='BUY CALL'&&b==='BUY PUT')||(a==='BUY PUT'&&b==='BUY CALL')}
+function stccCurrentPlan(p){
+  const plan=p?.optionPlan||{};
+  const action=String(p?.action||'NO TRADE').toUpperCase();
+  const usable=p?.signalState==='CONFIRMED' && !!plan.available && action!=='NO TRADE';
+  if(!usable)return null;
+  return {
+    symbol,
+    action,
+    prediction:p.prediction||action,
+    contract:plan.contract||'—',
+    optionType:plan.optionType||'',
+    strike:plan.strike??'—',
+    lotSize:plan.lotSize??'—',
+    entry:Number(plan.entry),
+    sl:Number(plan.stopLoss),
+    t1:Number(plan.target1),
+    t2:Number(plan.target2),
+    rr1:plan.rr1||'2.0',
+    rr2:plan.rr2||'2.5',
+    token:plan.token||plan.symboltoken||'',
+    exchange:plan.exchange||'NSE',
+    modelConfidence:p.modelConfidence??null,
+    confirmationPct:p.confirmationPct??null,
+    sourceTime:Date.now(),
+    reason:p.reasoning||'Confirmed live setup'
+  };
+}
+function stccLockPlan(mode='LOCKED'){
+  const existing=stccLoad(); if(existing?.active){toast('An active trade plan is already locked');return}
+  const p=window.__lastPrediction||{};
+  const plan=stccCurrentPlan(p);
+  if(!plan){toast('No confirmed live trade plan to lock');return}
+  const now=Date.now();
+  const rec={...plan,active:true,mode,status:'HOLD',lockedAt:now,lastCheck:now,exitReason:'',emergency:false};
+  stccSave(rec); stccRender(rec); stccStartMonitor(); addAlert('🔒 TRADE PLAN LOCKED',plan.symbol+' • '+plan.action+' • '+plan.contract+' • SL/Targets fixed.','bullish','stcc-lock-'+now); toast('Trade plan locked • SL/Targets will not auto-change');
+}
+function stccMarkTaken(){
+  const existing=stccLoad(); if(existing?.active){toast('Active trade already locked');return}
+  const p=window.__lastPrediction||{};
+  const plan=stccCurrentPlan(p);
+  if(!plan){toast('No confirmed live trade plan available');return}
+  const now=Date.now();
+  const rec={...plan,active:true,mode:'TAKEN',status:'HOLD',lockedAt:now,lastCheck:now,exitReason:'',emergency:false};
+  stccSave(rec); stccRender(rec); stccStartMonitor(); addAlert('✅ ACTIVE TRADE LOCKED',plan.symbol+' • '+plan.action+' • '+plan.contract+' • SL '+plan.sl+' • T1 '+plan.t1+' • T2 '+plan.t2,'bullish','stcc-taken-'+now); toast('Active trade locked • monitoring started');
+}
+function stccClose(reason){
+  const x=stccLoad(); if(!x){toast('No active trade');return}
+  const now=Date.now();
+  const closed={...x,active:false,status:'CLOSED • '+reason,closedAt:now,lastCheck:now};
+  stccSave(closed); stccRender(closed); stccStopMonitor(); addAlert('📕 TRADE CLOSED',x.contract+' • '+reason,'neutral','stcc-close-'+now); toast('Trade closed • new plan will wait for next confirmation');
+}
+function stccEmergencyExit(){
+  const x=stccLoad();
+  if(!x?.active){toast('No active trade');return}
+  const reason=x.exitReason||'Manual emergency exit confirmed by user';
+  stccClose('EXIT NOW • '+reason);
+}
+function stccEvaluate(p){
+  const x=stccLoad(); if(!x?.active)return;
+  let emergency='';
+  if(p?.signalState==='CONFIRMED' && stccIsOpposite(x.action,String(p.action||'')) && Number(p.confirmationPct||0)>=80) emergency='Opposite setup confirmed at ≥80% trade confirmation.';
+  x.emergency=!!emergency;
+  x.exitReason=emergency;
+  if(emergency){x.status='EXIT NOW';addAlert('🚨 EXIT NOW',x.contract+' • '+emergency,'bearish','stcc-emergency-'+(x.lockedAt||0));}
+  x.lastCheck=Date.now(); stccSave(x); stccRender(x);
+}
+function stccRender(x){
+  const clock=$('stccClock'); if(clock)clock.textContent=stccNow();
+  const p=window.__lastPrediction||{};
+  const live=!!x?.active;
+  const plan=live?x:stccCurrentPlan(p);
+  const decision=$('stccDecision'), state=$('stccState'), reason=$('stccReason');
+  if(!decision)return;
+  if(live){
+    decision.textContent=x.emergency?'🚨 EXIT NOW':('🟢 '+x.action+' • '+x.contract);
+    setP10Tone(decision,x.emergency?'BEARISH':'BULLISH');
+    state.textContent=x.emergency?'EMERGENCY':'PLAN LOCKED';
+    setP10Tone(state,x.emergency?'BEARISH':'BULLISH');
+    reason.textContent='ACTIVE TRADE: prediction may change, but this locked plan does not. SL, T1 and T2 stay fixed until hit or you close the trade.';
+  }else if(plan){
+    decision.textContent='🎯 TAKE '+plan.contract;
+    setP10Tone(decision,'BULLISH');
+    state.textContent='CONFIRMED • READY';
+    setP10Tone(state,'BULLISH');
+    reason.textContent='Confirmed setup. Review the exact entry, SL and targets below. Nothing is auto-placed; lock the plan when you decide to take it.';
+  }else{
+    decision.textContent='WAIT FOR CONFIRMED SETUP';
+    setP10Tone(decision,'NEUTRAL');
+    state.textContent='SCANNING';
+    setP10Tone(state,'NEUTRAL');
+    reason.textContent='No live confirmed option plan right now. The scanner keeps searching and will not manufacture a trade.';
+  }
+  $('stccContract').textContent=plan?.contract||'—';
+  $('stccContractMeta').textContent=plan?((plan.optionType||'OPTION')+' • Strike '+(plan.strike??'—')+' • Lot '+(plan.lotSize??'—')):'Live contract only';
+  $('stccEntry').textContent=Number.isFinite(Number(plan?.entry))?Number(plan.entry).toFixed(2):'—';
+  $('stccSL').textContent=Number.isFinite(Number(plan?.sl))?Number(plan.sl).toFixed(2):'—';
+  $('stccT1').textContent=Number.isFinite(Number(plan?.t1))?Number(plan.t1).toFixed(2):'—';
+  $('stccT2').textContent=Number.isFinite(Number(plan?.t2))?Number(plan.t2).toFixed(2):'—';
+  $('stccRR').textContent=plan?('1:'+plan.rr1+' / 1:'+plan.rr2):'—';
+  $('stccPlanTime').textContent=plan?.lockedAt?stccFmtTime(plan.lockedAt):plan?.sourceTime?stccFmtTime(plan.sourceTime):'—';
+  $('stccLastCheck').textContent=x?.lastCheck?stccFmtTime(x.lastCheck):stccNow();
+  $('stccLockTitle').textContent=live?'🔒 '+(x.mode==='TAKEN'?'ACTIVE TRADE':'LOCKED PLAN'):'No active trade';
+  $('stccLockMessage').textContent=live?'This exact plan is frozen. A new prediction cannot overwrite Entry / SL / T1 / T2.':(plan?'A confirmed plan is available. Lock it before taking the trade so the next predictions cannot move your levels.':'Prediction is still live-scanning.');
+  $('stccLiveStatus').textContent=live?(x.status||'HOLD'):'NOT ACTIVE';
+  setP10Tone($('stccLiveStatus'),x?.emergency?'BEARISH':live?'BULLISH':'NEUTRAL');
+  $('stccLockBtn').disabled=!!live;
+  $('stccTakenBtn').disabled=!!live;
+  $('stccExitBtn').disabled=!live;
+  $('stccExitReason').textContent=x?.exitReason
+    ? ('🚨 '+x.exitReason+' • Press EXIT NOW to close this command-center lock. No automatic broker order is sent.')
+    : 'EXIT NOW is reserved for a defined emergency condition or a manual immediate exit decision. Prediction changes alone never rewrite the locked plan.';
+}
+function stccStartMonitor(){
+  if(stccPollTimer)clearInterval(stccPollTimer);
+  stccPollTimer=setInterval(stccMonitorTick,15000);
+  stccMonitorTick();
+}
+function stccStopMonitor(){if(stccPollTimer){clearInterval(stccPollTimer);stccPollTimer=null}}
+async function stccMonitorTick(){
+  const x=stccLoad(); if(!x?.active){stccStopMonitor();return}
+  try{
+    if(!x.token){x.lastCheck=Date.now();stccSave(x);stccRender(x);return}
+    const q=await getJSON('/api/angel/ltp?exchange='+encodeURIComponent(x.exchange||'NSE')+'&tradingsymbol='+encodeURIComponent(x.contract||'')+'&symboltoken='+encodeURIComponent(x.token));
+    const d=q?.data?.data||q?.data||q;
+    const ltp=Number(d?.ltp);
+    if(Number.isFinite(ltp)){
+      x.lastLtp=ltp;
+      if(ltp<=x.sl){x.active=false;x.status='STOP HIT • CLOSED';x.exitReason='Option premium touched the locked Stop Loss ₹'+x.sl.toFixed(2);x.closedAt=Date.now();addAlert('🛑 STOP LOSS HIT',x.contract+' • LTP ₹'+ltp.toFixed(2)+' • locked SL ₹'+x.sl.toFixed(2),'bearish','stcc-sl-'+x.lockedAt);stccSave(x);stccRender(x);stccStopMonitor();return}
+      if(ltp>=x.t2){x.active=false;x.status='TARGET 2 HIT • CLOSED';x.exitReason='Option premium touched locked Target 2 ₹'+x.t2.toFixed(2);x.closedAt=Date.now();addAlert('🎯 TARGET 2 HIT',x.contract+' • LTP ₹'+ltp.toFixed(2)+' • locked T2 ₹'+x.t2.toFixed(2),'bullish','stcc-t2-'+x.lockedAt);stccSave(x);stccRender(x);stccStopMonitor();return}
+      if(ltp>=x.t1){x.status='T1 HIT • HOLDING T2';}
+      else if(x.status==='T1 HIT • HOLDING T2')x.status='HOLD';
+    }
+    x.lastCheck=Date.now();stccSave(x);stccRender(x);
+  }catch{
+    x.lastCheck=Date.now();stccSave(x);stccRender(x);
+  }
+}
 function p10TodayKey(){
   return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
 }
@@ -1620,9 +1819,12 @@ function registerP10Opportunity(p){
 }
 function renderPredictionPanel(r){
   const p=r?.prediction||{}; const hist=r?.backtest||p?.historical||{};
+  window.__lastPrediction=p;
   const p10Time=$('p10Time');
   if(p10Time) p10Time.textContent='Updated • '+p10Clock();
   registerP10Opportunity(p);
+  stccEvaluate(p);
+  stccRender(stccLoad());
   const pred=$('p10Prediction'), act=$('p10Action');
   updateStickyPrediction(p);
   pred.textContent=p.prediction||'NO TRADE'; setP10Tone(pred,p.prediction);
@@ -1990,6 +2192,8 @@ async function ptdAutoRefresh(){
 }
 angelStatus();setInterval(()=>{if(!document.hidden)angelStatus()},15000);
 renderP10OpportunityCount();
+  stccRender(stccLoad());
+  stccStartMonitor();
 loadAll();loadPrediction(false);loadPhase11Shield();updateRisk();drawChart();loadExecutionStatus();loadPhase12Readiness();phase6Monitor();renderTradeJournal();
 ptdAutoRefresh();
 setInterval(()=>{if(!document.hidden)ptdAutoRefresh()},20000);
