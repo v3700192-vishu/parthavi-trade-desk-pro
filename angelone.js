@@ -26,6 +26,7 @@ let lastTickAt = null;
 let wsGeneration = 0;
 let lastRefreshAt = 0;
 let refreshPromise=null;
+const AUTH_REFRESH_GRACE_MS = 5 * 60 * 1000;
 
 export function angelStatus(){
   return {
@@ -216,9 +217,16 @@ async function secureJson(url, options={}, retryAuth=true){
   const message=String(out?.message||out?.error||'').toLowerCase();
   const authFailure=(r.status===401||r.status===403||/token|jwt|authoriz|session|login|expired|invalid credential/.test(message));
   if((!r.ok||out?.status===false)&&authFailure&&retryAuth&&session.connected&&session.refreshToken){
-    const refreshed=await refreshSessionTokens();
-    if(refreshed){
-      return await secureJson(url,{...options,headers:secureHeaders()},false);
+    // Never churn the freshly created session. Some SmartAPI endpoints can
+    // transiently return 401/403 immediately after login; rotating the refresh
+    // token during that grace period creates a second WebSocket and can cause
+    // a reconnect storm.
+    const age=Date.now()-(session.loginAt?Date.parse(session.loginAt):Date.now());
+    if(age>=AUTH_REFRESH_GRACE_MS){
+      const refreshed=await refreshSessionTokens();
+      if(refreshed){
+        return await secureJson(url,{...options,headers:secureHeaders()},false);
+      }
     }
   }
   if(!r.ok||out?.status===false) throw new Error(out?.message||out?.error||`Angel One HTTP ${r.status}`);
@@ -327,24 +335,51 @@ export async function loadMaster(force=false){
   masterInflight=(async()=>{
     const r=await fetch(MASTER_URL,{headers:{accept:'application/json','user-agent':'PARTHAVI-TRADE-DESK-PRO/2.0'}});
     if(!r.ok) throw new Error(`Instrument master HTTP ${r.status}`);
-    const raw=await r.json();
-    if(!Array.isArray(raw)) throw new Error("Instrument master format unexpected");
 
-    // Keep only fields used by PTD. The broker master is large; storing the full
-    // payload and parsing it concurrently can spike a 512 MB Render instance.
-    const items=raw.map(x=>({
-      token:x?.token,
-      symbol:x?.symbol,
-      name:x?.name,
-      expiry:x?.expiry,
-      strike:x?.strike,
-      lotsize:x?.lotsize,
-      instrumenttype:x?.instrumenttype,
-      exch_seg:x?.exch_seg,
-      exchange:x?.exchange,
-      tick_size:x?.tick_size
-    }));
+    // Avoid response.json(): parsing the entire multi-MB broker master into a
+    // giant object array creates a very large temporary heap spike on Render's
+    // 512 MB instance. Read the JSON text once and parse one array object at a
+    // time, immediately reducing it to only fields PTD actually uses.
+    const text=await r.text();
+    const items=[];
+    let start=-1, depth=0, inString=false, escaped=false;
 
+    for(let i=0;i<text.length;i++){
+      const ch=text[i];
+      if(inString){
+        if(escaped) escaped=false;
+        else if(ch==='\\\\') escaped=true;
+        else if(ch==='"') inString=false;
+        continue;
+      }
+      if(ch==='"'){inString=true;continue;}
+      if(ch==='{'){
+        if(depth===0) start=i;
+        depth++;
+      }else if(ch==='}' && depth>0){
+        depth--;
+        if(depth===0 && start>=0){
+          try{
+            const x=JSON.parse(text.slice(start,i+1));
+            items.push({
+              token:x?.token,
+              symbol:x?.symbol,
+              name:x?.name,
+              expiry:x?.expiry,
+              strike:x?.strike,
+              lotsize:x?.lotsize,
+              instrumenttype:x?.instrumenttype,
+              exch_seg:x?.exch_seg,
+              exchange:x?.exchange,
+              tick_size:x?.tick_size
+            });
+          }catch{}
+          start=-1;
+        }
+      }
+    }
+
+    if(!items.length) throw new Error("Instrument master format unexpected or empty");
     masterCache={loadedAt:Date.now(),items};
     return items;
   })();
