@@ -12,6 +12,7 @@ const MASTER_URL = "https://margincalculator.angelbroking.com/OpenAPI_File/files
 let api = null;
 let session = { connected:false, clientCode:null, loginAt:null, jwtToken:null, refreshToken:null, feedToken:null, profile:null };
 let masterCache = { loadedAt:0, items:[] };
+let masterInflight = null;
 let ws = null;
 let wsConnected = false;
 let wsError = null;
@@ -321,12 +322,38 @@ export async function searchScrip({exchange, searchscrip}){
 
 export async function loadMaster(force=false){
   if(!force && masterCache.items.length && Date.now()-masterCache.loadedAt < 6*60*60*1000) return masterCache.items;
-  const r=await fetch(MASTER_URL);
-  if(!r.ok) throw new Error(`Instrument master HTTP ${r.status}`);
-  const items=await r.json();
-  if(!Array.isArray(items)) throw new Error("Instrument master format unexpected");
-  masterCache={loadedAt:Date.now(),items};
-  return items;
+  if(masterInflight) return await masterInflight;
+
+  masterInflight=(async()=>{
+    const r=await fetch(MASTER_URL,{headers:{accept:'application/json','user-agent':'PARTHAVI-TRADE-DESK-PRO/2.0'}});
+    if(!r.ok) throw new Error(`Instrument master HTTP ${r.status}`);
+    const raw=await r.json();
+    if(!Array.isArray(raw)) throw new Error("Instrument master format unexpected");
+
+    // Keep only fields used by PTD. The broker master is large; storing the full
+    // payload and parsing it concurrently can spike a 512 MB Render instance.
+    const items=raw.map(x=>({
+      token:x?.token,
+      symbol:x?.symbol,
+      name:x?.name,
+      expiry:x?.expiry,
+      strike:x?.strike,
+      lotsize:x?.lotsize,
+      instrumenttype:x?.instrumenttype,
+      exch_seg:x?.exch_seg,
+      exchange:x?.exchange,
+      tick_size:x?.tick_size
+    }));
+
+    masterCache={loadedAt:Date.now(),items};
+    return items;
+  })();
+
+  try{
+    return await masterInflight;
+  }finally{
+    masterInflight=null;
+  }
 }
 
 export async function findContracts({exchange="NSE", segment="OPTIDX", underlying="", expiry="", optionType="", strike="", query=""}){
