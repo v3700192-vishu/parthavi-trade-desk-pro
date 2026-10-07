@@ -3,7 +3,7 @@ import express from "express";
 import path from "path";
 import crypto from "crypto";
 import { fileURLToPath } from "url";
-import { angelStatus, loginAngel, logoutAngel, ltp as angelLtp, quote as angelQuote, candles as angelCandles, searchScrip as angelSearchScrip, loadMaster, findContracts, findInstrumentByToken, subscribe as angelSubscribe, reconnectWebSocket as angelReconnectWebSocket, quoteInstruments, optionGreeks, getLatestTicks, rms as angelRms, orderBook as angelOrderBook, placeOrder as angelPlaceOrder, cancelOrder as angelCancelOrder, holdings as angelHoldings, allHoldings as angelAllHoldings, positions as angelPositions, tradeBook as angelTradeBook, modifyOrder as angelModifyOrder } from "./angelone.js";
+import { angelStatus, loginAngel, logoutAngel, ltp as angelLtp, quote as angelQuote, candles as angelCandles, searchScrip as angelSearchScrip, loadMaster, findContracts, findLightContracts, findInstrumentByToken, subscribe as angelSubscribe, reconnectWebSocket as angelReconnectWebSocket, quoteInstruments, optionGreeks, getLatestTicks, rms as angelRms, orderBook as angelOrderBook, placeOrder as angelPlaceOrder, cancelOrder as angelCancelOrder, holdings as angelHoldings, allHoldings as angelAllHoldings, positions as angelPositions, tradeBook as angelTradeBook, modifyOrder as angelModifyOrder } from "./angelone.js";
 import { normalizeNews, analyzeNews, normalizeGlobal, analyzeGlobal, analyzeEvents, fuse } from "./fusion.js";
 import { buildPrediction, backtestFiveMinute } from "./prediction.js";
 import { productionReadiness } from "./phase12.js";
@@ -256,15 +256,15 @@ async function options(symbol){
     const ins=await resolveIndexToken(symbol);
     const l=await angelLtp({exchange:'NSE',tradingsymbol:ins.symbol,symboltoken:ins.token});
     const spot=Number((l?.data||l)?.ltp); if(!Number.isFinite(spot)) return null;
-    const items=await loadMaster(); const now=Date.now();
+    const items=await findLightContracts({underlying:symbol}); const now=Date.now();
     const parseExpiry=(x)=>{const m=String(x||'').match(/^(\d{2})([A-Z]{3})(\d{4})$/i); if(!m)return 0; const mo={JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11}[m[2].toUpperCase()]; return mo==null?0:new Date(Number(m[3]),mo,Number(m[1]),23,59,59).getTime();};
     const strikes=items.filter(x=>String(x.exch_seg||'').toLowerCase()==='nse_fo'&&String(x.name||'').toUpperCase()===String(symbol).toUpperCase()&&/^(CE|PE)$/i.test(String(x.symbol||'').slice(-2))&&parseExpiry(x.expiry)>=now).map(x=>Number(x.strike)/100).filter(Number.isFinite);
     const expiries=[...new Set(items.filter(x=>String(x.exch_seg||'').toLowerCase()==='nse_fo'&&String(x.name||'').toUpperCase()===String(symbol).toUpperCase()&&/^(CE|PE)$/i.test(String(x.symbol||'').slice(-2))&&parseExpiry(x.expiry)>=now).map(x=>String(x.expiry||'').toUpperCase()).filter(Boolean))].sort((a,b)=>parseExpiry(a)-parseExpiry(b));
     const liveExpiry=expiries[0]||null;
     if(!strikes.length) return {atm:Math.round(spot/50)*50,ceoi:null,cedoi:null,peoi:null,pedoi:null,iv:null,pcr:null,connected:true};
     const atm=strikes.reduce((best,s)=>Math.abs(s-spot)<Math.abs(best-spot)?s:best,strikes[0]);
-    const base=await findContracts({exchange:'NSE',segment:'OPTIDX',underlying:symbol,expiry:liveExpiry||'',optionType:'CE'});
-    const pe=await findContracts({exchange:'NSE',segment:'OPTIDX',underlying:symbol,expiry:liveExpiry||'',optionType:'PE'});
+    const base=await findLightContracts({underlying:symbol,expiry:liveExpiry||'',optionType:'CE'});
+    const pe=await findLightContracts({underlying:symbol,expiry:liveExpiry||'',optionType:'PE'});
     const near=(arr)=>arr.map(x=>({...x,_strike:Number(x.strike)/100})).filter(x=>Number.isFinite(x._strike)).sort((a,b)=>Math.abs(a._strike-atm)-Math.abs(b._strike-atm)).slice(0,25);
     const nearCe=near(base), nearPe=near(pe);
     const q=await quoteInstruments([...nearCe,...nearPe]);
@@ -636,10 +636,10 @@ app.get("/api/angel/ticks",(req,res)=>res.json({ok:true,connected:angelStatus().
 app.get("/api/angel/connection-test",async(req,res)=>{
   try{
     if(!angelStatus().connected) return res.status(401).json({ok:false,connected:false,error:"Angel One is not connected"});
-    const items=await loadMaster();
     const target=String(req.query.symbol||"NIFTY").toUpperCase();
     const known={NIFTY:["Nifty 50","99926000"],BANKNIFTY:["Nifty Bank","99926009"],FINNIFTY:["Nifty Fin Service","99926037"],MIDCPNIFTY:["NIFTY MID SELECT","99926074"],VIX:["India VIX","99926017"]};
     let match=known[target]?{symbol:known[target][0],token:known[target][1],exchange:"NSE"}:null;
+    const items=match?[]:await loadMaster();
     if(!match){
       const aliases={NIFTY:["NIFTY","NIFTY 50"],BANKNIFTY:["BANKNIFTY","BANK NIFTY"],FINNIFTY:["FINNIFTY","NIFTY FIN SERVICE"],MIDCPNIFTY:["MIDCPNIFTY","NIFTY MID SELECT"],SENSEX:["SENSEX"],VIX:["INDIAVIX","INDIA VIX","VIX"]};
       const aliasesFor=aliases[target]||[target];
