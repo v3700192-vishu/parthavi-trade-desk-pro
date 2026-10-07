@@ -1611,7 +1611,10 @@ function renderPredictionPanel(r){
     + (p.volumeSource ? ' • Volume benchmark source: '+p.volumeSource : (p.volumeUnavailable ? ' • Index volume unavailable; futures proxy is being used when available.' : ''));
   loadRiskSizing(p);
 }
+let ptdLoadPredictionPromise=null;
 async function loadPrediction(showToast=false){
+  if(ptdLoadPredictionPromise) return ptdLoadPredictionPromise;
+  ptdLoadPredictionPromise=(async()=>{
   try{
     const r=await getJSON('/api/phase10/prediction?symbol='+encodeURIComponent(symbol));
     renderPredictionPanel(r);
@@ -1621,7 +1624,11 @@ async function loadPrediction(showToast=false){
   }catch(e){
     renderPredictionPanel({prediction:{prediction:'NO TRADE',action:'NO TRADE',signalState:'LOCKED',modelConfidence:null,confirmationPct:0,confirmedCount:0,confirmationTotal:10,reasoning:'Prediction service unavailable or live data is not connected.',note:'Connect the backend and broker feeds before using the predictive panel.'},backtest:{available:false}});
     if(showToast) toast('Phase 10 prediction unavailable');
+  }finally{
+    ptdLoadPredictionPromise=null;
   }
+  })();
+  return ptdLoadPredictionPromise;
 }
 function scrollToPhase10Backtest(){ $('phase10Prediction')?.scrollIntoView({behavior:'smooth',block:'start'}); }
 
@@ -1650,7 +1657,10 @@ async function requestPhase11Signal(){
   toast('Phase 11 confirmed signal lock loaded');
  }catch(e){window.phase11SignalToken='';window.phase11Snapshot=null;$('p11SignalStatus').textContent='Not available • confirmation gate not met or live feed unavailable.';toast(e.message||'Confirmed signal unavailable')}
 }
+let ptdLoadAllPromise=null;
 async function loadAll(){
+  if(ptdLoadAllPromise) return ptdLoadAllPromise;
+  ptdLoadAllPromise=(async()=>{
  try{
    const reqs=await Promise.allSettled([
     getJSON('/api/status?symbol='+encodeURIComponent(symbol)),
@@ -1707,7 +1717,7 @@ async function loadAll(){
    }
 
    drawChart();
-   if(m?.connected) await loadBrokerAccount(); }catch(err){
+ }catch(err){
    renderGates({});
    $('decision').textContent='NO TRADE';
    $('action').textContent='NO TRADE';
@@ -1715,7 +1725,11 @@ async function loadAll(){
    $('action').className='neutral';
    $('decisionReason').textContent='Live sync error: '+(err?.message||'backend data unavailable')+'. The engine remains locked for safety.';
    drawChart();
+ }finally{
+   ptdLoadAllPromise=null;
  }
+  })();
+  return ptdLoadAllPromise;
 }
 let chartType='candles',logScale=false,autoScale=true,chartReq=0,chartOffset=0,chartDrag=null;
 const chartIndicators={ema:true,vwap:true,volume:true,rsi:false,macd:false,adx:false};
@@ -1905,6 +1919,7 @@ function setLiveAutoRefresh(on){
   toast(ptdAutoRefreshEnabled?'✅ Live auto-refresh ON':'⏸ Live auto-refresh OFF');
 }
 async function manualLiveRefresh(){
+  if(document.hidden) return;
   const busy=ptdAutoRefreshBusy;
   if(busy)return;
   ptdAutoRefreshBusy=true;
@@ -1914,26 +1929,26 @@ async function manualLiveRefresh(){
   }finally{ptdAutoRefreshBusy=false;}
 }
 async function ptdAutoRefresh(){
-  if(!ptdAutoRefreshEnabled||ptdAutoRefreshBusy)return;
+  if(document.hidden||!ptdAutoRefreshEnabled||ptdAutoRefreshBusy)return;
   ptdAutoRefreshBusy=true;
   try{ await Promise.allSettled([loadAll(),loadPrediction(false),refreshLiveChart()]); }
   finally{ ptdAutoRefreshBusy=false; }
 }
-angelStatus();setInterval(angelStatus,5000);
+angelStatus();setInterval(()=>{if(!document.hidden)angelStatus()},15000);
 loadAll();loadPrediction(false);loadPhase11Shield();updateRisk();drawChart();loadExecutionStatus();loadPhase12Readiness();phase6Monitor();renderTradeJournal();
 ptdAutoRefresh();
-setInterval(ptdAutoRefresh,12000);
-setInterval(()=>{if(ptdAutoRefreshEnabled)refreshLiveTicker()},5000);
+setInterval(()=>{if(!document.hidden)ptdAutoRefresh()},20000);
+setInterval(()=>{if(!document.hidden&&ptdAutoRefreshEnabled)refreshLiveTicker()},10000);
 document.addEventListener('DOMContentLoaded',()=>{
   syncLiveRefreshUI();
   const el=$('liveRefreshToggle'); if(el) el.addEventListener('change',()=>setLiveAutoRefresh(el.checked));
 });
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&ptdAutoRefreshEnabled)manualLiveRefresh()});
-setInterval(loadPhase11Shield,10000);
-setInterval(loadBrokerAccount,10000);
-setInterval(loadExecutionStatus,15000);
-setInterval(loadPhase12Readiness,15000);
-setInterval(phase6Monitor,5000);
+setInterval(()=>{if(!document.hidden)loadPhase11Shield()},30000);
+setInterval(()=>{if(!document.hidden)loadBrokerAccount()},60000);
+setInterval(()=>{if(!document.hidden)loadExecutionStatus()},30000);
+setInterval(()=>{if(!document.hidden)loadPhase12Readiness()},30000);
+setInterval(()=>{if(!document.hidden)phase6Monitor()},15000);
 </script>
 </body>
 </html>
