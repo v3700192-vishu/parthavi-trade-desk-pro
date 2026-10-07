@@ -21,6 +21,8 @@ let watchdogTimer = null;
 let wsConnectBusy = false;
 let latestTicks = new Map();
 let lastTickAt = null;
+let wsGeneration = 0;
+let lastRefreshAt = 0;
 
 export function angelStatus(){
   return {
@@ -374,6 +376,8 @@ function marketHoursNow(){
 async function refreshSessionTokens(){
   if(refreshPromise) return await refreshPromise;
   if(!session.connected || !session.refreshToken || !angelApiKey()) return false;
+  if(Date.now()-lastRefreshAt<90000) return false;
+  lastRefreshAt=Date.now();
   refreshPromise=(async()=>{
     try{
       // SmartAPI refresh tokens rotate. Only one refresh may run at a time;
@@ -451,9 +455,11 @@ async function connectMarketWebSocket(){
   if(wsConnectBusy) return angelStatus();
   wsConnectBusy=true;
   try{
-    if(ws){ try{ws.closeConnection?.()}catch{}; ws=null; }
+    if(ws){ try{ws.close?.(); ws.closeConnection?.()}catch{}; ws=null; }
+    wsGeneration++;
     wsConnected=false; wsError=null;
 
+    const generation=++wsGeneration;
     const socket=new WebSocketV2({
       jwttoken:session.jwtToken,
       apikey:angelApiKey(),
@@ -463,9 +469,12 @@ async function connectMarketWebSocket(){
     ws=socket;
 
     try{ socket.customError?.(); }catch{}
-    try{ socket.reconnection?.('simple',15000,1); }catch{}
+    // Do not enable SmartAPI SDK auto-reconnection here. The server has a single
+    // guarded reconnect loop; SDK + server reconnecting simultaneously can create
+    // multiple sockets and exhaust the 512MB Render instance.
     try{
       socket.on('tick', data=>{
+        if(generation!==wsGeneration || ws!==socket) return;
         try{
           const token=String(data?.token ?? data?.symbolToken ?? data?.symboltoken ?? JSON.stringify(data));
           latestTicks.set(token,{data,at:Date.now()});
