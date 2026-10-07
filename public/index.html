@@ -481,7 +481,65 @@ body.chart-fullscreen-open .selector{display:none!important}
   .angel-chart .a1-symbol b{font-size:15px}
   .angel-chart .a1-price{font-size:25px}
 }
-</style></head>
+<style id="chart-fullscreen-final-v4">
+/* Final mobile/desktop chart fullscreen fix */
+.chart-app-fullscreen{
+  position:fixed!important;inset:0!important;
+  width:100vw!important;height:100dvh!important;
+  max-width:none!important;margin:0!important;padding:0!important;
+  z-index:2147483647!important;background:#050812!important;
+  border:0!important;border-radius:0!important;overflow:hidden!important;
+  display:flex!important;flex-direction:column!important;
+}
+.chart-app-fullscreen>.card-head{display:none!important}
+.chart-app-fullscreen .chartbox.angel-chart{
+  flex:1 1 auto!important;width:100%!important;
+  height:100dvh!important;min-height:0!important;max-height:none!important;
+  margin:0!important;border:0!important;border-radius:0!important;
+  display:flex!important;flex-direction:column!important;overflow:hidden!important;
+}
+.chart-app-fullscreen .angel-chart .a1-head,
+.chart-app-fullscreen .angel-chart .a1-toolbar,
+.chart-app-fullscreen .angel-chart .a1-menu-row,
+.chart-app-fullscreen .angel-chart .a1-timeframes,
+.chart-app-fullscreen .angel-chart .chart-days,
+.chart-app-fullscreen .angel-chart .a1-footer{
+  flex:0 0 auto!important;
+}
+.chart-app-fullscreen .angel-chart .a1-workspace{
+  flex:1 1 auto!important;width:100%!important;min-height:0!important;
+  height:auto!important;overflow:hidden!important;
+}
+.chart-app-fullscreen .angel-chart #cv{
+  display:block!important;width:100%!important;height:100%!important;
+  min-height:0!important;touch-action:none!important;
+}
+body.chart-fullscreen-open{
+  overflow:hidden!important;
+  overscroll-behavior:none!important;
+}
+body.chart-fullscreen-open>.app>header,
+body.chart-fullscreen-open>.app>.sticky-prediction,
+body.chart-fullscreen-open>.app>.wrap,
+body.chart-fullscreen-open>.app>.ticker,
+body.chart-fullscreen-open>.app>.selector,
+body.chart-fullscreen-open>.app>.bottom{
+  display:none!important;
+}
+@media(max-width:760px){
+  .chart-app-fullscreen .angel-chart .a1-head{padding-top:max(8px,env(safe-area-inset-top));}
+  .chart-app-fullscreen .angel-chart .a1-footer{
+    padding-bottom:max(8px,env(safe-area-inset-bottom))!important;
+  }
+  .chart-app-fullscreen .angel-chart .a1-toolbar,
+  .chart-app-fullscreen .angel-chart .a1-timeframes{
+    touch-action:pan-x;
+  }
+  .chart-app-fullscreen .angel-chart .a1-workspace{
+    min-height:0!important;
+  }
+}
+</style></style></head>
 <body>
 <script id="ANDROID_LAYOUT_GUARD">
 (function(){try{window.scrollTo(0,0);document.documentElement.scrollLeft=0;document.body.scrollLeft=0}catch(e){}})();
@@ -2102,37 +2160,48 @@ function onChartPointer(ev){if(!crosshair&&!chartDrawMode)return;const c=$('cv')
 $('cv').addEventListener('pointerdown',ev=>{if(crosshair||chartDrawMode)return;const c=$('cv'),r=c.getBoundingClientRect(),raw=chartDataCache.get(tf)||liveData;if(!chartRowsOk(raw))return;chartDrag={x:ev.clientX,offset:chartOffset,startWidth:r.width};c.setPointerCapture?.(ev.pointerId)});$('cv').addEventListener('pointermove',ev=>{if(chartDrag){const c=$('cv'),r=c.getBoundingClientRect(),raw=chartDataCache.get(tf)||liveData;if(!chartRowsOk(raw))return;const base=chartType==='heikin'?haRows(raw):raw;const visible=Math.min(base.length,Math.max(35,Math.floor((r.width-118)/5/Math.max(.55,scale))));const step=Math.max(.4,(r.width-118)/Math.max(1,visible)*scale*.94);const delta=(ev.clientX-chartDrag.x)/step;const maxOffset=Math.max(0,base.length-visible);chartOffset=Math.max(0,Math.min(maxOffset,Math.round(chartDrag.offset-delta)));drawChart();return}onChartPointer(ev)});$('cv').addEventListener('pointerup',()=>{chartDrag=null});$('cv').addEventListener('pointercancel',()=>{chartDrag=null});$('cv').addEventListener('pointerleave',()=>{if(!chartDrag)drawChart()});$('cv').addEventListener('click',ev=>{if(!chartDrawMode)return;const c=$('cv'),r=c.getBoundingClientRect(),x=ev.clientX-r.left,y=ev.clientY-r.top;if(chartDrawMode==='trend'){if(!chartDraft)chartDraft={x1:x,y1:y};else{chartDrawings.push({kind:'trend',x1:chartDraft.x1,y1:chartDraft.y1,x2:x,y2:y});chartDraft=null;chartDrawMode='';drawChart()}}else{chartDrawings.push(chartDrawMode==='hline'?{kind:'hline',y}:{kind:'vline',x});chartDrawMode='';drawChart()}});
 function zoom(z){scale=Math.min(5,Math.max(.5,scale*z));autoScale=false;drawChart()}function resetChart(){scale=1;autoScale=true;chartOffset=0;chartDay='';renderChartDays(chartDataCache.get(tf)||liveData||[]);chartDrawings.length=0;chartDrawMode='';chartDraft=null;drawChart()}async function fullChart(){
   const card=$('chart'); if(!card)return;
-  const open=card.classList.contains('chart-app-fullscreen');
+  const isOpen=card.classList.contains('chart-app-fullscreen');
+  if(isOpen){
+    card.classList.remove('chart-app-fullscreen');
+    document.body.classList.remove('chart-fullscreen-open');
+    try{
+      if(document.fullscreenElement && document.exitFullscreen) await document.exitFullscreen();
+    }catch(_){}
+    setTimeout(drawChart,80);
+    return;
+  }
+  card.classList.add('chart-app-fullscreen');
+  document.body.classList.add('chart-fullscreen-open');
   try{
-    if(open){
-      if(document.fullscreenElement&&document.exitFullscreen) await document.exitFullscreen();
-    }else if(card.requestFullscreen){
+    if(document.documentElement.requestFullscreen && !document.fullscreenElement){
       await card.requestFullscreen();
     }
-  }catch(_){}
-  const next=!open;
-  card.classList.toggle('chart-app-fullscreen',next);
-  document.body.classList.toggle('chart-fullscreen-open',next);
+  }catch(_){
+    /* CSS fullscreen fallback remains active on mobile/PWA browsers. */
+  }
   setTimeout(drawChart,120);
 }
 function exitChartFullscreen(){
   const card=$('chart'); if(!card)return;
-  try{if(document.fullscreenElement&&document.exitFullscreen)document.exitFullscreen()}catch(_){}
   card.classList.remove('chart-app-fullscreen');
   document.body.classList.remove('chart-fullscreen-open');
-  setTimeout(drawChart,120);
+  try{
+    if(document.fullscreenElement && document.exitFullscreen) document.exitFullscreen();
+  }catch(_){}
+  setTimeout(drawChart,80);
 }
 document.addEventListener('fullscreenchange',()=>{
   const card=$('chart'); if(!card)return;
-  const active=!!document.fullscreenElement;
-  if(active) card.classList.add('chart-app-fullscreen');
-  else if(card.classList.contains('chart-app-fullscreen') && !document.body.classList.contains('chart-fullscreen-open')){
+  if(!document.fullscreenElement && card.classList.contains('chart-app-fullscreen')){
+    /* User exited browser fullscreen (Back/Escape/system gesture). */
     card.classList.remove('chart-app-fullscreen');
+    document.body.classList.remove('chart-fullscreen-open');
   }
-  document.body.classList.toggle('chart-fullscreen-open',card.classList.contains('chart-app-fullscreen'));
-  setTimeout(drawChart,150);
+  setTimeout(drawChart,120);
 });
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('chart')?.classList.contains('chart-app-fullscreen'))exitChartFullscreen()});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape' && $('chart')?.classList.contains('chart-app-fullscreen')) exitChartFullscreen();
+});
 function loadChartTimeframe(next=tf){return(async()=>{const seq=++chartReq;tf=next;chartOffset=0;const cached=chartDataCache.get(tf)||localRows(tf);if(cached){chartDataCache.set(tf,cached);liveData=cached;window.__chartCacheAt=Date.now();drawChart()}$('chartLoading').style.display='flex';$('chartLoading').textContent='Loading '+tf+' candles…';try{const r=await fetch(API_BASE+'/api/chart/candles?symbol='+encodeURIComponent(symbol)+'&tf='+encodeURIComponent(tf),{cache:'no-store'});const d=await r.json().catch(()=>({}));if(seq!==chartReq)return;const rows=Array.isArray(d?.rows)?d.rows:[];if(chartRowsOk(rows)){chartDataCache.set(tf,rows);liveData=rows;chartDay='';renderChartDays(rows);window.__chartCacheAt=Date.now();$('chartLoading').style.display='none';$('chartSource').textContent=(d?.source||'ANGEL')+' • 15D HISTORY • '+rows.length+' BARS';try{localStorage.setItem('PTD_CHART_'+symbol+'_'+tf,JSON.stringify({savedAt:window.__chartCacheAt,source:d?.source||'ANGEL',rows:rows.slice(-500)}))}catch{}drawChart()}else{$('chartLoading').textContent='NO LIVE CANDLES • connect Angel One and retry';drawChart()}}catch(e){if(seq===chartReq){$('chartLoading').textContent='Chart feed error • '+(e?.message||'unknown');drawChart()}}})()}
 let brokerAccountData=null; let pendingExitPreview=null; let pendingModify=null;
 function money(v){const n=Number(v);return Number.isFinite(n)?'₹ '+n.toLocaleString('en-IN',{maximumFractionDigits:2}):'₹ —'}
@@ -2256,6 +2325,10 @@ function setLiveAutoRefresh(on){
   toast(ptdAutoRefreshEnabled?'✅ Live auto-refresh ON':'⏸ Live auto-refresh OFF');
 }
 function handleLiveSwitch(ev){
+  /* The checkbox fires its own change event. Do not toggle twice when the
+     user taps the switch/label itself; only wrapper-area taps should toggle. */
+  const target=ev?.target;
+  if(target?.closest?.('.live-switch')) return;
   ev?.preventDefault?.();
   ev?.stopPropagation?.();
   setLiveAutoRefresh(!ptdAutoRefreshEnabled);
