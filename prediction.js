@@ -114,7 +114,6 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
   if(vr10==null || !Number.isFinite(vr10)) {
     if(!x5.volumeUnavailable) noTradeReasons.push('No Trade: 10-day breakout volume benchmark is not verified.');
   }
-  else if(vr10<1.5) noTradeReasons.push(`No Trade: breakout volume is only ${vr10.toFixed(2)}x the 10-day same-slot average (<1.5x).`);
   if(!events?.connected) noTradeReasons.push('No Trade: economic-event calendar is not verified live.');
   else if(events?.eventDayBlock) noTradeReasons.push('No Trade: high-impact event day gate is active.');
   const theta=Math.abs(Number(options?.theta)), delta=Math.abs(Number(options?.delta));
@@ -127,12 +126,25 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
   score=Number(clamp(score,-100,100).toFixed(1));
   const prediction=score>=20?'BULLISH':score<=-20?'BEARISH':'NEUTRAL';
 
+  // Two-trade finder: allow strong trend-continuation setups even when the
+  // current 5M bar is not a 1.5x breakout, provided ADX + momentum + trigger
+  // still agree. True breakout volume remains the preferred path.
+  const volumeContinuation =
+    vr10!=null && vr10>=0.90 &&
+    prediction!=='NEUTRAL' &&
+    adx!=null && adx>=20 &&
+    ((prediction==='BULLISH' && bullTrigger && rsi!=null && rsi>52 && macdHist!=null && macdHist>0) ||
+     (prediction==='BEARISH' && bearTrigger && rsi!=null && rsi<48 && macdHist!=null && macdHist<0));
+  const volumePass=(vr10!=null && vr10>=1.5) || volumeContinuation;
+  if(vr10!=null && vr10<1.5 && !volumeContinuation)
+    noTradeReasons.push(`No Trade: volume is only ${vr10.toFixed(2)}x the 10-day same-slot average and the continuation-volume conditions are not met.`);
+
   const confirmations={
     trend: prediction!=='NEUTRAL' && h1d===prediction,
     setup: prediction!=='NEUTRAL' && m15d===prediction,
     trigger: prediction==='BULLISH'?bullTrigger:prediction==='BEARISH'?bearTrigger:false,
     momentum: prediction==='BULLISH'?(rsi!=null&&rsi>50&&macdHist!=null&&macdHist>0):(prediction==='BEARISH'?(rsi!=null&&rsi<50&&macdHist!=null&&macdHist<0):false),
-    volume: (vr10!=null&&vr10>=1.5) || (x5.volumeUnavailable===false && vr10!=null&&vr10>=1.5),
+    volume: volumePass,
     strength: adx!=null&&adx>=20,
     options: !!options?.connected && ((prediction==='BULLISH'&&optBull)||(prediction==='BEARISH'&&optBear)),
     greeks: Number.isFinite(theta)&&Number.isFinite(delta)&&theta<6&&delta>=0.35,
@@ -158,8 +170,10 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
   ));
   const feedComplete=!!marketOpen && !!news?.connected && !!global?.connected && !!options?.connected && !!events?.connected && Number.isFinite(theta) && Number.isFinite(delta) && !events?.hardBlock && !events?.eventDayBlock;
   const hardNoTrade=noTradeReasons.length>0;
-  // Strict quality gate: all critical filters + high confirmation are required before an entry signal.
-  const eliteSetup=prediction!=='NEUTRAL' && confirmedCount>=9 && confirmationPct>=90 && modelConfidence>=85 && !hardNoTrade && feedComplete;
+  // Two-trade finder gate: preserve all safety/feed hard stops, while allowing
+  // strong 9/11 confluence to become actionable sooner so the scanner can
+  // realistically surface up to two quality opportunities during the session.
+  const eliteSetup=prediction!=='NEUTRAL' && confirmedCount>=9 && confirmationPct>=80 && modelConfidence>=80 && !hardNoTrade && feedComplete;
   const signalState=(!marketOpen||events?.hardBlock||events?.eventDayBlock||hardNoTrade)?'NO TRADE':(eliteSetup?'CONFIRMED':(prediction!=='NEUTRAL'&&confirmedCount>=6?'WATCH':'NO TRADE'));
 
   const action=signalState==='CONFIRMED'?(prediction==='BULLISH'?'CALL':'PUT'):'NO TRADE';
@@ -180,7 +194,8 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
     signalBarTime:rows5?.at?.(-1)?.t||null,
     historical:backtest||{available:false,reason:'Historical backtest not available.'},
     feedComplete, eventBlocked:!!events?.hardBlock,
-    note:'Strict gate: India VIX 12–22, ADX ≥20, breakout volume ≥1.5x the previous 10 trading days at the same 5M slot, no high-impact event-day/window, complete verified feeds, and minimum 1:2 risk-to-reward. These are quality rules, not a guarantee of profit. Final SL/targets are volatility-based planning levels on the underlying index; option premium SL/targets must be verified from the selected live contract and its Greeks.',
+    tradeFinder:{enabled:true,targetOpportunitiesPerSession:2,volumeMode:volumeContinuation?'CONTINUATION':'BREAKOUT'},
+    note:'Two-trade finder is active: the scanner searches continuously for up to two high-quality opportunities per NSE session. A 1.5x 10-day same-slot volume breakout is preferred; strong trend-continuation may qualify from 0.90x when 1H/15M/5M, momentum and ADX agree. India VIX 12–22, event safety, complete verified feeds and minimum 1:2 risk-to-reward remain hard protections. This is a quality filter, not a guarantee of profit. Final SL/targets are volatility-based planning levels on the underlying index; option premium SL/targets must be verified from the selected live contract and its Greeks.',
     reasoning
   };
 }
