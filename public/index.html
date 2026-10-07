@@ -1169,7 +1169,11 @@ async function angelStatus(){
     if(el) el.textContent=d.connected?('CONNECTED • '+(d.clientCode||'')+(d.websocket?' • STREAM LIVE':' • REST ONLY')):'DISCONNECTED';
     setGate('cxLogin',!!d.connected,d.connected?'ON':'OFF');
     setGate('cxWs',!!d.websocket,d.websocket?'LIVE':(d.connected?'READY':'OFF'));
-    if(!d.connected){ $('feed').textContent='DISCONNECTED'; setGate('cxQuote',false,'OFF'); setGate('cxWs',false,'OFF'); window.__angelDataSynced=false; }
+    if(!d.connected){
+      $('feed').textContent='DISCONNECTED'; setGate('cxQuote',false,'OFF'); setGate('cxWs',false,'OFF'); window.__angelDataSynced=false;
+      if(window.__angelWasConnected && typeof addAlert==='function') addAlert('Angel One disconnected','Live broker session dropped. Reconnect is required before any live signal can be trusted.','bearish','angel-disconnected-'+Math.floor(Date.now()/60000));
+    }
+    window.__angelWasConnected=!!d.connected;
     if(d.websocketError && !d.websocket) $('angelTestNote').textContent='WebSocket: '+d.websocketError;
     if(d.connected && !window.__angelDataSynced){
       window.__angelDataSynced=true;
@@ -1357,8 +1361,12 @@ window.testAngelFeed = async function testAngelFeed(){
       if(typeof window.loadPhase11Shield==='function') await window.loadPhase11Shield().catch(()=>{});
       if(typeof window.loadPhase12Readiness==='function') await window.loadPhase12Readiness().catch(()=>{});
       drawChart();
-      toast(connected?'Angel One REST + WebSocket connection verified':'Angel One live REST quote verified; WebSocket still waiting')
-      toast(live?'Angel One REST + WebSocket stream verified':'Angel One live REST quote verified; stream still waiting');
+      toast(connected?'Angel One REST + WebSocket connection verified':'Angel One live REST quote verified; WebSocket still waiting');
+      if(typeof addAlert==='function'){
+        addAlert(connected?'Angel One live feed verified':'Angel One REST quote verified',
+          connected ? (tickVerified?'REST + WebSocket tick are live.':'WebSocket connected; waiting for a fresh market tick.') : 'REST quote is live; WebSocket stream is still waiting.',
+          connected?'bullish':'neutral','angel-feed-'+(connected?'live':'rest'));
+      }
     }
   }catch(e){ setGate('cxQuote',false,'FAIL'); $('angelTestBadge').textContent='TEST FAILED'; $('angelTestBadge').className='badge danger'; $('angelTestNote').textContent=e.message||'Live feed test failed'; }
 };
