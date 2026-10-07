@@ -1133,25 +1133,38 @@ async function loadBase5m(symbol){
     const ins=await resolveIndexToken(key), end=new Date(), start=new Date(end.getTime()-15*86400000);
     const f=x=>{const d=new Date(x),p=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(d),m=Object.fromEntries(p.map(z=>[z.type,z.value]));return m.year+'-'+m.month+'-'+m.day+' '+m.hour+':'+m.minute;};
     let rows=[];
-    // Angel One historical candles are requested in small chunks so the 15-day backfill
-    // remains compatible with provider window limits while keeping the current day included.
-    for(let cursor=start;cursor<end;cursor=new Date(Math.min(end.getTime(),cursor.getTime()+7*86400000))){
-      const chunkEnd=new Date(Math.min(end.getTime(),cursor.getTime()+7*86400000));
-      try{
-        const raw=await angelCandles({exchange:'NSE',symboltoken:ins.token,interval:'FIVE_MINUTE',fromdate:f(cursor),todate:f(chunkEnd)});
-        rows=rows.concat(candleRows(raw));
-      }catch{}
-      if(chunkEnd.getTime()>=end.getTime()) break;
+    try{
+      // Prefer one broker request for the entire lookback to minimize rate-limit pressure.
+      const raw=await angelCandles({exchange:'NSE',symboltoken:ins.token,interval:'FIVE_MINUTE',fromdate:f(start),todate:f(end)});
+      rows=candleRows(raw);
+      console.log('[ANGEL_CANDLES] '+key+' rows='+rows.length);
+    }catch(e){
+      console.warn('[ANGEL_CANDLES] '+key+' '+(e?.message||e));
     }
     rows=[...new Map(rows.map(r=>[r.t,r])).values()].sort((a,b)=>Date.parse(a.t)-Date.parse(b.t));
-    if(rows.length){ candleCache.set(key,{at:Date.now(),rows,source:'ANGEL'}); return rows; }
-    const fallback=await loadYahoo5m(key);
-    candleCache.set(key,{at:Date.now(),rows:fallback,source:'YAHOO_FALLBACK'});
-    return fallback;
+    if(rows.length){
+      candleCache.set(key,{at:Date.now(),rows,source:'ANGEL'});
+      return rows;
+    }
+    // During transient broker/API outages, keep the last verified candle set instead of
+    // replacing the chart with an external rate-limited source.
+    if(cached?.rows?.length){
+      candleCache.set(key,{at:cached.at,rows:cached.rows,source:(cached.source||'ANGEL')+' • STALE CACHE'});
+      return cached.rows;
+    }
+    try{
+      const fallback=await loadYahoo5m(key);
+      candleCache.set(key,{at:Date.now(),rows:fallback,source:'YAHOO_FALLBACK'});
+      return fallback;
+    }catch(e){
+      console.warn('[YAHOO_FALLBACK] '+key+' '+(e?.message||e));
+      return [];
+    }
   })();
   candleInflight.set(key,job);
   try{return await job;}finally{candleInflight.delete(key);}
 }
+
 const futuresVolumeCache=new Map();
 const futuresVolumeInflight=new Map();
 
