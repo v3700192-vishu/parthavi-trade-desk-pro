@@ -49,7 +49,7 @@ function status(){
     requireSignalToken:cfg.requireSignalToken,breachReasons:[...state.breachReasons],asOf:new Date().toISOString()
   };
 }
-function evaluate({maxLoss=0,rr=0,modelConfidence=null,confirmationPct=null,spreadPct=null,openPositions=0,side='BUY',signalAction='',isOption=false,hasStopLoss=true,vix=null,adx=null,volumeRatio10d=null,eventDayBlock=false,theta=null,delta=null}={}){
+function evaluate({maxLoss=0,rr=0,modelConfidence=null,confirmationPct=null,spreadPct=null,openPositions=0,side='BUY',signalAction='',isOption=false,hasStopLoss=true,vix=null,adx=null,volumeRatio10d=null,volumeMode='BREAKOUT',eventDayBlock=false,theta=null,delta=null}={}){
   rollDay(); const errors=[]; const now=Date.now();
   if(!cfg.enabled) return {ok:true,errors:[],status:status()};
   if(state.dailyLoss>=cfg.maxDailyLoss) errors.push('DAILY_LOSS_CAP_REACHED');
@@ -59,7 +59,8 @@ function evaluate({maxLoss=0,rr=0,modelConfidence=null,confirmationPct=null,spre
   if(openPositions>=cfg.maxOpenPositions) errors.push('MAX_OPEN_POSITIONS_REACHED');
   if(Number.isFinite(Number(vix)) && (Number(vix)<12 || Number(vix)>22)) errors.push('VIX_NO_TRADE_ZONE');
   if(Number.isFinite(Number(adx)) && Number(adx)<20) errors.push('ADX_BELOW_20');
-  if(Number.isFinite(Number(volumeRatio10d)) && Number(volumeRatio10d)<1.5) errors.push('BREAKOUT_VOLUME_BELOW_1_5X_10D');
+  if(Number.isFinite(Number(volumeRatio10d)) && Number(volumeRatio10d)<1.5 && String(volumeMode).toUpperCase()!=='CONTINUATION') errors.push('BREAKOUT_VOLUME_BELOW_1_5X_10D');
+  if(String(volumeMode).toUpperCase()==='CONTINUATION' && Number.isFinite(Number(volumeRatio10d)) && Number(volumeRatio10d)<0.90) errors.push('CONTINUATION_VOLUME_BELOW_0_90X_10D');
   if(eventDayBlock) errors.push('HIGH_IMPACT_EVENT_DAY');
   if(isOption && (!Number.isFinite(Number(theta)) || !Number.isFinite(Number(delta)))) errors.push('OPTION_GREEKS_UNVERIFIED');
   if(isOption && Number.isFinite(Number(theta)) && Math.abs(Number(theta))>=10) errors.push('THETA_DECAY_TOO_HIGH');
