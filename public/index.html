@@ -433,7 +433,55 @@ body{-webkit-overflow-scrolling:touch}
   .chart-app-fullscreen .a1-timeframes .tf{flex-basis:52px}
   .chart-app-fullscreen .a1-footer{padding-bottom:max(8px,env(safe-area-inset-bottom))}
 }
-</head>
+<style id="mobile-live-switch-fix-v3">
+@media(max-width:760px){
+  .top{gap:7px}
+  .top-actions{display:flex!important;align-items:center;gap:5px;min-width:0}
+  .top-actions>*{display:none!important}
+  .top-actions .live-refresh-wrap,.top-actions>button[title="Refresh live data"]{display:flex!important}
+  .top-actions .live-refresh-wrap{padding:6px 7px;border-radius:10px}
+  .top-actions .live-switch{width:38px;height:21px}
+  .top-actions .live-switch span:before{width:17px;height:17px}
+  .top-actions .live-switch input:checked+span:before{transform:translateX(17px)}
+}
+</style><style id="chart-fullscreen-system-v3">
+.chart-app-fullscreen{
+  position:fixed!important;inset:0!important;width:100vw!important;height:100dvh!important;
+  max-width:none!important;margin:0!important;z-index:99999!important;
+  border-radius:0!important;overflow:hidden!important;background:#050812!important;
+}
+.chart-app-fullscreen .card-head{flex:0 0 auto}
+.chart-app-fullscreen .chartbox.angel-chart{
+  height:calc(100dvh - 70px)!important;max-height:none!important;border-radius:0!important;
+  display:flex!important;flex-direction:column!important;margin:0!important;
+}
+.chart-app-fullscreen .angel-chart .a1-workspace{
+  flex:1 1 auto!important;min-height:0!important;height:auto!important;overflow:hidden!important;
+}
+.chart-app-fullscreen .angel-chart #cv{width:100%!important;height:100%!important;min-height:0!important}
+.chart-app-fullscreen .angel-chart .a1-footer{flex:0 0 auto}
+body.chart-fullscreen-open{overflow:hidden!important}
+body.chart-fullscreen-open .bottom,
+body.chart-fullscreen-open .sticky-prediction,
+body.chart-fullscreen-open .top,
+body.chart-fullscreen-open .ticker,
+body.chart-fullscreen-open .selector{display:none!important}
+@media(max-width:760px){
+ .chart-app-fullscreen .card-head{padding:8px 10px}
+ .chart-app-fullscreen .card-head h3{font-size:13px}
+ .chart-app-fullscreen .chartbox.angel-chart{height:calc(100dvh - 58px)!important}
+}
+</style><style id="chart-systematic-polish-v3">
+.chart-exit-full{display:none;border:1px solid #334762;background:#0b1421;color:#eaf1fb;border-radius:7px;padding:4px 7px;font-weight:900;font-size:11px;margin-left:2px}
+.chart-app-fullscreen .chart-head-live .chart-exit-full{display:inline-flex}
+.angel-chart .a1-overlay{font-size:9px;background:rgba(7,11,17,.72);padding:2px 4px;border-radius:4px}
+.angel-chart .a1-price-tag{font-size:11px;font-weight:950;min-width:76px;text-align:center}
+@media(max-width:760px){
+  .angel-chart .a1-head{padding:9px 11px 7px}
+  .angel-chart .a1-symbol b{font-size:15px}
+  .angel-chart .a1-price{font-size:25px}
+}
+</style></head>
 <body>
 <script id="ANDROID_LAYOUT_GUARD">
 (function(){try{window.scrollTo(0,0);document.documentElement.scrollLeft=0;document.body.scrollLeft=0}catch(e){}})();
@@ -816,7 +864,7 @@ body{-webkit-overflow-scrolling:touch}
   <div class="card" id="chart">
     <div class="card-head">
       <div><h3 id="chartTitle">NIFTY 50 — LIVE CHART</h3><span>1H trend → 15M setup → 5M entry confirmation</span></div>
-      <div class="chart-head-live"><i></i><b id="chartHeaderLive">LIVE</b><span id="chartHeaderTime">—</span></div>
+      <div class="chart-head-live"><i></i><b id="chartHeaderLive">LIVE</b><span id="chartHeaderTime">—</span><button class="chart-exit-full" type="button" onclick="fullChart()" title="Exit fullscreen">⛶</button></div>
     </div>
     <div class="chartbox angel-chart">
       <div class="a1-head">
@@ -1668,14 +1716,202 @@ function formatPct(v){ return Number.isFinite(Number(v))?Number(v).toFixed(1)+'%
 async function loadRiskSizing(p){
   const state=$('riskGreekState'), budget=$('riskBudgetLive');
   try{const rs=await getJSON('/api/risk/status'); budget.textContent=money(rs.riskBudgetRupees||1000);}catch{}
-  // The Trade Command Center is now the single source of the actionable plan.
-  // Keep Phase 10 prediction data separate so a new scan can never rewrite a locked trade.
-
-  const labels={trend:'1H trend',setup:'15M setup',trigger:'5M trigger',momentum:'Momentum',volume:'Volume',strength:'ADX',options:'Options / OI',greeks:'Theta / Delta',news:'News / macro',global:'Global risk',eventSafe:'Event safe'};
-  const grid=$('p10ConfirmGrid');  grid.innerHTML=Object.entries(labels).map(([k,label])=>{const yes=!!p.confirmations?.[k];return `<div class="confirm-item"><span>${label}</span><b class="${yes?'yes':'no'}">${yes?'✓ CONFIRMED':'WAIT'}</b></div>`}).join('');
-  $('p10Note').textContent=(p.note||'Model output is not a guaranteed probability of profit.')
-    + (p.volumeSource ? ' • Volume benchmark source: '+p.volumeSource : (p.volumeUnavailable ? ' • Index volume unavailable; futures proxy is being used when available.' : ''));
-  loadRiskSizing(p);
+  const plan=p?.optionPlan||{};
+  const usable=!!plan.available && p?.signalState==='CONFIRMED' && p?.action!=='NO TRADE';
+  if(!usable){
+    state.textContent=p?.signalState==='CONFIRMED'?'OPTION WAIT':'WAIT';
+    $('riskLots').textContent='—'; $('riskQty').textContent='—'; $('riskUsed').textContent='—';
+    return;
+  }
+  window.selectedContract={contract:plan.contract,symbol:plan.symbol,token:plan.token,underlying:plan.underlying,expiry:plan.expiry,optionType:plan.optionType,strike:plan.strike,exchange:'NFO',lotsize:plan.lotSize,ltp:plan.entry};
+  try{
+    const rs=await getJSON('/api/risk/status');
+    const body={symbol,expiry:plan.expiry,strike:Number(plan.strike),optionType:String(plan.optionType).toUpperCase(),riskBudget:Number(rs.riskBudgetRupees||1000),underlyingStopPoints:Math.abs(Number(plan.underlyingEntry)-Number(plan.underlyingStop))};
+    const r=await postJSON('/api/risk/position-size',body);
+    state.textContent=r.greekRisk?.status||'PASS';
+    $('riskLots').textContent=r.sizing?.recommendedLots??'—';
+    $('riskQty').textContent=r.sizing?.recommendedQuantity??'—';
+    $('riskUsed').textContent=r.sizing?.usedRisk!=null?money(r.sizing.usedRisk):'—';
+    $('riskDelta').textContent=r.delta!=null?Number(r.delta).toFixed(3):'—';
+    $('riskTheta').textContent=r.theta!=null?Number(r.theta).toFixed(2):'—';
+    $('riskIV').textContent=r.iv!=null?Number(r.iv).toFixed(2)+'%':'—';
+    $('riskGreekGuard').textContent=r.greekRisk?.status||'WAIT';
+    setP10Tone($('riskGreekGuard'),r.greekRisk?.status==='PASS'?'BULLISH':r.greekRisk?.status==='NO TRADE'?'BEARISH':'NEUTRAL');
+    $('riskGreekMessage').textContent=(r.greekRisk?.message||'')+' • Contract '+(r.contract||plan.contract)+' • Entry ₹'+Number(r.entry).toFixed(2)+' • Option SL ₹'+Number(r.optionStopLoss).toFixed(2)+' • Lot '+r.lotSize;
+  }catch(e){
+    state.textContent='WAIT'; $('riskLots').textContent='—'; $('riskQty').textContent='—'; $('riskUsed').textContent='—';
+    $('riskGreekMessage').textContent=e.message||'Live risk sizing unavailable.';
+  }
+}
+function p10Clock(ts=Date.now()){
+  try{
+    return new Intl.DateTimeFormat('en-IN',{
+      hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true,timeZone:'Asia/Kolkata'
+    }).format(new Date(ts)).replace(/^24:/,'12:');
+  }catch{
+    return new Date(ts).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true});
+  }
+}
+let stccPollTimer=null;
+function stccNow(){
+  try{return new Intl.DateTimeFormat('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true,timeZone:'Asia/Kolkata'}).format(new Date()).replace(/^24:/,'12:')}
+  catch{return new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true})}
+}
+function stccFmtTime(ts){
+  if(!ts)return '—';
+  try{return new Intl.DateTimeFormat('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true,timeZone:'Asia/Kolkata'}).format(new Date(ts)).replace(/^24:/,'12:')}
+  catch{return new Date(ts).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true})}
+}
+function stccLoad(){
+  try{return JSON.parse(localStorage.getItem('PTD_SUPER_TRADE_COMMAND')||'null')}catch{return null}
+}
+function stccSave(x){
+  try{localStorage.setItem('PTD_SUPER_TRADE_COMMAND',JSON.stringify(x));return true}catch{return false}
+}
+function stccClearClosed(){
+  const x=stccLoad();
+  if(x && x.active){toast('Active trade is locked • close it before starting a new scan');return}
+  try{localStorage.removeItem('PTD_SUPER_TRADE_COMMAND')}catch{}
+  stccRender(null);
+  loadPrediction(true);
+}
+function stccIsOpposite(a,b){return (a==='CALL'&&b==='PUT')||(a==='PUT'&&b==='CALL')||(a==='BUY CALL'&&b==='BUY PUT')||(a==='BUY PUT'&&b==='BUY CALL')}
+function stccCurrentPlan(p){
+  const plan=p?.optionPlan||{};
+  const action=String(p?.action||'NO TRADE').toUpperCase();
+  const usable=p?.signalState==='CONFIRMED' && !!plan.available && action!=='NO TRADE';
+  if(!usable)return null;
+  return {
+    symbol,
+    action,
+    prediction:p.prediction||action,
+    contract:plan.contract||'—',
+    optionType:plan.optionType||'',
+    strike:plan.strike??'—',
+    lotSize:plan.lotSize??'—',
+    entry:Number(plan.entry),
+    sl:Number(plan.stopLoss),
+    t1:Number(plan.target1),
+    t2:Number(plan.target2),
+    rr1:plan.rr1||'2.0',
+    rr2:plan.rr2||'2.5',
+    token:plan.token||plan.symboltoken||'',
+    exchange:plan.exchange||'NSE',
+    modelConfidence:p.modelConfidence??null,
+    confirmationPct:p.confirmationPct??null,
+    sourceTime:Date.now(),
+    reason:p.reasoning||'Confirmed live setup'
+  };
+}
+function stccLockPlan(mode='LOCKED'){
+  const existing=stccLoad(); if(existing?.active){toast('An active trade plan is already locked');return}
+  const p=window.__lastPrediction||{};
+  const plan=stccCurrentPlan(p);
+  if(!plan){toast('No confirmed live trade plan to lock');return}
+  const now=Date.now();
+  const rec={...plan,active:true,mode,status:'HOLD',lockedAt:now,lastCheck:now,exitReason:'',emergency:false};
+  stccSave(rec); stccRender(rec); stccStartMonitor(); addAlert('🔒 TRADE PLAN LOCKED',plan.symbol+' • '+plan.action+' • '+plan.contract+' • SL/Targets fixed.','bullish','stcc-lock-'+now); toast('Trade plan locked • SL/Targets will not auto-change');
+}
+function stccMarkTaken(){
+  const existing=stccLoad(); if(existing?.active){toast('Active trade already locked');return}
+  const p=window.__lastPrediction||{};
+  const plan=stccCurrentPlan(p);
+  if(!plan){toast('No confirmed live trade plan available');return}
+  const now=Date.now();
+  const rec={...plan,active:true,mode:'TAKEN',status:'HOLD',lockedAt:now,lastCheck:now,exitReason:'',emergency:false};
+  stccSave(rec); stccRender(rec); stccStartMonitor(); addAlert('✅ ACTIVE TRADE LOCKED',plan.symbol+' • '+plan.action+' • '+plan.contract+' • SL '+plan.sl+' • T1 '+plan.t1+' • T2 '+plan.t2,'bullish','stcc-taken-'+now); toast('Active trade locked • monitoring started');
+}
+function stccClose(reason){
+  const x=stccLoad(); if(!x){toast('No active trade');return}
+  const now=Date.now();
+  const closed={...x,active:false,status:'CLOSED • '+reason,closedAt:now,lastCheck:now};
+  stccSave(closed); stccRender(closed); stccStopMonitor(); addAlert('📕 TRADE CLOSED',x.contract+' • '+reason,'neutral','stcc-close-'+now); toast('Trade closed • new plan will wait for next confirmation');
+}
+function stccEmergencyExit(){
+  const x=stccLoad();
+  if(!x?.active){toast('No active trade');return}
+  const reason=x.exitReason||'Manual emergency exit confirmed by user';
+  stccClose('EXIT NOW • '+reason);
+}
+function stccEvaluate(p){
+  const x=stccLoad(); if(!x?.active)return;
+  let emergency='';
+  if(p?.signalState==='CONFIRMED' && stccIsOpposite(x.action,String(p.action||'')) && Number(p.confirmationPct||0)>=80) emergency='Opposite setup confirmed at ≥80% trade confirmation.';
+  x.emergency=!!emergency;
+  x.exitReason=emergency;
+  if(emergency){x.status='EXIT NOW';addAlert('🚨 EXIT NOW',x.contract+' • '+emergency,'bearish','stcc-emergency-'+(x.lockedAt||0));}
+  x.lastCheck=Date.now(); stccSave(x); stccRender(x);
+}
+function stccRender(x){
+  const clock=$('stccClock'); if(clock)clock.textContent=stccNow();
+  const p=window.__lastPrediction||{};
+  const live=!!x?.active;
+  const plan=live?x:stccCurrentPlan(p);
+  const decision=$('stccDecision'), state=$('stccState'), reason=$('stccReason');
+  if(!decision)return;
+  if(live){
+    decision.textContent=x.emergency?'🚨 EXIT NOW':('🟢 '+x.action+' • '+x.contract);
+    setP10Tone(decision,x.emergency?'BEARISH':'BULLISH');
+    state.textContent=x.emergency?'EMERGENCY':'PLAN LOCKED';
+    setP10Tone(state,x.emergency?'BEARISH':'BULLISH');
+    reason.textContent='ACTIVE TRADE: prediction may change, but this locked plan does not. SL, T1 and T2 stay fixed until hit or you close the trade.';
+  }else if(plan){
+    decision.textContent='🎯 TAKE '+plan.contract;
+    setP10Tone(decision,'BULLISH');
+    state.textContent='CONFIRMED • READY';
+    setP10Tone(state,'BULLISH');
+    reason.textContent='Confirmed setup. Review the exact entry, SL and targets below. Nothing is auto-placed; lock the plan when you decide to take it.';
+  }else{
+    decision.textContent='WAIT FOR CONFIRMED SETUP';
+    setP10Tone(decision,'NEUTRAL');
+    state.textContent='SCANNING';
+    setP10Tone(state,'NEUTRAL');
+    reason.textContent='No live confirmed option plan right now. The scanner keeps searching and will not manufacture a trade.';
+  }
+  $('stccContract').textContent=plan?.contract||'—';
+  $('stccContractMeta').textContent=plan?((plan.optionType||'OPTION')+' • Strike '+(plan.strike??'—')+' • Lot '+(plan.lotSize??'—')):'Live contract only';
+  $('stccEntry').textContent=Number.isFinite(Number(plan?.entry))?Number(plan.entry).toFixed(2):'—';
+  $('stccSL').textContent=Number.isFinite(Number(plan?.sl))?Number(plan.sl).toFixed(2):'—';
+  $('stccT1').textContent=Number.isFinite(Number(plan?.t1))?Number(plan.t1).toFixed(2):'—';
+  $('stccT2').textContent=Number.isFinite(Number(plan?.t2))?Number(plan.t2).toFixed(2):'—';
+  $('stccRR').textContent=plan?('1:'+plan.rr1+' / 1:'+plan.rr2):'—';
+  $('stccPlanTime').textContent=plan?.lockedAt?stccFmtTime(plan.lockedAt):plan?.sourceTime?stccFmtTime(plan.sourceTime):'—';
+  $('stccLastCheck').textContent=x?.lastCheck?stccFmtTime(x.lastCheck):stccNow();
+  $('stccLockTitle').textContent=live?'🔒 '+(x.mode==='TAKEN'?'ACTIVE TRADE':'LOCKED PLAN'):'No active trade';
+  $('stccLockMessage').textContent=live?'This exact plan is frozen. A new prediction cannot overwrite Entry / SL / T1 / T2.':(plan?'A confirmed plan is available. Lock it before taking the trade so the next predictions cannot move your levels.':'Prediction is still live-scanning.');
+  $('stccLiveStatus').textContent=live?(x.status||'HOLD'):'NOT ACTIVE';
+  setP10Tone($('stccLiveStatus'),x?.emergency?'BEARISH':live?'BULLISH':'NEUTRAL');
+  $('stccLockBtn').disabled=!!live;
+  $('stccTakenBtn').disabled=!!live;
+  $('stccExitBtn').disabled=!live;
+  $('stccExitReason').textContent=x?.exitReason
+    ? ('🚨 '+x.exitReason+' • Press EXIT NOW to close this command-center lock. No automatic broker order is sent.')
+    : 'EXIT NOW is reserved for a defined emergency condition or a manual immediate exit decision. Prediction changes alone never rewrite the locked plan.';
+}
+function stccStartMonitor(){
+  if(stccPollTimer)clearInterval(stccPollTimer);
+  stccPollTimer=setInterval(stccMonitorTick,15000);
+  stccMonitorTick();
+}
+function stccStopMonitor(){if(stccPollTimer){clearInterval(stccPollTimer);stccPollTimer=null}}
+async function stccMonitorTick(){
+  const x=stccLoad(); if(!x?.active){stccStopMonitor();return}
+  try{
+    if(!x.token){x.lastCheck=Date.now();stccSave(x);stccRender(x);return}
+    const q=await getJSON('/api/angel/ltp?exchange='+encodeURIComponent(x.exchange||'NSE')+'&tradingsymbol='+encodeURIComponent(x.contract||'')+'&symboltoken='+encodeURIComponent(x.token));
+    const d=q?.data?.data||q?.data||q;
+    const ltp=Number(d?.ltp);
+    if(Number.isFinite(ltp)){
+      x.lastLtp=ltp;
+      if(ltp<=x.sl){x.active=false;x.status='STOP HIT • CLOSED';x.exitReason='Option premium touched the locked Stop Loss ₹'+x.sl.toFixed(2);x.closedAt=Date.now();addAlert('🛑 STOP LOSS HIT',x.contract+' • LTP ₹'+ltp.toFixed(2)+' • locked SL ₹'+x.sl.toFixed(2),'bearish','stcc-sl-'+x.lockedAt);stccSave(x);stccRender(x);stccStopMonitor();return}
+      if(ltp>=x.t2){x.active=false;x.status='TARGET 2 HIT • CLOSED';x.exitReason='Option premium touched locked Target 2 ₹'+x.t2.toFixed(2);x.closedAt=Date.now();addAlert('🎯 TARGET 2 HIT',x.contract+' • LTP ₹'+ltp.toFixed(2)+' • locked T2 ₹'+x.t2.toFixed(2),'bullish','stcc-t2-'+x.lockedAt);stccSave(x);stccRender(x);stccStopMonitor();return}
+      if(ltp>=x.t1){x.status='T1 HIT • HOLDING T2';}
+      else if(x.status==='T1 HIT • HOLDING T2')x.status='HOLD';
+    }
+    x.lastCheck=Date.now();stccSave(x);stccRender(x);
+  }catch{
+    x.lastCheck=Date.now();stccSave(x);stccRender(x);
+  }
 }
 let ptdLoadPredictionPromise=null;
 async function loadPrediction(showToast=false){
@@ -1866,24 +2102,37 @@ function onChartPointer(ev){if(!crosshair&&!chartDrawMode)return;const c=$('cv')
 $('cv').addEventListener('pointerdown',ev=>{if(crosshair||chartDrawMode)return;const c=$('cv'),r=c.getBoundingClientRect(),raw=chartDataCache.get(tf)||liveData;if(!chartRowsOk(raw))return;chartDrag={x:ev.clientX,offset:chartOffset,startWidth:r.width};c.setPointerCapture?.(ev.pointerId)});$('cv').addEventListener('pointermove',ev=>{if(chartDrag){const c=$('cv'),r=c.getBoundingClientRect(),raw=chartDataCache.get(tf)||liveData;if(!chartRowsOk(raw))return;const base=chartType==='heikin'?haRows(raw):raw;const visible=Math.min(base.length,Math.max(35,Math.floor((r.width-118)/5/Math.max(.55,scale))));const step=Math.max(.4,(r.width-118)/Math.max(1,visible)*scale*.94);const delta=(ev.clientX-chartDrag.x)/step;const maxOffset=Math.max(0,base.length-visible);chartOffset=Math.max(0,Math.min(maxOffset,Math.round(chartDrag.offset-delta)));drawChart();return}onChartPointer(ev)});$('cv').addEventListener('pointerup',()=>{chartDrag=null});$('cv').addEventListener('pointercancel',()=>{chartDrag=null});$('cv').addEventListener('pointerleave',()=>{if(!chartDrag)drawChart()});$('cv').addEventListener('click',ev=>{if(!chartDrawMode)return;const c=$('cv'),r=c.getBoundingClientRect(),x=ev.clientX-r.left,y=ev.clientY-r.top;if(chartDrawMode==='trend'){if(!chartDraft)chartDraft={x1:x,y1:y};else{chartDrawings.push({kind:'trend',x1:chartDraft.x1,y1:chartDraft.y1,x2:x,y2:y});chartDraft=null;chartDrawMode='';drawChart()}}else{chartDrawings.push(chartDrawMode==='hline'?{kind:'hline',y}:{kind:'vline',x});chartDrawMode='';drawChart()}});
 function zoom(z){scale=Math.min(5,Math.max(.5,scale*z));autoScale=false;drawChart()}function resetChart(){scale=1;autoScale=true;chartOffset=0;chartDay='';renderChartDays(chartDataCache.get(tf)||liveData||[]);chartDrawings.length=0;chartDrawMode='';chartDraft=null;drawChart()}async function fullChart(){
   const card=$('chart'); if(!card)return;
+  const open=card.classList.contains('chart-app-fullscreen');
   try{
-    if(document.fullscreenElement){await document.exitFullscreen?.();card.classList.remove('chart-app-fullscreen');drawChart();return;}
-    if(card.requestFullscreen) await card.requestFullscreen();
-    else card.classList.add('chart-app-fullscreen');
-  }catch(_){card.classList.add('chart-app-fullscreen')}
-  setTimeout(()=>{drawChart();},120);
+    if(open){
+      if(document.fullscreenElement&&document.exitFullscreen) await document.exitFullscreen();
+    }else if(card.requestFullscreen){
+      await card.requestFullscreen();
+    }
+  }catch(_){}
+  const next=!open;
+  card.classList.toggle('chart-app-fullscreen',next);
+  document.body.classList.toggle('chart-fullscreen-open',next);
+  setTimeout(drawChart,120);
 }
 function exitChartFullscreen(){
-  const card=$('chart');
-  if(document.fullscreenElement) document.exitFullscreen?.();
-  card?.classList.remove('chart-app-fullscreen');
-  setTimeout(()=>drawChart(),120);
+  const card=$('chart'); if(!card)return;
+  try{if(document.fullscreenElement&&document.exitFullscreen)document.exitFullscreen()}catch(_){}
+  card.classList.remove('chart-app-fullscreen');
+  document.body.classList.remove('chart-fullscreen-open');
+  setTimeout(drawChart,120);
 }
 document.addEventListener('fullscreenchange',()=>{
-  const card=$('chart');
-  if(card) card.classList.toggle('chart-app-fullscreen',!!document.fullscreenElement);
-  setTimeout(()=>drawChart(),150);
+  const card=$('chart'); if(!card)return;
+  const active=!!document.fullscreenElement;
+  if(active) card.classList.add('chart-app-fullscreen');
+  else if(card.classList.contains('chart-app-fullscreen') && !document.body.classList.contains('chart-fullscreen-open')){
+    card.classList.remove('chart-app-fullscreen');
+  }
+  document.body.classList.toggle('chart-fullscreen-open',card.classList.contains('chart-app-fullscreen'));
+  setTimeout(drawChart,150);
 });
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('chart')?.classList.contains('chart-app-fullscreen'))exitChartFullscreen()});
 function loadChartTimeframe(next=tf){return(async()=>{const seq=++chartReq;tf=next;chartOffset=0;const cached=chartDataCache.get(tf)||localRows(tf);if(cached){chartDataCache.set(tf,cached);liveData=cached;window.__chartCacheAt=Date.now();drawChart()}$('chartLoading').style.display='flex';$('chartLoading').textContent='Loading '+tf+' candles…';try{const r=await fetch(API_BASE+'/api/chart/candles?symbol='+encodeURIComponent(symbol)+'&tf='+encodeURIComponent(tf),{cache:'no-store'});const d=await r.json().catch(()=>({}));if(seq!==chartReq)return;const rows=Array.isArray(d?.rows)?d.rows:[];if(chartRowsOk(rows)){chartDataCache.set(tf,rows);liveData=rows;chartDay='';renderChartDays(rows);window.__chartCacheAt=Date.now();$('chartLoading').style.display='none';$('chartSource').textContent=(d?.source||'ANGEL')+' • 15D HISTORY • '+rows.length+' BARS';try{localStorage.setItem('PTD_CHART_'+symbol+'_'+tf,JSON.stringify({savedAt:window.__chartCacheAt,source:d?.source||'ANGEL',rows:rows.slice(-500)}))}catch{}drawChart()}else{$('chartLoading').textContent='NO LIVE CANDLES • connect Angel One and retry';drawChart()}}catch(e){if(seq===chartReq){$('chartLoading').textContent='Chart feed error • '+(e?.message||'unknown');drawChart()}}})()}
 let brokerAccountData=null; let pendingExitPreview=null; let pendingModify=null;
 function money(v){const n=Number(v);return Number.isFinite(n)?'₹ '+n.toLocaleString('en-IN',{maximumFractionDigits:2}):'₹ —'}
@@ -1997,6 +2246,7 @@ let ptdAutoRefreshBusy=false;
 let ptdAutoRefreshEnabled=localStorage.getItem('PTD_LIVE_AUTO_REFRESH')!=='off';
 function syncLiveRefreshUI(){
   const el=$('liveRefreshToggle'); if(el) el.checked=ptdAutoRefreshEnabled;
+  const c=$('liveRefreshControl'); if(c)c.setAttribute('aria-checked',ptdAutoRefreshEnabled?'true':'false');
 }
 function setLiveAutoRefresh(on){
   ptdAutoRefreshEnabled=!!on;
@@ -2040,9 +2290,15 @@ document.addEventListener('DOMContentLoaded',()=>{
   const el=$('liveRefreshToggle');
   if(el) el.addEventListener('change',()=>setLiveAutoRefresh(el.checked));
   const c=$('liveRefreshControl');
-  if(c) c.addEventListener('keydown',(e)=>{
-    if(e.key==='Enter'||e.key===' '){e.preventDefault();handleLiveSwitch(e);}
-  });
+  if(c){
+    c.addEventListener('keydown',(e)=>{
+      if(e.key==='Enter'||e.key===' '){e.preventDefault();handleLiveSwitch(e);}
+    });
+    c.addEventListener('click',(e)=>{
+      if(e.target===el || e.target?.closest?.('.live-switch')) return;
+      handleLiveSwitch(e);
+    });
+  }
 });
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&ptdAutoRefreshEnabled)manualLiveRefresh()});
 setInterval(()=>{if(!document.hidden)loadPhase11Shield()},30000);
