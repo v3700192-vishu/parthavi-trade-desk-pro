@@ -827,7 +827,7 @@ body.chart-fullscreen-open>.app>.bottom{
 <section class="card" id="finalTradePlan">
   <div class="card-head"><h3>FINAL TRADE PLAN • SL / TARGET SEPARATE</h3><span id="finalPlanBar">WAIT • CLOSED 5M</span></div>
   <div class="finalplan">
-    <div class="plan-card main"><small>Action</small><b id="finalPlanDirection" class="neutral">NO TRADE</b><span>Only shown as a usable plan when the confirmation engine approves the setup.</span></div>
+    <div class="plan-card main"><small>Action</small><b id="finalPlanDirection" class="neutral">NO TRADE</b><span>Watch plan can show the live contract early; live execution unlocks only after confirmation.</span></div>
     <div class="plan-card"><small>Recommended Contract</small><b id="finalPlanContract">—</b><span id="finalPlanContractMeta">Live option premium target band ₹25–₹50</span></div>
     <div class="plan-card"><small>Entry / Trigger</small><b id="finalPlanEntry">—</b><span>Underlying index level</span></div>
     <div class="plan-card"><small>Stop Loss</small><b id="finalPlanSL">—</b><span>1.0 × ATR planning risk</span></div>
@@ -850,7 +850,7 @@ body.chart-fullscreen-open>.app>.bottom{
     <div class="level"><small>Option IV</small><b id="riskIV">—</b></div>
     <div class="level"><small>Greek guard</small><b id="riskGreekGuard" class="neutral">WAIT</b></div>
   </div>
-  <div class="note" id="riskGreekMessage">Select a live NIFTY option contract after a confirmed setup. The system will use live option LTP, lot size, Delta and the underlying SL distance to calculate the maximum quantity that fits the ₹1,000 risk budget.</div>
+  <div class="note" id="riskGreekMessage">At ≥78% confidence, a suitable live option contract is surfaced; quantity stays locked until confirmation. The system will use live option LTP, lot size, Delta and the underlying SL distance to calculate the maximum quantity that fits the ₹1,000 risk budget.</div>
 </section>
 
 <section class="card" id="phase10Prediction">
@@ -1722,8 +1722,9 @@ function updateStickyPrediction(p){
     const pe=$('spPrediction'), ae=$('spAction'), ce=$('spConfidence'), qe=$('spConfirmation'), ue=$('spUpdated');
     if(!pe)return;
     pe.textContent=pred; pe.className='sp-value '+(pred==='BULLISH'?'bullish':pred==='BEARISH'?'bearish':'neutral');
-    ae.textContent='ACTION: '+act;
-    ae.className='sp-pill '+(act==='CALL'?'bullish':act==='PUT'?'bearish':'neutral');
+    const displayAct=state==='WATCH'?(p?.watchAction||(pred==='BULLISH'?'CE WATCH':pred==='BEARISH'?'PE WATCH':'NO TRADE')):act;
+    ae.textContent='ACTION: '+displayAct;
+    ae.className='sp-pill '+(displayAct==='CALL'||displayAct==='CE WATCH'?'bullish':displayAct==='PUT'||displayAct==='PE WATCH'?'bearish':'neutral');
     ce.textContent='CONFIDENCE: '+(p?.modelConfidence!=null?String(p.modelConfidence)+'%':'—');
     qe.textContent='CONFIRMATION: '+(p?.confirmationPct!=null?String(p.confirmationPct)+'%':'—')+' • '+state;
     ue.textContent='UPDATED: '+indiaNow();
@@ -1755,9 +1756,10 @@ function announcePrediction(p){
   if(!ptdPredictionNotice.booted){ptdPredictionNotice.booted=true;ptdPredictionNotice.key=key;return}
   if(!key||key===ptdPredictionNotice.key)return;
   ptdPredictionNotice.key=key;
-  const tone=act==='CALL'||pred==='BULLISH'?'bullish':act==='PUT'||pred==='BEARISH'?'bearish':'neutral';
+  const displayAct=state==='WATCH'?(p?.watchAction||(pred==='BULLISH'?'CE WATCH':pred==='BEARISH'?'PE WATCH':'NO TRADE')):act;
+  const tone=displayAct==='CALL'||displayAct==='CE WATCH'||pred==='BULLISH'?'bullish':displayAct==='PUT'||displayAct==='PE WATCH'||pred==='BEARISH'?'bearish':'neutral';
   const vib=state==='CONFIRMED'?'confirmed':tone;
-  const detail=`${symbol} • ${pred} • ${act} • Confidence ${p?.modelConfidence??'—'}% • Confirmation ${p?.confirmationPct??'—'}%`;
+  const detail=`${symbol} • ${pred} • ${displayAct} • Confidence ${p?.modelConfidence??'—'}% • Confirmation ${p?.confirmationPct??'—'}%`;
   addAlert('Prediction changed',detail,tone,'prediction-'+key);
   // addAlert() already handles the top toast, vibration and system notification.
 }
@@ -2011,14 +2013,16 @@ function renderPredictionPanel(resp){
   const pred=String(p?.prediction||'NO TRADE').toUpperCase();
   const action=String(p?.action||'NO TRADE').toUpperCase();
   const state=String(p?.signalState||'LOCKED').toUpperCase();
+  const displayAction=state==='WATCH'?(p?.watchAction||(pred==='BULLISH'?'CE WATCH':pred==='BEARISH'?'PE WATCH':'NO TRADE')):action;
   const conf=p?.modelConfidence;
+  const optionPlan=p?.optionPlan||{};
   const pct=p?.confirmationPct;
   const confirmed=p?.confirmedCount;
   const total=p?.confirmationTotal||11;
   const tone=pred==='BULLISH'||action==='CALL'?'bullish':pred==='BEARISH'||action==='PUT'?'bearish':'neutral';
 
   const main=$('p10Prediction'); if(main){main.textContent=pred;main.className='prediction-big '+tone;}
-  const act=$('p10Action'); if(act){act.textContent=action;act.className=tone;}
+  const act=$('p10Action'); if(act){act.textContent=displayAction;act.className=(displayAction==='CALL'||displayAction==='CE WATCH')?'bullish':(displayAction==='PUT'||displayAction==='PE WATCH')?'bearish':tone;}
   const reason=$('p10Reason'); if(reason)reason.textContent=p?.reasoning||p?.reason||'Waiting for verified live inputs and confirmation.';
   const pc=$('p10Confidence'); if(pc)pc.textContent=Number.isFinite(Number(conf))?Number(conf).toFixed(0)+'%':'—';
   const pm=$('p10Confirmation'); if(pm)pm.textContent=Number.isFinite(Number(pct))?Number(pct).toFixed(0)+'% ('+(confirmed??'—')+'/'+total+')':'—';
@@ -2047,9 +2051,58 @@ function renderPredictionPanel(resp){
   const wl=$('p10WinsLosses'); if(wl)wl.textContent=(bt?.wins??'—')+' / '+(bt?.losses??'—');
   const er=$('p10ExpectedR'); if(er)er.textContent=bt?.expectedR!=null?String(bt.expectedR)+'R':'—';
   const finder=$('p10TradeFinder');
-  if(finder)finder.innerHTML='🎯 <b>TWO-TRADE FINDER ACTIVE</b> • Confirmed opportunities today: <b id="p10OpportunityCount">0 / 2</b> • Scanner keeps searching during the NSE session and never manufactures a weak second trade.';
+  if(finder){
+    const contractLine=optionPlan?.available
+      ? ` • Contract: <b>${escapeHtml(optionPlan.contract||'—')}</b> • LTP ₹${Number(optionPlan.entry||0).toFixed(2)} • Δ ${Number(optionPlan.delta||0).toFixed(3)} • Θ ${Number(optionPlan.theta||0).toFixed(2)}`
+      : (Number(conf)>=78?' • Contract finder is checking a suitable live CE/PE.':'');
+    finder.innerHTML=`🎯 <b>TWO-TRADE FINDER ACTIVE</b> • Confirmed opportunities today: <b id="p10OpportunityCount">0 / 2</b> • 70–77% = WATCH • ≥78% = OPTION OPPORTUNITY${contractLine} • Scanner keeps searching during the NSE session.`;
+  }
   renderP10OpportunityCount();
   recordP10Opportunity(p);
+
+  // Surface the 78% option contract without unlocking live execution.
+  try{
+    const fd=$('finalPlanDirection'), fc=$('finalPlanContract'), fm=$('finalPlanContractMeta');
+    const fe=$('finalPlanEntry'), fsl=$('finalPlanSL'), ft1=$('finalPlanT1'), ft2=$('finalPlanT2'), frr=$('finalPlanRR'), fn=$('finalPlanNote'), fb=$('finalPlanBar');
+    if(state==='CONFIRMED' || state==='WATCH'){
+      if(fd){fd.textContent=state==='CONFIRMED'?action:displayAction;fd.className=(displayAction==='CALL'||displayAction==='CE WATCH')?'bullish':(displayAction==='PUT'||displayAction==='PE WATCH')?'bearish':'neutral';}
+      if(fe)fe.textContent=p?.finalPlan?.entry!=null?Number(p.finalPlan.entry).toFixed(2):'—';
+      if(fsl)fsl.textContent=p?.finalPlan?.sl!=null?Number(p.finalPlan.sl).toFixed(2):'—';
+      if(ft1)ft1.textContent=p?.finalPlan?.target1!=null?Number(p.finalPlan.target1).toFixed(2):'—';
+      if(ft2)ft2.textContent=p?.finalPlan?.target2!=null?Number(p.finalPlan.target2).toFixed(2):'—';
+      if(frr)frr.textContent=p?.finalPlan?.rr1!=null?`1:${p.finalPlan.rr1} / 1:${p.finalPlan.rr2}`:'—';
+      if(fc){
+        fc.textContent=optionPlan?.available?String(optionPlan.contract):'WAIT';
+        fc.className=optionPlan?.available?(optionPlan.optionType==='PE'?'bearish':'bullish'):'wait';
+      }
+      if(fm){
+        fm.textContent=optionPlan?.available
+          ? `${optionPlan.optionType} ${optionPlan.strike} • Premium ₹${Number(optionPlan.entry).toFixed(2)} • Δ ${Number(optionPlan.delta).toFixed(3)} • Θ ${Number(optionPlan.theta).toFixed(2)} • ${state==='CONFIRMED'?'CONFIRMED':'WAIT FOR 5M TRIGGER'}`
+          : (Number(conf)>=78?'No suitable live contract yet • keep scanning':'Contract selection starts at 78% confidence');
+      }
+      if(fn){
+        fn.textContent=optionPlan?.available
+          ? `Underlying trigger / SL / T1 / T2 shown above. Option premium plan: Entry ₹${Number(optionPlan.entry).toFixed(2)} • SL ₹${Number(optionPlan.stopLoss).toFixed(2)} • T1 ₹${Number(optionPlan.target1).toFixed(2)} • T2 ₹${Number(optionPlan.target2).toFixed(2)} • R:R 1:${optionPlan.rr1}/1:${optionPlan.rr2}. Live execution remains locked until the prediction becomes CONFIRMED.`
+          : 'No live contract passed the current threshold/filters. The directional scanner remains active.';
+      }
+      if(fb)fb.textContent=state==='CONFIRMED'?'CONFIRMED TRADE PLAN':'WATCH • CONTRACT READY / WAIT FOR 5M TRIGGER';
+    }else{
+      if(fd){fd.textContent='NO TRADE';fd.className='neutral';}
+      if(fc){fc.textContent='—';fc.className='neutral';}
+      if(fm)fm.textContent='Live option premium target band ₹25–₹50';
+      if(fe)fe.textContent='—'; if(fsl)fsl.textContent='—'; if(ft1)ft1.textContent='—'; if(ft2)ft2.textContent='—'; if(frr)frr.textContent='—';
+      if(fn)fn.textContent='No actionable plan yet. Wait for a directional WATCH/CONFIRMED state.';
+      if(fb)fb.textContent='WAIT • SCANNING';
+    }
+
+    if(optionPlan?.available && (state==='WATCH'||state==='CONFIRMED')){
+      window.selectedContract={
+        contract:optionPlan.contract,symbol:optionPlan.symbol,token:optionPlan.token,
+        underlying:optionPlan.underlying,expiry:optionPlan.expiry,optionType:optionPlan.optionType,
+        strike:optionPlan.strike,exchange:'NFO',lotsize:optionPlan.lotSize,ltp:optionPlan.entry
+      };
+    }
+  }catch(_){}
   try{
     if(action==='CALL'||action==='PUT'){
       const bp=p?.finalPlan||{};
