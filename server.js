@@ -1325,8 +1325,8 @@ app.get('/api/chart/candles',async(req,res)=>{
     const interval=map[tf]||'FIFTEEN_MINUTE';
     if(['1M','5M','15M','30M','1H','4H'].includes(tf)){
       const base=await loadBase5m(symbol);
-      let rows=interval==='FIVE_MINUTE'?base:aggregateCandles(base,tf==='15M'?15:tf==='30M'?30:tf==='1H'||tf==='4H'?60:5);
-      rows=dropIncompleteCandle(rows,tf==='15M'?15:tf==='30M'?30:tf==='1H'||tf==='4H'?60:5);
+      let rows=interval==='FIVE_MINUTE'?base:aggregateCandles(base,tf==='15M'?15:tf==='30M'?30:tf==='1H'?60:tf==='4H'?240:5);
+      rows=dropIncompleteCandle(rows,tf==='15M'?15:tf==='30M'?30:tf==='1H'?60:tf==='4H'?240:5);
       return res.json({ok:true,connected,source:candleCache.get(symbol)?.source||'ANGEL',rows:rows.slice(-500),checkedAt:nowISO()});
     }
     const summary=await loadTfSummary(symbol,interval,tf==='1D'?30:15);
