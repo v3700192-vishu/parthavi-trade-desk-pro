@@ -581,7 +581,7 @@ body.chart-fullscreen-open>.app>.bottom{
     badge('CONNECTING','warn');note('Connecting to Angel One • waiting for secure login response…');
     const c=new AbortController(),timer=setTimeout(()=>c.abort(),20000);
     try{
-      const r=await fetch(API_BASE+'/api/angel/login'',{
+      const r=await fetch(API_BASE+'/api/angel/login',{
         method:'POST',headers:{'Content-Type':'application/json','Cache-Control':'no-cache'},
         body:JSON.stringify({clientCode,pin,totp}),cache:'no-store',signal:c.signal
       });
@@ -591,7 +591,7 @@ body.chart-fullscreen-open>.app>.bottom{
       if(document.getElementById('angelTotp'))document.getElementById('angelTotp').value='';
       status(d);
       try{
-        const q=await fetch(API_BASE+'/api/angel/diagnostics?symbol=NIFTY'',{cache:'no-store'});
+        const q=await fetch(API_BASE+'/api/angel/diagnostics?symbol=NIFTY',{cache:'no-store'});
         const qd=await q.json().catch(()=>({}));
         if(q.ok&&qd.ok){
           badge('LIVE CONNECTED','ok');
