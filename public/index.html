@@ -1752,14 +1752,16 @@ async function ptdSystemNotify(title,detail,key){
 const ptdPredictionNotice={key:null,booted:false}; window.__notifyAlways=('Notification' in window && Notification.permission==='granted');
 function announcePrediction(p){
   const pred=String(p?.prediction||'NO TRADE').toUpperCase(), act=String(p?.action||'NO TRADE').toUpperCase(), state=String(p?.signalState||'LOCKED').toUpperCase();
-  const key=pred+'|'+act+'|'+state;
+  const displayAct=state==='WATCH'?(p?.watchAction||(pred==='BULLISH'?'CE WATCH':pred==='BEARISH'?'PE WATCH':'NO TRADE')):act;
+  const contractReady=!!p?.optionPlan?.available && Number(p?.modelConfidence)>=78;
+  const key=pred+'|'+act+'|'+state+'|'+(contractReady?'CONTRACT_READY':'');
   if(!ptdPredictionNotice.booted){ptdPredictionNotice.booted=true;ptdPredictionNotice.key=key;return}
   if(!key||key===ptdPredictionNotice.key)return;
   ptdPredictionNotice.key=key;
-  const displayAct=state==='WATCH'?(p?.watchAction||(pred==='BULLISH'?'CE WATCH':pred==='BEARISH'?'PE WATCH':'NO TRADE')):act;
   const tone=displayAct==='CALL'||displayAct==='CE WATCH'||pred==='BULLISH'?'bullish':displayAct==='PUT'||displayAct==='PE WATCH'||pred==='BEARISH'?'bearish':'neutral';
   const vib=state==='CONFIRMED'?'confirmed':tone;
-  const detail=`${symbol} • ${pred} • ${displayAct} • Confidence ${p?.modelConfidence??'—'}% • Confirmation ${p?.confirmationPct??'—'}%`;
+  const contractText=contractReady?` • Contract ${p?.optionPlan?.contract} • Premium ₹${Number(p.optionPlan.entry).toFixed(2)}`:'';
+  const detail=`${symbol} • ${pred} • ${displayAct} • Confidence ${p?.modelConfidence??'—'}% • Confirmation ${p?.confirmationPct??'—'}%${contractText}`;
   addAlert('Prediction changed',detail,tone,'prediction-'+key);
   // addAlert() already handles the top toast, vibration and system notification.
 }
