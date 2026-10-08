@@ -170,31 +170,45 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
   ));
   const feedComplete=!!marketOpen && !!news?.connected && !!global?.connected && !!options?.connected && !!events?.connected && Number.isFinite(theta) && Number.isFinite(delta) && !events?.hardBlock && !events?.eventDayBlock;
   const hardNoTrade=noTradeReasons.length>0;
-  // Two-trade finder gate: preserve all safety/feed hard stops, while allowing
-  // strong 9/11 confluence to become actionable sooner so the scanner can
-  // realistically surface up to two quality opportunities during the session.
-  const eliteSetup=prediction!=='NEUTRAL' && confirmedCount>=9 && confirmationPct>=80 && modelConfidence>=80 && !hardNoTrade && feedComplete;
-  const signalState=(!marketOpen||events?.hardBlock||events?.eventDayBlock||hardNoTrade)?'NO TRADE':(eliteSetup?'CONFIRMED':(prediction!=='NEUTRAL'&&confirmedCount>=6?'WATCH':'NO TRADE'));
-
+  // Opportunity tiers: keep directional opportunities visible early, while
+  // preserving hard safety blockers and the existing confirmed-entry gate.
+  const opportunityConfidenceThreshold=78;
+  const hardSafetyBlock =
+    !marketOpen ||
+    !!events?.hardBlock ||
+    !!events?.eventDayBlock ||
+    (Number.isFinite(Number(vix)) && (Number(vix)<12 || Number(vix)>22)) ||
+    (Number.isFinite(theta) && Number.isFinite(delta) && (theta>=10 || delta<0.20));
+  const watchEligible=prediction!=='NEUTRAL' && confirmedCount>=6 && !hardSafetyBlock;
+  const eliteSetup=prediction!=='NEUTRAL' && confirmedCount>=9 && confirmationPct>=80 && modelConfidence>=80 && !hardNoTrade && feedComplete && !hardSafetyBlock;
+  const signalState=(!marketOpen||events?.hardBlock||events?.eventDayBlock)?'NO TRADE':(eliteSetup?'CONFIRMED':(watchEligible?'WATCH':'NO TRADE'));
   const action=signalState==='CONFIRMED'?(prediction==='BULLISH'?'CALL':'PUT'):'NO TRADE';
+  const watchAction=watchEligible?(prediction==='BULLISH'?'CE WATCH':'PE WATCH'):'NO TRADE';
+  const plan=finalTradePlan(prediction,last,atr);
+  const opportunityEligible=prediction!=='NEUTRAL' && modelConfidence>=opportunityConfidenceThreshold && !hardSafetyBlock && marketOpen && plan.available;
   const reasoning = signalState==='CONFIRMED'
     ? `${prediction} structure aligns across 1H/15M/5M with ${confirmedCount}/${required.length} confirmation checks; VIX/ADX/volume/event filters passed and minimum RR is 1:2.`
-    : noTradeReasons.length
-      ? noTradeReasons.join(' • ')
-      : !marketOpen ? 'Exchange session is closed; live trade action is disabled.'
-      : events?.hardBlock||events?.eventDayBlock ? 'High-impact event gate is active; no new trade is permitted.'
-      : `${prediction==='NEUTRAL'?'Directional edge is weak.':prediction+' setup detected, but confirmation is incomplete.'} ${confirmedCount}/${required.length} checks currently pass.`;
-  const plan=action!=='NO TRADE'?finalTradePlan(prediction,last,atr):finalTradePlan('NEUTRAL',last,atr);
+    : signalState==='WATCH' && modelConfidence>=opportunityConfidenceThreshold
+      ? `${watchAction} • ${prediction} opportunity detected at ${modelConfidence}% model confidence. Live contract selection is active; wait for 5M confirmation before entry.`
+      : signalState==='WATCH'
+        ? `${watchAction} • ${prediction} watch setup detected at ${modelConfidence}% model confidence. Wait for the 5M trigger.`
+        : noTradeReasons.length
+          ? noTradeReasons.join(' • ')
+          : !marketOpen ? 'Exchange session is closed; live trade action is disabled.'
+          : events?.hardBlock||events?.eventDayBlock ? 'High-impact event gate is active; no new trade is permitted.'
+          : `${prediction==='NEUTRAL'?'Directional edge is weak.':prediction+' setup detected, but confirmation is incomplete.'} ${confirmedCount}/${required.length} checks currently pass.`;
   return {
-    prediction, action, signalState, score,
-    modelConfidence, confirmationPct, confirmedCount, confirmationTotal:required.length,
+    prediction, action, watchAction, signalState, score,
+    modelConfidence, opportunityConfidenceThreshold, opportunityEligible,
+    modelConfidenceBand:modelConfidence>=78?'OPTION OPPORTUNITY':modelConfidence>=70?'WATCH':'WEAK',
+    confirmationPct, confirmedCount, confirmationTotal:required.length,
     confirmations, trend1h:h1d, setup15m:m15d, trigger5m:String(m5?.candle||'WAIT'),
     volumeRatio:vr, volumeRatio10d:vr10, volumeBreakout:!!x5.volumeBreakout, volumeSource:x5.volumeSource||'INDEX', volumeUnavailable:!!x5.volumeUnavailable, rsi, adx, atr, vwap, last, vix:Number.isFinite(Number(vix))?Number(vix):null, delta:Number.isFinite(delta)?delta:null, theta:Number.isFinite(theta)?theta:null, greekRisk:options?.greekRisk||null, oi:oi||null, noTradeReasons, rrGate:'1:2 MINIMUM',
     finalPlan:plan,
     signalBarTime:rows5?.at?.(-1)?.t||null,
     historical:backtest||{available:false,reason:'Historical backtest not available.'},
     feedComplete, eventBlocked:!!events?.hardBlock,
-    tradeFinder:{enabled:true,targetOpportunitiesPerSession:2,volumeMode:volumeContinuation?'CONTINUATION':'BREAKOUT'},
+    tradeFinder:{enabled:true,targetOpportunitiesPerSession:2,volumeMode:volumeContinuation?'CONTINUATION':'BREAKOUT',watchThreshold:70,contractThreshold:78},
     note:'Two-trade finder is active: the scanner searches continuously for up to two high-quality opportunities per NSE session. A 1.5x 10-day same-slot volume breakout is preferred; strong trend-continuation may qualify from 0.90x when 1H/15M/5M, momentum and ADX agree. India VIX 12–22, event safety, complete verified feeds and minimum 1:2 risk-to-reward remain hard protections. This is a quality filter, not a guarantee of profit. Final SL/targets are volatility-based planning levels on the underlying index; option premium SL/targets must be verified from the selected live contract and its Greeks.',
     reasoning
   };
