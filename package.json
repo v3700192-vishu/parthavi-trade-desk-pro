@@ -1,15 +1,66 @@
 {
   "name": "parthavi-trade-desk-pro",
-  "version": "2.0.0-phase12",
+  "version": "2.1.0-desktop",
   "private": true,
   "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "desktop:start": "electron .",
+    "desktop:build": "electron-builder --win --x64"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "smartapi-javascript": "^1.0.27",
     "address": "^2.0.3"
+  },
+  "devDependencies": {
+    "electron": "44.6.0",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "com.parthavi.tradedesk.pro",
+    "productName": "PARTHAVI Trade Desk Pro",
+    "directories": {
+      "output": "dist-desktop"
+    },
+    "asar": false,
+    "files": [
+      "electron/**/*",
+      "server.js",
+      "angelone.js",
+      "fusion.js",
+      "phase12.js",
+      "prediction.js",
+      "riskGuard.js",
+      "public/**/*",
+      "package.json",
+      ".env.example"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "PARTHAVI-Trade-Desk-Pro-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
   }
 }
