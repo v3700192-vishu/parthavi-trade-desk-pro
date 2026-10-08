@@ -581,7 +581,7 @@ body.chart-fullscreen-open>.app>.bottom{
     badge('CONNECTING','warn');note('Connecting to Angel One • waiting for secure login response…');
     const c=new AbortController(),timer=setTimeout(()=>c.abort(),20000);
     try{
-      const r=await fetch((location.origin||'')+'/api/angel/login',{
+      const r=await fetch(API_BASE+'/api/angel/login'',{
         method:'POST',headers:{'Content-Type':'application/json','Cache-Control':'no-cache'},
         body:JSON.stringify({clientCode,pin,totp}),cache:'no-store',signal:c.signal
       });
@@ -591,7 +591,7 @@ body.chart-fullscreen-open>.app>.bottom{
       if(document.getElementById('angelTotp'))document.getElementById('angelTotp').value='';
       status(d);
       try{
-        const q=await fetch((location.origin||'')+'/api/angel/diagnostics?symbol=NIFTY',{cache:'no-store'});
+        const q=await fetch(API_BASE+'/api/angel/diagnostics?symbol=NIFTY'',{cache:'no-store'});
         const qd=await q.json().catch(()=>({}));
         if(q.ok&&qd.ok){
           badge('LIVE CONNECTED','ok');
@@ -601,7 +601,7 @@ body.chart-fullscreen-open>.app>.bottom{
           note('Angel login accepted, but live quote verification failed: '+(qd.error||'Unknown quote error'));
         }
       }catch(e){badge('LOGIN OK • TEST FAILED','danger');note('Angel login accepted, but verification failed: '+(e.message||'Unknown error'));}
-      try{const s=await (await fetch((location.origin||'')+'/api/angel/status',{cache:'no-store'})).json();status(s);}catch{}
+      try{const s=await (await fetch(API_BASE+'/api/angel/status',{cache:'no-store'})).json();status(s);}catch{}
     }catch(e){
       const msg=e?.name==='AbortError'?'Login request timed out after 20 seconds.':(e.message||'Unknown connection error');
       badge('CONNECTION ERROR','danger');note('Angel One connection error: '+msg);
@@ -2329,7 +2329,7 @@ async function previewQuickOrder(){
   const c=window.selectedContract;if(!c?.token){toast('First select a live contract from Contract Finder');return}
   const side=$('qSide').value, type=$('qType').value, price=Number($('qPrice').value||0), qty=Number($('qQty').value||0), sl=Number($('qSL').value||0), capital=Number($('qCapital').value||$('capital').value||0), riskPct=Number($('qRisk').value||$('riskPct').value||0);
   const body={transactiontype:side,exchange:c.exchange||'NSE',tradingsymbol:c.contract||c.symbol,symboltoken:c.token,ordertype:type,producttype:'INTRADAY',price,stopLoss:sl,target1:Number($('qTarget').value||0),quantity:qty,capital,riskPct,signalToken:window.phase11SignalToken||''};
-  try{const r=await fetch(API_BASE+'/api/order/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const d=await r.json();if(!r.ok||!d.ok)throw new Error([d.error,...(d.errors||[])].filter(Boolean).join(' • '));pendingOrderPreview={previewId:d.previewId,order:d.order,meta:{side,entry,sl,t1:Number($('t1').value||0),t2:Number($('t2').value||0)}};$('orderPreviewText').textContent=`${d.order.transactiontype} ${d.order.tradingsymbol} • Qty ${d.order.quantity} • ${d.order.ordertype} • Max risk ${money(d.maxLoss)} • 60 sec.`;$('orderConfirm').value='';$('orderModal').classList.add('show');}catch(e){toast(e.message||'Order preview failed')}}
+  try{const r=await fetch(API_BASE+'/api/order/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const d=await r.json();if(!r.ok||!d.ok)throw new Error([d.error,...(d.errors||[])].filter(Boolean).join(' • '));pendingOrderPreview={previewId:d.previewId,order:d.order,meta:{side,entry:price,sl,t1:Number($('qTarget').value||0),t2:0}};$('orderPreviewText').textContent=`${d.order.transactiontype} ${d.order.tradingsymbol} • Qty ${d.order.quantity} • ${d.order.ordertype} • Max risk ${money(d.maxLoss)} • 60 sec.`;$('orderConfirm').value='';$('orderModal').classList.add('show');}catch(e){toast(e.message||'Order preview failed')}}
 async function previewExit(token,symbol){try{const r=await fetch(API_BASE+'/api/position/exit/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symboltoken:token})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.error||'Exit preview failed');pendingExitPreview={previewId:d.previewId};$('exitPreviewText').textContent=`Exit ${d.position.symbol||symbol} • Net Qty ${d.position.netQty} • ${d.order.transactiontype} MARKET • No order has been placed yet.`;$('exitConfirm').value='';$('exitModal').classList.add('show');}catch(e){toast(e.message||'Exit preview failed')}}
 function closeExitModal(){$('exitModal').classList.remove('show');pendingExitPreview=null}
 async function executeExitPosition(){if(!pendingExitPreview){toast('Exit preview missing');return}const confirmation=$('exitConfirm').value.trim();if(confirmation.toUpperCase()!=='EXIT LIVE POSITION'){toast('Type EXIT LIVE POSITION exactly');return}try{const r=await fetch(API_BASE+'/api/position/exit/execute',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({previewId:pendingExitPreview.previewId,confirmation})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.error||'Exit order failed');closeExitModal();toast('Exit order submitted • verify fill in Orders/Trades');await loadBrokerAccount();}catch(e){toast(e.message||'Exit order failed')}}
@@ -2338,7 +2338,7 @@ function closeModifyModal(){$('modifyModal').classList.remove('show');pendingMod
 async function executeModifyOrder(){if(!pendingModify){toast('Order details missing');return}const confirmation='MODIFY LIVE ORDER';const o=pendingModify;try{const body={...o,ordertype:$('modOrderType').value,price:Number($('modPrice').value||0),quantity:Number($('modQty').value||0),confirmation};const r=await fetch(API_BASE+'/api/order/modify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.error||'Modify order failed');closeModifyModal();toast('Modify request submitted');await loadBrokerAccount();}catch(e){toast(e.message||'Modify order failed')}}
 async function cancelLive(orderid,exchange='NSE'){if(!confirm('Cancel this live order?'))return;try{const r=await fetch(API_BASE+'/api/order/cancel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({orderid,exchange})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.error||'Cancel failed');toast('Cancel request submitted');await loadBrokerAccount();}catch(e){toast(e.message||'Cancel failed')}}
 
-async function loadPhase12Readiness(){ try{ const ex=(document.getElementById('exchange')?.value||'NSE'); const r=await fetch('/api/phase12/readiness?exchange='+encodeURIComponent(ex)); const d=await r.json(); setToneText('p12Mode',d.mode||'LOCKED'); setToneText('p12Angel',d.checks?.find(x=>x.id==='ANGEL_SESSION')?.ok?'OK':'WAIT'); setToneText('p12Static',d.checks?.find(x=>x.id==='STATIC_IP')?.ok?'VERIFIED':'WAIT'); setToneText('p12Market',d.checks?.find(x=>x.id==='MARKET_SESSION')?.ok?'OPEN':'CLOSED'); setToneText('p12Exec',d.liveReady?'READY':'LOCKED'); const failed=(d.checks||[]).filter(x=>!x.ok).map(x=>x.label); document.getElementById('p12Checks').textContent=failed.length?'Blocked: '+failed.join(' • '):'All production readiness checks passed. Live order execution still requires explicit user confirmation.'; }catch(e){ setToneText('p12Mode','LOCKED'); setToneText('p12Exec','LOCKED'); document.getElementById('p12Checks').textContent='Readiness service unavailable.'; } }
+async function loadPhase12Readiness(){ try{ const ex=(document.getElementById('exchange')?.value||'NSE'); const r=await fetch(API_BASE+'/api/phase12/readiness?exchange='+encodeURIComponent(ex),{cache:'no-store'}); const d=await r.json(); setToneText('p12Mode',d.mode||'LOCKED'); setToneText('p12Angel',d.checks?.find(x=>x.id==='ANGEL_SESSION')?.ok?'OK':'WAIT'); setToneText('p12Static',d.checks?.find(x=>x.id==='STATIC_IP')?.ok?'VERIFIED':'WAIT'); setToneText('p12Market',d.checks?.find(x=>x.id==='MARKET_SESSION')?.ok?'OPEN':'CLOSED'); setToneText('p12Exec',d.liveReady?'READY':'LOCKED'); const failed=(d.checks||[]).filter(x=>!x.ok).map(x=>x.label); document.getElementById('p12Checks').textContent=failed.length?'Blocked: '+failed.join(' • '):'All production readiness checks passed. Live order execution still requires explicit user confirmation.'; }catch(e){ setToneText('p12Mode','LOCKED'); setToneText('p12Exec','LOCKED'); document.getElementById('p12Checks').textContent='Readiness service unavailable.'; } }
 async function loadExecutionStatus(){
  try{
    const r=await getJSON('/api/execution/status'); const s=r.status||{};
@@ -2366,7 +2366,7 @@ async function requestOrder(side){
  try{
    const r=await fetch(API_BASE+'/api/order/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); const d=await r.json();
    if(!r.ok||!d.ok) throw new Error([d.error,...(d.errors||[])].filter(Boolean).join(' • '));
-   pendingOrderPreview={previewId:d.previewId}; $('orderPreviewText').textContent=`${d.order.transactiontype} ${d.order.tradingsymbol} • Qty ${d.order.quantity} • Price ${d.order.price} • Max risk ₹${d.maxLoss} • expires in 60s.`; $('orderConfirm').value=''; $('orderModal').classList.add('show');
+   pendingOrderPreview={previewId:d.previewId,order:d.order,meta:{side,entry:Number(entry),sl:Number(sl),t1:Number($('t1').value||0),t2:Number($('t2').value||0)}}; $('orderPreviewText').textContent=`${d.order.transactiontype} ${d.order.tradingsymbol} • Qty ${d.order.quantity} • Price ${d.order.price} • Max risk ₹${d.maxLoss} • expires in 60s.`; $('orderConfirm').value=''; $('orderModal').classList.add('show');
  }catch(e){toast(e.message||'Order preview failed')}
 }
 function closeOrderModal(){ $('orderModal').classList.remove('show'); pendingOrderPreview=null; }
