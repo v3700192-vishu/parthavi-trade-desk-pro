@@ -219,7 +219,7 @@ export function backtestFiveMinute(rows=[]){
     if(!bull&&!bear) continue;
     candidates++;
     const trAvg=trs.slice(Math.max(0,trs.length-14)).reduce((a,b)=>a+b,0)/Math.max(1,Math.min(14,trs.length)); if(!Number.isFinite(trAvg)||trAvg<=0) continue;
-    const entry=r[i].c, stop=trAvg, target=trAvg*1.25; let outcome='UNRESOLVED';
+    const entry=r[i].c, stop=trAvg, target=trAvg*2.0; let outcome='UNRESOLVED';
     for(let j=i+1;j<=i+20&&j<r.length;j++){
       if(bull){
         const hitStop=r[j].l<=entry-stop, hitTarget=r[j].h>=entry+target;
@@ -233,5 +233,5 @@ export function backtestFiveMinute(rows=[]){
     if(outcome==='WIN'){hits++;resolved++;} else if(outcome==='LOSS'){resolved++;}
   }
   const rate=resolved?Number((hits/resolved*100).toFixed(1)):null;
-  const expectedR=rate!=null?Number((rate/100*1.25-(1-rate/100)).toFixed(2)):null; return {available:resolved>=30,signals:candidates,resolved,wins:hits,losses:resolved-hits,targetHitRate:rate,expectedR,sample:resolved,minSample:30,method:'5M rolling EMA20/EMA50 + RSI + volume trigger; 1.0R stop vs 2.0R target; max 20 bars forward; no fees/slippage.'};
+  const expectedR=rate!=null?Number((rate/100*2.0-(1-rate/100)).toFixed(2)):null; return {available:resolved>=30,signals:candidates,resolved,wins:hits,losses:resolved-hits,targetHitRate:rate,expectedR,sample:resolved,minSample:30,method:'5M rolling EMA20/EMA50 + RSI + volume trigger; 1.0R stop vs 2.0R target; max 20 bars forward; no fees/slippage.'};
 }
