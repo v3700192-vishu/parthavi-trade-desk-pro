@@ -1984,6 +1984,90 @@ async function stccMonitorTick(){
     x.lastCheck=Date.now();stccSave(x);stccRender(x);
   }
 }
+function renderP10OpportunityCount(){
+  const el=$('p10OpportunityCount');
+  if(!el)return;
+  const key='PTD_PREDICTION_OPPORTUNITIES_'+new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+  let count=0;
+  try{count=Number(localStorage.getItem(key)||0)}catch{}
+  el.textContent=Math.max(0,Math.min(2,count))+' / 2';
+}
+function recordP10Opportunity(p){
+  if(String(p?.signalState||'').toUpperCase()!=='CONFIRMED')return;
+  const token=String(p?.signalBarTime||'')+'|'+String(p?.action||'')+'|'+String(p?.last||'');
+  try{
+    const last=localStorage.getItem('PTD_LAST_CONFIRMED_SIGNAL');
+    if(last===token)return;
+    localStorage.setItem('PTD_LAST_CONFIRMED_SIGNAL',token);
+    const key='PTD_PREDICTION_OPPORTUNITIES_'+new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+    const count=Number(localStorage.getItem(key)||0);
+    if(count<2)localStorage.setItem(key,String(count+1));
+  }catch{}
+  renderP10OpportunityCount();
+}
+function renderPredictionPanel(resp){
+  const p=resp?.prediction||resp||{};
+  const bt=resp?.backtest||p?.historical||{};
+  const pred=String(p?.prediction||'NO TRADE').toUpperCase();
+  const action=String(p?.action||'NO TRADE').toUpperCase();
+  const state=String(p?.signalState||'LOCKED').toUpperCase();
+  const conf=p?.modelConfidence;
+  const pct=p?.confirmationPct;
+  const confirmed=p?.confirmedCount;
+  const total=p?.confirmationTotal||11;
+  const tone=pred==='BULLISH'||action==='CALL'?'bullish':pred==='BEARISH'||action==='PUT'?'bearish':'neutral';
+
+  const main=$('p10Prediction'); if(main){main.textContent=pred;main.className='prediction-big '+tone;}
+  const act=$('p10Action'); if(act){act.textContent=action;act.className=tone;}
+  const reason=$('p10Reason'); if(reason)reason.textContent=p?.reasoning||p?.reason||'Waiting for verified live inputs and confirmation.';
+  const pc=$('p10Confidence'); if(pc)pc.textContent=Number.isFinite(Number(conf))?Number(conf).toFixed(0)+'%':'—';
+  const pm=$('p10Confirmation'); if(pm)pm.textContent=Number.isFinite(Number(pct))?Number(pct).toFixed(0)+'% ('+(confirmed??'—')+'/'+total+')':'—';
+  const hr=$('p10HitRate'); if(hr)hr.textContent=Number.isFinite(Number(bt?.targetHitRate))?Number(bt.targetHitRate).toFixed(1)+'%':'—';
+  const meter=$('p10Meter'); if(meter)meter.style.width=Math.max(0,Math.min(100,Number(pct)||0))+'%';
+  const st=$('p10State'); if(st){st.textContent=state;st.className='badge '+(state==='CONFIRMED'?'ok':state==='WATCH'?'warn':'danger');}
+  const tm=$('p10Time'); if(tm)tm.textContent='Updated • '+p10Clock(resp?.checkedAt||Date.now());
+  const note=$('p10Note'); if(note)note.textContent=p?.note||'Confidence is a rule-based confluence estimate. Historical target-hit rate is not a guarantee of future profit.';
+
+  const checks=p?.confirmations||{};
+  const labels=[
+    ['trend','1H trend'],['setup','15M setup'],['trigger','5M trigger'],['momentum','Momentum'],
+    ['volume','Volume'],['strength','ADX'],['options','Options / OI'],['news','News / macro'],
+    ['global','Global risk'],['eventSafe','Event safe']
+  ];
+  const grid=$('p10ConfirmGrid');
+  if(grid){
+    grid.innerHTML=labels.map(([k,label])=>{
+      const ok=!!checks[k];
+      const val=ok?'PASS':'WAIT';
+      return '<div class="confirm-item"><span>'+escapeHtml(label)+'</span><b class="'+(ok?'yes':'no')+'">'+val+'</b></div>';
+    }).join('');
+  }
+  const sig=$('p10Signals'); if(sig)sig.textContent=bt?.signals??'—';
+  const resolved=$('p10Resolved'); if(resolved)resolved.textContent=bt?.resolved??'—';
+  const wl=$('p10WinsLosses'); if(wl)wl.textContent=(bt?.wins??'—')+' / '+(bt?.losses??'—');
+  const er=$('p10ExpectedR'); if(er)er.textContent=bt?.expectedR!=null?String(bt.expectedR)+'R':'—';
+  const finder=$('p10TradeFinder');
+  if(finder)finder.innerHTML='🎯 <b>TWO-TRADE FINDER ACTIVE</b> • Confirmed opportunities today: <b id="p10OpportunityCount">0 / 2</b> • Scanner keeps searching during the NSE session and never manufactures a weak second trade.';
+  renderP10OpportunityCount();
+  recordP10Opportunity(p);
+  try{
+    if(action==='CALL'||action==='PUT'){
+      const bp=p?.finalPlan||{};
+      const d={
+        action,score:p?.score!=null?p.score:'—',confidence:conf!=null?conf+'%':'—',rr:bp?.rr1?'1:'+bp.rr1:'1:2+',
+        reason:p?.reasoning||'',
+        trend1h:p?.trend1h||'WAIT',setup15m:p?.setup15m||'WAIT',trigger5m:p?.trigger5m||'WAIT',
+        rsi:p?.rsi,adx:p?.adx,vwap:p?.vwap,priceAction:p?.trigger5m,volume:p?.volumeSource||'WAIT',atr:p?.atr,
+        momentum:p?.confirmations?.momentum?'CONFIRMED':'WAIT',options:p?.confirmations?.options?'CONFIRMED':'WAIT',
+        news:p?.confirmations?.news?'CONFIRMED':'WAIT',global:p?.confirmations?.global?'CONFIRMED':'WAIT',
+        event:p?.confirmations?.eventSafe?'SAFE':'NO TRADE',levels:{},blueprint:{direction:bp.direction||action,entry:bp.entry??'',sl:bp.sl??'',t1:bp.target1??'',t2:bp.target2??''}
+      };
+      renderDecision(d);
+    }
+  }catch(_){}
+  loadRiskSizing(p).catch(()=>{});
+}
+
 let ptdLoadPredictionPromise=null;
 async function loadPrediction(showToast=false){
   if(ptdLoadPredictionPromise) return ptdLoadPredictionPromise;
