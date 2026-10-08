@@ -1372,9 +1372,11 @@ app.get('/api/phase10/prediction',async(req,res)=>{
       m5.summary.volumeSource=futuresVol.source;
     }
     const prediction=buildPrediction({h1:h1.summary,m15:m15.summary,m5:m5.summary,rows5:m5.rows,news:ns,global:gs,events:es,options:opt,marketOpen:marketSession(),backtest:historical,vix:Number.isFinite(vix)?vix:null,oi:opt});
-    let optionPlan={available:false,reason:'Wait for a fully confirmed signal before selecting the buyable option.'};
-    if(prediction.signalState==='CONFIRMED' && prediction.finalPlan?.available){
-      optionPlan=await findBuyableOptionPlan(symbol,prediction.action,prediction.finalPlan.entry,prediction.finalPlan.sl,prediction.finalPlan.target1,prediction.finalPlan.target2);
+    let optionPlan={available:false,reason:'Wait until model confidence reaches 78% for live CE/PE contract selection.'};
+    if(prediction.opportunityEligible && prediction.finalPlan?.available){
+      const optionAction=prediction.prediction==='BULLISH'?'CALL':prediction.prediction==='BEARISH'?'PUT':'';
+      optionPlan=await findBuyableOptionPlan(symbol,optionAction,prediction.finalPlan.entry,prediction.finalPlan.sl,prediction.finalPlan.target1,prediction.finalPlan.target2);
+      if(!optionPlan.available) optionPlan={...optionPlan,threshold:78,reason:optionPlan.reason||'No suitable live contract passed the premium/Greek/liquidity filters.'};
     }
     prediction.optionPlan=optionPlan;
     const candleConnected=Array.isArray(m5.rows)&&m5.rows.length>0;
