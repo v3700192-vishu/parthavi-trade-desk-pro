@@ -2031,8 +2031,8 @@ function renderPredictionPanel(resp){
   const checks=p?.confirmations||{};
   const labels=[
     ['trend','1H trend'],['setup','15M setup'],['trigger','5M trigger'],['momentum','Momentum'],
-    ['volume','Volume'],['strength','ADX'],['options','Options / OI'],['news','News / macro'],
-    ['global','Global risk'],['eventSafe','Event safe']
+    ['volume','Volume'],['strength','ADX'],['options','Options / OI'],['greeks','Greeks'],
+    ['news','News / macro'],['global','Global risk'],['eventSafe','Event safe']
   ];
   const grid=$('p10ConfirmGrid');
   if(grid){
@@ -2079,7 +2079,7 @@ async function loadPrediction(showToast=false){
     if(r?.prediction?.signalState!=='CONFIRMED'){window.phase11SignalToken='';window.phase11Snapshot=null;$('p11SignalStatus').textContent='No live signal token loaded.';}
     if(showToast) toast(r?.prediction?.signalState==='CONFIRMED'?'Phase 10 prediction confirmed':'Phase 10 prediction refreshed');
   }catch(e){
-    renderPredictionPanel({prediction:{prediction:'NO TRADE',action:'NO TRADE',signalState:'LOCKED',modelConfidence:null,confirmationPct:0,confirmedCount:0,confirmationTotal:10,reasoning:'Prediction service unavailable or live data is not connected.',note:'Connect the backend and broker feeds before using the predictive panel.'},backtest:{available:false}});
+    renderPredictionPanel({prediction:{prediction:'NO TRADE',action:'NO TRADE',signalState:'LOCKED',modelConfidence:null,confirmationPct:0,confirmedCount:0,confirmationTotal:11,reasoning:'Prediction service unavailable or live data is not connected.',note:'Connect the backend and broker feeds before using the predictive panel.'},backtest:{available:false}});
     if(showToast) toast('Phase 10 prediction unavailable');
   }finally{
     ptdLoadPredictionPromise=null;
@@ -2329,7 +2329,7 @@ async function previewQuickOrder(){
   const c=window.selectedContract;if(!c?.token){toast('First select a live contract from Contract Finder');return}
   const side=$('qSide').value, type=$('qType').value, price=Number($('qPrice').value||0), qty=Number($('qQty').value||0), sl=Number($('qSL').value||0), capital=Number($('qCapital').value||$('capital').value||0), riskPct=Number($('qRisk').value||$('riskPct').value||0);
   const body={transactiontype:side,exchange:c.exchange||'NSE',tradingsymbol:c.contract||c.symbol,symboltoken:c.token,ordertype:type,producttype:'INTRADAY',price,stopLoss:sl,target1:Number($('qTarget').value||0),quantity:qty,capital,riskPct,signalToken:window.phase11SignalToken||''};
-  try{const r=await fetch(API_BASE+'/api/order/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const d=await r.json();if(!r.ok||!d.ok)throw new Error([d.error,...(d.errors||[])].filter(Boolean).join(' • '));pendingOrderPreview={previewId:d.previewId};$('orderPreviewText').textContent=`${d.order.transactiontype} ${d.order.tradingsymbol} • Qty ${d.order.quantity} • ${d.order.ordertype} • Max risk ${money(d.maxLoss)} • 60 sec.`;$('orderConfirm').value='';$('orderModal').classList.add('show');}catch(e){toast(e.message||'Order preview failed')}}
+  try{const r=await fetch(API_BASE+'/api/order/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const d=await r.json();if(!r.ok||!d.ok)throw new Error([d.error,...(d.errors||[])].filter(Boolean).join(' • '));pendingOrderPreview={previewId:d.previewId,order:d.order,meta:{side,entry,sl,t1:Number($('t1').value||0),t2:Number($('t2').value||0)}};$('orderPreviewText').textContent=`${d.order.transactiontype} ${d.order.tradingsymbol} • Qty ${d.order.quantity} • ${d.order.ordertype} • Max risk ${money(d.maxLoss)} • 60 sec.`;$('orderConfirm').value='';$('orderModal').classList.add('show');}catch(e){toast(e.message||'Order preview failed')}}
 async function previewExit(token,symbol){try{const r=await fetch(API_BASE+'/api/position/exit/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symboltoken:token})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.error||'Exit preview failed');pendingExitPreview={previewId:d.previewId};$('exitPreviewText').textContent=`Exit ${d.position.symbol||symbol} • Net Qty ${d.position.netQty} • ${d.order.transactiontype} MARKET • No order has been placed yet.`;$('exitConfirm').value='';$('exitModal').classList.add('show');}catch(e){toast(e.message||'Exit preview failed')}}
 function closeExitModal(){$('exitModal').classList.remove('show');pendingExitPreview=null}
 async function executeExitPosition(){if(!pendingExitPreview){toast('Exit preview missing');return}const confirmation=$('exitConfirm').value.trim();if(confirmation.toUpperCase()!=='EXIT LIVE POSITION'){toast('Type EXIT LIVE POSITION exactly');return}try{const r=await fetch(API_BASE+'/api/position/exit/execute',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({previewId:pendingExitPreview.previewId,confirmation})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.error||'Exit order failed');closeExitModal();toast('Exit order submitted • verify fill in Orders/Trades');await loadBrokerAccount();}catch(e){toast(e.message||'Exit order failed')}}
@@ -2396,7 +2396,19 @@ async function executeLiveOrder(){
  try{
    const r=await fetch(API_BASE+'/api/order/execute',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({previewId:pendingOrderPreview.previewId,confirmation})}); const d=await r.json();
    if(!r.ok||!d.ok) throw new Error(d.error||'Live order rejected');
-   saveTradeJournal({symbol:window.selectedContract?.contract||symbol,side:side,decision:'TRADE',entry:Number(entry),sl:Number(sl),t1:Number($('t1').value||0),t2:Number($('t2').value||0),status:'LIVE ORDER SUBMITTED',pnl:0});
+   const order=pendingOrderPreview.order||{};
+   const meta=pendingOrderPreview.meta||{};
+   saveTradeJournal({
+     symbol:order.tradingsymbol||window.selectedContract?.contract||symbol,
+     side:order.transactiontype||meta.side||'BUY',
+     decision:'TRADE',
+     entry:meta.entry??'',
+     sl:meta.sl??'',
+     t1:meta.t1??'',
+     t2:meta.t2??'',
+     status:'LIVE ORDER SUBMITTED',
+     pnl:0
+   });
    closeOrderModal(); toast('Order request submitted • check broker order book'); await loadOrderBook();
  }catch(e){toast(e.message||'Live order failed')}
 }
@@ -2476,6 +2488,52 @@ setInterval(()=>{if(!document.hidden)loadBrokerAccount()},60000);
 setInterval(()=>{if(!document.hidden)loadExecutionStatus()},30000);
 setInterval(()=>{if(!document.hidden)loadPhase12Readiness()},30000);
 setInterval(()=>{if(!document.hidden)phase6Monitor()},15000);
+
+// Mobile bottom navigation — reliable section switching without touching broker/Angel One logic.
+document.addEventListener('DOMContentLoaded',()=>{
+  const nav=$('bottomNav'); if(!nav)return;
+  const links=[...nav.querySelectorAll('a[data-target]')];
+  const targets=links.map(a=>$(a.dataset.target)).filter(Boolean);
+  const setActive=id=>links.forEach(a=>a.classList.toggle('active',a.dataset.target===id));
+
+  const jump=id=>{
+    const target=$(id);
+    if(!target)return false;
+    setActive(id);
+    target.style.scrollMarginTop='92px';
+    target.scrollIntoView({behavior:'smooth',block:'start'});
+    return true;
+  };
+
+  links.forEach(a=>a.addEventListener('click',e=>{
+    const id=String(a.dataset.target||'');
+    if(!jump(id))return;
+    e.preventDefault();
+    try{history.replaceState(null,'','#'+id)}catch{}
+  }));
+
+  const initial=(location.hash||'#home').slice(1);
+  if($(initial)) {
+    setActive(initial);
+    $(initial).style.scrollMarginTop='92px';
+  } else {
+    setActive('home');
+  }
+
+  if('IntersectionObserver' in window){
+    const observer=new IntersectionObserver(entries=>{
+      const visible=entries.filter(x=>x.isIntersecting)
+        .sort((a,b)=>b.intersectionRatio-a.intersectionRatio)[0];
+      if(visible?.target?.id)setActive(visible.target.id);
+    },{rootMargin:'-12% 0px -62% 0px',threshold:[0.05,0.2,0.5]});
+    targets.forEach(t=>observer.observe(t));
+  }
+
+  window.addEventListener('hashchange',()=>{
+    const id=(location.hash||'#home').slice(1);
+    if($(id))jump(id);
+  });
+});
 </script>
 </body>
 </html>
