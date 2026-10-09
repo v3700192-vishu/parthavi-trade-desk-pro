@@ -539,7 +539,7 @@ function normalizeCalendarRows(rows,source){
   return rows.map(x=>({
     label:String(x?.label||x?.title||x?.event||x?.name||'Economic event'),
     title:String(x?.title||x?.event||x?.name||x?.label||'Economic event'),
-    time:x?.time||x?.datetime||x?.timestamp||x?.start||x?.date||x?.date_time||'',
+    time:x?.time_utc||x?.scheduledAt||x?.time||x?.datetime||x?.timestamp||x?.start||x?.date_time||x?.date||'',
     risk:normalizeCalendarImpact(x?.risk||x?.impact||x?.importance),
     country:String(x?.country||x?.currency||''),
     source:String(x?.source||source||'CALENDAR')
@@ -561,7 +561,7 @@ async function events(){
           if(Array.isArray(rows)){
             normalized=normalizeCalendarRows(rows,'CONFIGURED_EVENT_PROVIDER');
             source='CONFIGURED_EVENT_PROVIDER';
-            providerVerified=rows.every(x=>Number.isFinite(Date.parse(x?.time||x?.datetime||x?.timestamp||x?.start||x?.date||x?.date_time||'')));
+            providerVerified=rows.every(x=>Number.isFinite(Date.parse(x?.time_utc||x?.scheduledAt||x?.time||x?.datetime||x?.timestamp||x?.start||x?.date_time||x?.date||'')));
           }
         }
       }catch(e){console.warn('[EVENT_CALENDAR] configured provider failed:',e?.message||e);}
@@ -581,6 +581,27 @@ async function events(){
         source='FOREX_FACTORY_PUBLIC_CALENDAR';
         providerVerified=true;
       }catch(e){console.warn('[EVENT_CALENDAR] public fallback failed:',e?.message||e);}
+    }
+    if(!normalized){
+      try{
+        // Forex Factory has returned 429 from Render's shared outbound IP.
+        // Use the public, edge-cached FinanceCalendar endpoint as a second source.
+        const from=new Date(now).toISOString().slice(0,10);
+        const to=new Date(now+10*86400000).toISOString().slice(0,10);
+        const url=new URL('https://www.financecalendar.com/wp-json/fc/v1/calendar');
+        url.searchParams.set('from',from);
+        url.searchParams.set('to',to);
+        url.searchParams.set('limit','500');
+        const response=await fetch(url,{headers:{accept:'application/json','user-agent':'PARTHAVI-TRADE-DESK-PRO/1.0'},signal:AbortSignal.timeout(10000)});
+        if(!response.ok) throw new Error('FinanceCalendar HTTP '+response.status);
+        const payload=await response.json();
+        const rows=Array.isArray(payload)?payload:[payload?.events,payload?.items,payload?.data,payload?.results].find(Array.isArray);
+        if(!Array.isArray(rows)) throw new Error('FinanceCalendar returned no event array');
+        const good=rows.filter(x=>String(x?.title||x?.name||x?.event||'').trim()&&Number.isFinite(Date.parse(x?.time_utc||x?.scheduledAt||x?.time||x?.datetime||x?.timestamp||x?.start||x?.date_time||x?.date||'')));
+        normalized=normalizeCalendarRows(good,'FINANCE_CALENDAR_PUBLIC_API');
+        source='FINANCE_CALENDAR_PUBLIC_API';
+        providerVerified=true;
+      }catch(e){console.warn('[EVENT_CALENDAR] FinanceCalendar fallback failed:',e?.message||e);}
     }
     const allTimesValid=Array.isArray(normalized)&&normalized.every(x=>Number.isFinite(Date.parse(x.time||'')));
     const connected=!!normalized&&providerVerified&&allTimesValid;
