@@ -102,7 +102,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
   const hasGreeks=thetaRaw!==null&&thetaRaw!==undefined&&thetaRaw!==''&&deltaRaw!==null&&deltaRaw!==undefined&&deltaRaw!==''&&Number.isFinite(Number(thetaRaw))&&Number.isFinite(Number(deltaRaw));
   const newsVerified=!!news?.connected&&Number(news?.freshCount)>=1;
   const globalVerified=!!global?.connected&&Number(global?.freshInputs)>=3;
-  const eventSafetyStatus=!events?.connected||events?.unverifiedHighImpact?'UNKNOWN':(events?.hardBlock||events?.eventDayBlock?'BLOCKED':events?.watch?'CAUTION':'SAFE');
+  const eventSafetyStatus=!events?.connected||events?.unverifiedTimes||events?.unverifiedHighImpact?'UNKNOWN':(events?.hardBlock||events?.eventDayBlock?'BLOCKED':events?.watch?'CAUTION':'SAFE');
   const eventSafe=eventSafetyStatus==='SAFE';
 
   const weights={trend:20,setup:18,trigger:18,momentum:10,volatility:8,volume:8,options:10,news:4,global:4};
@@ -145,7 +145,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
   else if(theta>=10 || delta<0.20) noTradeReasons.push('No Trade: Theta Decay is too high or Delta is too low. Option buying is risky today.');
   else if(theta>=6 || delta<0.35) noTradeReasons.push('Caution: Theta/Delta profile is unfavorable for option buying.');
   if(!events?.connected) noTradeReasons.push('No Trade: economic-event calendar is not verified live.');
-  else if(events?.unverifiedHighImpact) noTradeReasons.push('No Trade: a high-impact event has no verified timestamp.');
+  else if(events?.unverifiedTimes||events?.unverifiedHighImpact) noTradeReasons.push('No Trade: one or more economic-event timestamps are unverified.');
   else if(events?.eventDayBlock) noTradeReasons.push('No Trade: high-impact event day gate is active.');
   else if(events?.hardBlock) noTradeReasons.push('No Trade: high-impact event window is active.');
 
@@ -205,6 +205,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
     !hasVerifiedVolume ||
     !hasVix ||
     !events?.connected ||
+    !!events?.unverifiedTimes ||
     !!events?.unverifiedHighImpact ||
     !!events?.hardBlock ||
     !!events?.eventDayBlock ||
@@ -234,11 +235,11 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
     modelConfidenceBand:modelConfidence>=78?'OPTION OPPORTUNITY':modelConfidence>=70?'WATCH':'WEAK',
     confirmationPct, confirmedCount, confirmationTotal:required.length,
     confirmations, trend1h:h1d, setup15m:m15d, trigger5m:String(m5?.candle||'WAIT'),
-    volumeRatio:vr, volumeRatio10d:vr10, volumeBreakout:!!x5.volumeBreakout, volumeSource:x5.volumeSource||null, volumeUnavailable:!hasVerifiedVolume, candleAgeMinutes, candlesFresh, eventCalendarConnected:!!events?.connected, eventSafetyStatus, eventSafe, rsi, adx, atr, vwap, last, vix:hasVix?Number(vix):null, delta:hasGreeks?delta:null, theta:hasGreeks?theta:null, greekRisk:options?.greekRisk||null, oi:oi||null, noTradeReasons, rrGate:'1:2 MINIMUM',
+    volumeRatio:vr, volumeRatio10d:vr10, volumeBreakout:!!x5.volumeBreakout, volumeSource:x5.volumeSource||null, volumeUnavailable:!hasVerifiedVolume, candleAgeMinutes, candlesFresh, eventCalendarConnected:!!events?.connected, eventTimestampsVerified:!events?.unverifiedTimes, eventSafetyStatus, eventSafe, rsi, adx, atr, vwap, last, vix:hasVix?Number(vix):null, delta:hasGreeks?delta:null, theta:hasGreeks?theta:null, greekRisk:options?.greekRisk||null, oi:oi||null, noTradeReasons, rrGate:'1:2 MINIMUM',
     finalPlan:plan,
     signalBarTime:rows5?.at?.(-1)?.t||null,
     historical:backtest||{available:false,reason:'Historical backtest not available.'},
-    feedComplete, eventBlocked:!!events?.hardBlock, eventCalendarConnected:!!events?.connected, eventSafetyStatus,
+    feedComplete, eventBlocked:!!events?.hardBlock, eventCalendarConnected:!!events?.connected, eventTimestampsVerified:!events?.unverifiedTimes, eventSafetyStatus,
     tradeFinder:{enabled:true,targetOpportunitiesPerSession:2,volumeMode:volumeContinuation?'CONTINUATION':'BREAKOUT',watchThreshold:70,contractThreshold:78},
     note:'Two-trade finder is active: the scanner searches continuously for up to two high-quality opportunities per NSE session. A 1.5x 10-day same-slot volume breakout is preferred; strong trend-continuation may qualify from 0.90x when 1H/15M/5M, momentum and ADX agree. India VIX 12–22, event safety, complete verified feeds and minimum 1:2 risk-to-reward remain hard protections. This is a quality filter, not a guarantee of profit. Final SL/targets are volatility-based planning levels on the underlying index; option premium SL/targets must be verified from the selected live contract and its Greeks.',
     reasoning
