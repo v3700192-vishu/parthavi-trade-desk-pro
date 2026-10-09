@@ -362,10 +362,10 @@ async function loadSharedIndexMaster(){
     if(!r.body?.getReader) throw new Error('Instrument master streaming response is unavailable');
     const byUnderlying=new Map([...INDEX_UNDERLYINGS].map(k=>[k,[]]));
     const reader=r.body.getReader(), decoder=new TextDecoder();
-    let depth=0,inString=false,escaped=false,objectParts=null,parsed=0;
+    let parsed=0;
     const parseSegment=segment=>{
       parsed++;
-      // Most instrument-master rows are irrelevant. Filter before allocating an object.
+      // Filter irrelevant instruments before allocating a structured object.
       if(!/"exch_seg"\s*:\s*"(?:nse_fo|nfo)"/i.test(segment)) return;
       if(!/"(?:instrumenttype"\s*:\s*"FUTIDX"|(?:symbol|tradingSymbol)"\s*:\s*"[^"]*(?:CE|PE)")/i.test(segment)) return;
       if(!/"name"\s*:\s*"(?:NIFTY|BANKNIFTY|FINNIFTY|MIDCPNIFTY|SENSEX)"/i.test(segment)) return;
@@ -384,10 +384,19 @@ async function loadSharedIndexMaster(){
         });
       }catch{}
     };
+    // Split completed JSON objects from each network chunk. The previous scanner
+    // allocated a character-array for every field of all ~150k master rows, causing
+    // large allocator/RSS growth on Render even when the retained cache was tiny.
+    // Keep only a single incomplete object between chunks, and copy complete rows
+    // as substrings. This preserves true streaming without per-character arrays.
+    let carry='';
     const consume=chunk=>{
-      for(let i=0;i<chunk.length;i++){
-        const ch=chunk[i];
-        if(objectParts) objectParts.push(ch);
+      if(!chunk) return;
+      const data=carry+chunk;
+      carry='';
+      let depth=0,inString=false,escaped=false,start=-1;
+      for(let i=0;i<data.length;i++){
+        const ch=data[i];
         if(inString){
           if(escaped) escaped=false;
           else if(ch==='\\') escaped=true;
@@ -396,23 +405,25 @@ async function loadSharedIndexMaster(){
         }
         if(ch==='"'){inString=true;continue;}
         if(ch==='{'){
-          if(depth===0) objectParts=[ch];
+          if(depth===0) start=i;
           depth++;
         }else if(ch==='}'&&depth>0){
           depth--;
-          if(depth===0&&objectParts){
-            parseSegment(objectParts.join(''));
-            objectParts=null;
+          if(depth===0&&start>=0){
+            parseSegment(data.slice(start,i+1));
+            start=-1;
           }
         }
       }
+      if(depth>0&&start>=0) carry=data.slice(start);
     };
     while(true){
       const {done,value}=await reader.read();
       if(done) break;
       consume(decoder.decode(value,{stream:true}));
     }
-    consume(decoder.decode());
+    const tail=decoder.decode();
+    if(tail) consume(tail);
     if(![...byUnderlying.values()].some(items=>items.length)) throw new Error('Instrument master contained no supported index futures/options; parsed rows='+parsed);
     indexMasterCache={loadedAt:Date.now(),byUnderlying};
     console.log('[ANGEL_MASTER] streamed index cache loaded rows='+parsed+' counts='+[...byUnderlying].map(([k,v])=>k+':'+v.length).join(','));
