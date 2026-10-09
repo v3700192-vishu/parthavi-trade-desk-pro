@@ -9,6 +9,14 @@ test("an empty economic calendar is never marked event-safe", () => {
   assert.equal(result.eventSafe, false);
 });
 
+test("a successful empty calendar response can be verified safe", () => {
+  const rows = [];
+  Object.defineProperty(rows, "feedConnected", { value: true });
+  const result = analyzeEvents(rows);
+  assert.equal(result.connected, true);
+  assert.equal(result.eventSafe, true);
+});
+
 test("an event without a verifiable timestamp keeps the calendar unverified", () => {
   const result = analyzeEvents([{ title: "Scheduled macro event", risk: "WATCH", time: "" }]);
   assert.equal(result.connected, false);
