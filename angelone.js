@@ -85,10 +85,10 @@ function requireSession(){
 
 function exchangeForSegment(exchSeg){
   const s=String(exchSeg||'').toLowerCase();
-  if(s==='nse_cm') return 'NSE';
-  if(s==='nse_fo') return 'NFO';
-  if(s==='bse_cm') return 'BSE';
-  if(s==='bse_fo') return 'BFO';
+  if(s==='nse_cm'||s==='nse') return 'NSE';
+  if(s==='nse_fo'||s==='nfo') return 'NFO';
+  if(s==='bse_cm'||s==='bse') return 'BSE';
+  if(s==='bse_fo'||s==='bfo') return 'BFO';
   return null;
 }
 
