@@ -159,7 +159,9 @@ function analyzeEvents(raw){
   const events=arr.map(x=>({
     label:String(x.label||x.title||x.name||'Event'),
     time:x.time||x.datetime||x.timestamp||x.start||'',
-    risk:String(x.risk||x.impact||x.importance||'WATCH').toUpperCase()
+    risk:String(x.risk||x.impact||x.importance||'WATCH').toUpperCase(),
+    source:String(x.source||''),
+    url:String(x.url||'')
   })).filter(x=>x.label);
   const now=Date.now();
   const today=istDateKey(now);
@@ -173,7 +175,14 @@ function analyzeEvents(raw){
     if(!Number.isFinite(t)){unverifiedHighImpact=true;continue;}
     const eventDate=istDateKey(t);
     const mins=(t-now)/60000;
-    if(eventDate && eventDate===today) eventDayBlock=true;
+    // A high-impact event outside the Indian cash/index-options session (for
+    // example, a North-American release after 18:00 IST) must not block the
+    // entire NIFTY session. Keep a session-wide block for high-impact releases
+    // scheduled from the pre-open risk window through the NSE close.
+    const istTime=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date(t));
+    const istClock=Object.fromEntries(istTime.map(p=>[p.type,p.value]));
+    const eventMinute=Number(istClock.hour)*60+Number(istClock.minute);
+    if(eventDate && eventDate===today && eventMinute>=8*60+30 && eventMinute<=15*60+45) eventDayBlock=true;
     if(mins>=0&&mins<=15) hardBlock=true;
     else if(mins>=0&&mins<=60) watch=true;
   }
