@@ -341,26 +341,26 @@ export async function searchScrip({exchange, searchscrip}){
   return await secureJson("https://apiconnect.angelone.in/rest/secure/angelbroking/order/v1/searchScrip",{method:"POST",headers:secureHeaders(),body:JSON.stringify({exchange,searchscrip})});
 }
 
-const lightMasterCache=new Map();
-const lightMasterInflight=new Map();
+const INDEX_UNDERLYINGS = new Set(["NIFTY","BANKNIFTY","FINNIFTY","MIDCPNIFTY","SENSEX"]);
+let indexMasterCache = { loadedAt: 0, byUnderlying: new Map() };
+let indexMasterInflight = null;
 
 function normalizeUnderlyingName(value){
   const s=String(value||'').trim().toUpperCase();
-  const map={NIFTY:'NIFTY',BANKNIFTY:'BANKNIFTY',FINNIFTY:'FINNIFTY',MIDCPNIFTY:'MIDCPNIFTY',SENSEX:'SENSEX'};
-  return map[s]||s;
+  return INDEX_UNDERLYINGS.has(s)?s:s;
 }
 
-async function loadUnderlyingMaster(underlying){
-  const key=normalizeUnderlyingName(underlying);
-  const cached=lightMasterCache.get(key);
-  if(cached && Date.now()-cached.loadedAt<15*60*1000) return cached.items;
-  if(lightMasterInflight.has(key)) return await lightMasterInflight.get(key);
-
+// Download and scan Angel One's large master once for all supported indices.
+// Separate per-index/per-instrument loaders used to download and parse the same
+// large file concurrently, which could exceed Render's 512 MB memory limit.
+async function loadSharedIndexMaster(){
+  if(indexMasterCache.loadedAt && Date.now()-indexMasterCache.loadedAt<15*60*1000) return indexMasterCache.byUnderlying;
+  if(indexMasterInflight) return await indexMasterInflight;
   const job=(async()=>{
-    const r=await fetch(MASTER_URL,{headers:{accept:'application/json','user-agent':'PARTHAVI-TRADE-DESK-PRO/2.0'}});
-    if(!r.ok) throw new Error(`Instrument master HTTP ${r.status}`);
+    const r=await fetch(MASTER_URL,{headers:{accept:'application/json','user-agent':'PARTHAVI-TRADE-DESK-PRO/2.1'},signal:AbortSignal.timeout(20000)});
+    if(!r.ok) throw new Error('Instrument master HTTP '+r.status);
     const text=await r.text();
-    const items=[];
+    const byUnderlying=new Map([...INDEX_UNDERLYINGS].map(k=>[k,[]]));
     let start=-1,depth=0,inString=false,escaped=false;
     for(let i=0;i<text.length;i++){
       const ch=text[i];
@@ -371,39 +371,49 @@ async function loadUnderlyingMaster(underlying){
         continue;
       }
       if(ch==='"'){inString=true;continue;}
-      if(ch==='{'){
-        if(depth===0) start=i;
-        depth++;
-      }else if(ch==='}'&&depth>0){
+      if(ch==='{'){if(depth===0) start=i;depth++;}
+      else if(ch==='}'&&depth>0){
         depth--;
         if(depth===0&&start>=0){
-          const end=i+1;
-          const segment=text.slice(start,end);
-          // Only parse the tiny subset belonging to this index's NFO options.
-          if(segment.includes(`"name":"${key}"`) && /"exch_seg"\s*:\s*"(?:nse_fo|nfo)"/i.test(segment) && /"(?:symbol|tradingSymbol)":"[^"]*(?:CE|PE)"/i.test(segment)){
-            try{
-              const x=JSON.parse(segment);
-              items.push({
-                token:x?.token,symbol:x?.symbol,name:x?.name,expiry:x?.expiry,
-                strike:x?.strike,lotsize:x?.lotsize,instrumenttype:x?.instrumenttype,
-                exch_seg:x?.exch_seg,exchange:x?.exchange,tick_size:x?.tick_size
-              });
-            }catch{}
-          }
+          const segment=text.slice(start,i+1);
           start=-1;
+          // Fast-filter before JSON.parse: most master rows are irrelevant.
+          if(!/"exch_seg"\s*:\s*"(?:nse_fo|nfo)"/i.test(segment)) continue;
+          if(!/"(?:instrumenttype"\s*:\s*"FUTIDX"|(?:symbol|tradingSymbol)"\s*:\s*"[^"]*(?:CE|PE)")/i.test(segment)) continue;
+          if(!/"name"\s*:\s*"(?:NIFTY|BANKNIFTY|FINNIFTY|MIDCPNIFTY|SENSEX)"/i.test(segment)) continue;
+          try{
+            const x=JSON.parse(segment);
+            const underlying=normalizeUnderlyingName(x?.name);
+            const symbol=String(x?.symbol||x?.tradingSymbol||'').toUpperCase();
+            const type=String(x?.instrumenttype||'').toUpperCase();
+            const exchange=String(x?.exch_seg||'').toLowerCase();
+            if(!byUnderlying.has(underlying)||!['nse_fo','nfo'].includes(exchange)) continue;
+            if(type!=='FUTIDX' && !/(?:CE|PE)$/.test(symbol)) continue;
+            byUnderlying.get(underlying).push({
+              token:x?.token,symbol:String(x?.symbol||x?.tradingSymbol||''),name:underlying,
+              expiry:x?.expiry,strike:x?.strike,lotsize:x?.lotsize,instrumenttype:x?.instrumenttype,
+              exch_seg:x?.exch_seg,exchange:x?.exchange,tick_size:x?.tick_size
+            });
+          }catch{}
         }
       }
     }
-    if(!items.length) throw new Error(`No NFO contracts found for ${key}`);
-    lightMasterCache.set(key,{loadedAt:Date.now(),items});
-    return items;
+    if(![...byUnderlying.values()].some(items=>items.length)) throw new Error('Instrument master contained no supported index futures/options');
+    indexMasterCache={loadedAt:Date.now(),byUnderlying};
+    console.log('[ANGEL_MASTER] shared index cache loaded counts='+[...byUnderlying].map(([k,v])=>k+':'+v.length).join(','));
+    return byUnderlying;
   })();
-
-  lightMasterInflight.set(key,job);
-  try{return await job;}finally{lightMasterInflight.delete(key);}
+  indexMasterInflight=job;
+  try{return await job;}finally{indexMasterInflight=null;}
 }
 
-export async function findLightContracts({underlying='',expiry='',optionType='',strike='',query='' }={}){
+async function loadUnderlyingMaster(underlying){
+  const key=normalizeUnderlyingName(underlying);
+  const all=await loadSharedIndexMaster();
+  return (all.get(key)||[]).filter(x=>/(?:CE|PE)$/i.test(String(x.symbol||'')));
+}
+
+export async function findLightContracts({underlying='',expiry='',optionType='',strike='',query=''}={}){
   const key=normalizeUnderlyingName(underlying||query);
   const items=await loadUnderlyingMaster(key);
   const ot=String(optionType||'').trim().toUpperCase();
@@ -418,44 +428,11 @@ export async function findLightContracts({underlying='',expiry='',optionType='',
   }).slice(0,300);
 }
 
-const lightFutureCache=new Map();
-const lightFutureInflight=new Map();
-
 export async function findLightFutures({underlying='',expiry='',query=''}={}){
   const key=normalizeUnderlyingName(underlying||query);
-  const cached=lightFutureCache.get(key);
-  if(cached && Date.now()-cached.loadedAt<15*60*1000) return cached.items;
-  if(lightFutureInflight.has(key)) return await lightFutureInflight.get(key);
-  const job=(async()=>{
-    const r=await fetch(MASTER_URL,{headers:{accept:'application/json','user-agent':'PARTHAVI-TRADE-DESK-PRO/2.0'}});
-    if(!r.ok) throw new Error(`Instrument master HTTP ${r.status}`);
-    const text=await r.text();
-    const items=[];
-    let start=-1,depth=0,inString=false,escaped=false;
-    for(let i=0;i<text.length;i++){
-      const ch=text[i];
-      if(inString){
-        if(escaped) escaped=false;
-        else if(ch==='\\') escaped=true;
-        else if(ch==='"') inString=false;
-        continue;
-      }
-      if(ch==='"'){inString=true;continue;}
-      if(ch==='{'){if(depth===0) start=i;depth++;}
-      else if(ch==='}'&&depth>0){depth--;if(depth===0&&start>=0){
-        const segment=text.slice(start,i+1);
-        if(segment.includes(`"name":"${key}"`) && /"exch_seg"\s*:\s*"(?:nse_fo|nfo)"/i.test(segment) && /"instrumenttype":"FUTIDX"/i.test(segment)){
-          try{const x=JSON.parse(segment);items.push({token:x?.token,symbol:x?.symbol,name:x?.name,expiry:x?.expiry,strike:x?.strike,lotsize:x?.lotsize,instrumenttype:x?.instrumenttype,exch_seg:x?.exch_seg,exchange:x?.exchange,tick_size:x?.tick_size});}catch{}
-        }
-        start=-1;
-      }}
-    }
-    if(!items.length) throw new Error(`No NFO futures found for ${key}`);
-    lightFutureCache.set(key,{loadedAt:Date.now(),items});
-    return items;
-  })();
-  lightFutureInflight.set(key,job);
-  try{return await job;}finally{lightFutureInflight.delete(key);}
+  const all=await loadSharedIndexMaster();
+  const items=(all.get(key)||[]).filter(x=>String(x.instrumenttype||'').toUpperCase()==='FUTIDX');
+  return items.filter(x=>!expiry||String(x.expiry||'').toUpperCase()===String(expiry).toUpperCase()).slice(0,100);
 }
 
 export async function loadMaster(force=false){
