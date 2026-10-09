@@ -39,6 +39,27 @@ test("fusion cannot pass when event safety was not explicitly verified", () => {
   assert.equal(fuse({ ...base, feeds: { ...base.feeds, eventSafe: true } }).hardGate, false);
 });
 
+test("prediction cannot emit a trade when option Greeks are missing", () => {
+  const latestTime = new Date(Date.now() - 5 * 60_000).toISOString();
+  const prediction = buildPrediction({
+    h1: { trend: "BULLISH", last: 101, ema20: 100, ema50: 99 },
+    m15: { trend: "BULLISH", last: 101, ema20: 100, ema50: 99 },
+    m5: { trend: "BULLISH", candle: "BULLISH CANDLE", last: 101, ema20: 100, ema50: 99,
+      rsi: 60, macd: { hist: 1 }, adx: 25, atr: 2, vwap: 100,
+      volumeRatio10d: 1.6, volumeSource: "NIFTY FUTURES 5M test fixture" },
+    rows5: [{ t: latestTime, o: 100, h: 102, l: 99, c: 101, v: 100 }],
+    marketOpen: true,
+    vix: 15,
+    news: { connected: true, freshCount: 5 },
+    global: { connected: true, freshInputs: 4 },
+    options: { connected: true, pcr: 1.1, ceoi: 100, peoi: 110 },
+    events: { connected: true, eventSafe: true }
+  });
+  assert.equal(prediction.signalState, "NO TRADE");
+  assert.equal(prediction.confirmations.greeks, false);
+  assert.equal(prediction.delta, null);
+});
+
 test("prediction returns NO TRADE when verified futures volume is missing", () => {
   const latestTime = new Date(Date.now() - 5 * 60_000).toISOString();
   const prediction = buildPrediction({
