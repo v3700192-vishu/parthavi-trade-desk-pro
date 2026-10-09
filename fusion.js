@@ -163,13 +163,14 @@ function analyzeEvents(raw){
   })).filter(x=>x.label);
   const now=Date.now();
   const today=istDateKey(now);
-  let hardBlock=false,watch=false,eventDayBlock=false;
+  let hardBlock=false,watch=false,eventDayBlock=false,unverifiedHighImpact=false;
   const highImpact=[];
   for(const e of events){
     const t=new Date(e.time).getTime();
     const hi=['HIGH','RED','CRITICAL'].includes(e.risk);
-    if(!hi || !Number.isFinite(t)) continue;
+    if(!hi) continue;
     highImpact.push(e);
+    if(!Number.isFinite(t)){unverifiedHighImpact=true;continue;}
     const eventDate=istDateKey(t);
     const mins=(t-now)/60000;
     if(eventDate && eventDate===today) eventDayBlock=true;
@@ -177,7 +178,6 @@ function analyzeEvents(raw){
     else if(mins>=0&&mins<=60) watch=true;
   }
   const connected=events.length>0;
-  const unverifiedHighImpact=highImpact.some(e=>!Number.isFinite(new Date(e.time).getTime()));
   const eventSafe=connected && !hardBlock && !eventDayBlock && !unverifiedHighImpact;
   return {
     connected,
