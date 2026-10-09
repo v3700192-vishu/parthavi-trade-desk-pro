@@ -260,10 +260,10 @@ async function options(symbol){
      if(!Number.isFinite(spot)||spot<=0) return null;
     const items=await findLightContracts({underlying:symbol}); const now=Date.now();
     const parseExpiry=(x)=>{const m=String(x||'').match(/^(\d{2})([A-Z]{3})(\d{4})$/i); if(!m)return 0; const mo={JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11}[m[2].toUpperCase()]; return mo==null?0:new Date(Number(m[3]),mo,Number(m[1]),23,59,59).getTime();};
-    const strikes=items.filter(x=>String(x.exch_seg||'').toLowerCase()==='nse_fo'&&String(x.name||'').toUpperCase()===String(symbol).toUpperCase()&&/^(CE|PE)$/i.test(String(x.symbol||'').slice(-2))&&parseExpiry(x.expiry)>=now).map(x=>Number(x.strike)/100).filter(Number.isFinite);
-    const expiries=[...new Set(items.filter(x=>String(x.exch_seg||'').toLowerCase()==='nse_fo'&&String(x.name||'').toUpperCase()===String(symbol).toUpperCase()&&/^(CE|PE)$/i.test(String(x.symbol||'').slice(-2))&&parseExpiry(x.expiry)>=now).map(x=>String(x.expiry||'').toUpperCase()).filter(Boolean))].sort((a,b)=>parseExpiry(a)-parseExpiry(b));
+    const strikes=items.filter(x=>['nse_fo','nfo'].includes(String(x.exch_seg||'').toLowerCase())&&String(x.name||'').toUpperCase()===String(symbol).toUpperCase()&&/^(CE|PE)$/i.test(String(x.symbol||'').slice(-2))&&parseExpiry(x.expiry)>=now).map(x=>Number(x.strike)/100).filter(Number.isFinite);
+    const expiries=[...new Set(items.filter(x=>['nse_fo','nfo'].includes(String(x.exch_seg||'').toLowerCase())&&String(x.name||'').toUpperCase()===String(symbol).toUpperCase()&&/^(CE|PE)$/i.test(String(x.symbol||'').slice(-2))&&parseExpiry(x.expiry)>=now).map(x=>String(x.expiry||'').toUpperCase()).filter(Boolean))].sort((a,b)=>parseExpiry(a)-parseExpiry(b));
     const liveExpiry=expiries[0]||null;
-    if(!strikes.length) return {atm:Math.round(spot/50)*50,ceoi:null,cedoi:null,peoi:null,pedoi:null,iv:null,pcr:null,connected:true};
+    if(!strikes.length) return {atm:null,ceoi:null,cedoi:null,peoi:null,pedoi:null,iv:null,pcr:null,connected:false,error:'No active option contracts matched the instrument-master filters.'};
     const atm=strikes.reduce((best,s)=>Math.abs(s-spot)<Math.abs(best-spot)?s:best,strikes[0]);
     const base=await findLightContracts({underlying:symbol,expiry:liveExpiry||'',optionType:'CE'});
     const pe=await findLightContracts({underlying:symbol,expiry:liveExpiry||'',optionType:'PE'});
@@ -283,7 +283,7 @@ async function options(symbol){
       ceMaxOi:ceMax?{strike:Number(ceMax._strike),oi:ceMax.oi,symbol:ceMax.symbol}:null,
       peMaxOi:peMax?{strike:Number(peMax._strike),oi:peMax.oi,symbol:peMax.symbol}:null,
       resistance,support,oiInterpretation:ceMax&&peMax?`CE OI concentration ${ceMax._strike} resistance • PE OI concentration ${peMax._strike} support`:'Partial OI chain',chainCount:enriched.length};
-  }catch{return {connected:false,atm:null,ceoi:null,cedoi:null,peoi:null,pedoi:null,iv:null,pcr:null};}
+  }catch(e){console.warn('[OPTIONS_FEED]',e?.message||e);return {connected:false,atm:null,ceoi:null,cedoi:null,peoi:null,pedoi:null,iv:null,pcr:null,error:e?.message||'Live option-chain lookup failed'};}
 }
 const greekCache=new Map();
 async function liveOptionGreeks(symbol,expiry){
@@ -424,7 +424,7 @@ async function news(symbol){
     }
   }catch{}
   try{
-    const q=encodeURIComponent(`${key} NSE India stock market`);
+    const q=encodeURIComponent(`${key} India stock market when:1d`);
     const url=`https://news.google.com/rss/search?q=${q}&hl=en-IN&gl=IN&ceid=IN:en`;
     const rr=await fetch(url,{headers:{accept:'application/rss+xml,application/xml,text/xml','user-agent':'PARTHAVI-TRADE-DESK-PRO/1.0'},signal:AbortSignal.timeout(10000)});
     if(!rr.ok) throw new Error(`News RSS HTTP ${rr.status}`);
@@ -1057,9 +1057,16 @@ app.get("/api/market",async(req,res)=>{
   state.connected.market=true;state.last.market=Date.now();res.json({connected:true,data});
 });
 app.get("/api/options",async(req,res)=>{
-  const data=await options(req.query.symbol||"NIFTY");
-  if(data===null){state.connected.options=false;return res.json({connected:false,data:{}});}
-  state.connected.options=true;state.last.options=Date.now();res.json({connected:true,data});
+  try{
+    const data=await options(req.query.symbol||"NIFTY");
+    const connected=!!data?.connected&&Number.isFinite(Number(data.atm))&&!!data.expiry&&Number.isFinite(Number(data.ceoi))&&Number.isFinite(Number(data.peoi));
+    state.connected.options=connected;
+    if(connected) state.last.options=Date.now();
+    res.json({connected,data:data||{},checkedAt:nowISO()});
+  }catch(e){
+    state.connected.options=false;
+    res.json({connected:false,data:{},error:e?.message||'Live option-chain feed unavailable',checkedAt:nowISO()});
+  }
 });
 app.get("/api/news",async(req,res)=>{
   try{ const items=await news(req.query.symbol||"NIFTY"); const strategy=analyzeNews(items); state.connected.news=strategy.connected; if(strategy.connected) state.last.news=Date.now(); res.json({connected:strategy.connected,items,strategy}); }
