@@ -292,12 +292,13 @@ async function liveOptionGreeks(symbol,expiry){
   if(cached && Date.now()-cached.at<5000) return cached.data;
   const raw=await optionGreeks({name:String(symbol).toUpperCase(),expirydate:expiry});
   const rows=Array.isArray(raw)?raw:[];
+  const finiteOrNull=v=>v==null||v===''?null:(Number.isFinite(Number(v))?Number(v):null);
   const data=rows.map(x=>({
-    name:x.name,expiry:x.expiry,strike:Number(x.strikePrice),
+    name:x.name,expiry:x.expiry,strike:finiteOrNull(x.strikePrice),
     optionType:String(x.optionType||'').toUpperCase(),
-    delta:Number(x.delta),gamma:Number(x.gamma),theta:Number(x.theta),
-    vega:Number(x.vega),iv:Number(x.impliedVolatility),tradeVolume:Number(x.tradeVolume)
-  })).filter(x=>Number.isFinite(x.strike)&&Number.isFinite(x.delta)&&Number.isFinite(x.theta));
+    delta:finiteOrNull(x.delta),gamma:finiteOrNull(x.gamma),theta:finiteOrNull(x.theta),
+    vega:finiteOrNull(x.vega),iv:finiteOrNull(x.impliedVolatility),tradeVolume:finiteOrNull(x.tradeVolume)
+  })).filter(x=>x.strike!=null&&x.delta!=null&&x.theta!=null);
   greekCache.set(key,{at:Date.now(),data});
   return data;
 }
@@ -1255,14 +1256,20 @@ function formatAngelDate(ts){
   return `${m.year}-${m.month}-${m.day} ${m.hour}:${m.minute}`;
 }
 function fiveMinuteVolumeBenchmark(rows){
-  const usable=(rows||[]).filter(x=>Number.isFinite(Number(x.v))&&Number(x.v)>0&&istDayKey(x.t));
-  if(usable.length<11) return {ratio10d:null,source:null,benchmarkDays:0};
-  const last=usable.at(-1);
-  const slot=istMinuteKey(last.t);
-  const priorDays=[...new Set(usable.slice(0,-1).map(x=>istDayKey(x.t)).filter(Boolean))].slice(-10);
+  const chronological=(rows||[])
+    .filter(x=>Number.isFinite(Number(x.v))&&istDayKey(x.t)&&Number.isFinite(Date.parse(x.t)))
+    .slice().sort((a,b)=>Date.parse(a.t)-Date.parse(b.t));
+  if(chronological.length<11) return {ratio10d:null,source:null,benchmarkDays:0};
+  // The newest completed candle must itself have positive, usable volume.
+  // Never skip a zero/missing current candle and silently report the prior bar as live.
+  const last=chronological.at(-1);
+  if(!(Number(last.v)>0)) return {ratio10d:null,source:null,benchmarkDays:0,reason:'Latest completed futures candle has no verified positive volume.'};
+  const lastTime=Date.parse(last.t), lastDay=istDayKey(last.t), slot=istMinuteKey(last.t);
+  const before=chronological.filter(x=>Date.parse(x.t)<lastTime);
+  const priorDays=[...new Set(before.map(x=>istDayKey(x.t)).filter(d=>d&&d!==lastDay))].slice(-10);
   const samples=[];
   for(const day of priorDays){
-    const m=usable.filter(x=>istDayKey(x.t)===day&&istMinuteKey(x.t)===slot);
+    const m=before.filter(x=>istDayKey(x.t)===day&&istMinuteKey(x.t)===slot&&Number(x.v)>0);
     if(m.length) samples.push(Number(m.at(-1).v));
   }
   if(!samples.length) return {ratio10d:null,source:null,benchmarkDays:0};
