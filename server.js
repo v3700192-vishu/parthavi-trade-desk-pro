@@ -31,6 +31,7 @@ app.use(express.json({limit:"64kb"}));
 
 // Phase 11 security middleware: conservative headers + lightweight per-IP rate limiting.
 const rateBuckets = new Map();
+let rateBucketCleanupMinute = -1;
 app.use((req,res,next)=>{
   res.setHeader("X-Content-Type-Options","nosniff");
   res.setHeader("X-Frame-Options","DENY");
@@ -41,7 +42,15 @@ app.use((req,res,next)=>{
     const now=Date.now(), minute=Math.floor(now/60000); const k=`${ip}:${minute}`;
     const count=(rateBuckets.get(k)||0)+1; rateBuckets.set(k,count);
     if(count>150) return res.status(429).json({ok:false,error:"RATE_LIMITED",message:"Too many requests. Please slow down."});
-    for(const [key] of rateBuckets){ if(!key.endsWith(`:${minute}`)&&Math.random()<0.04) rateBuckets.delete(key); }
+    if(rateBucketCleanupMinute!==minute){
+      rateBucketCleanupMinute=minute;
+      for(const key of rateBuckets.keys()){
+        const bucketMinute=Number(key.slice(key.lastIndexOf(':')+1));
+        if(!Number.isFinite(bucketMinute)||minute-bucketMinute>1) rateBuckets.delete(key);
+      }
+      // Hard bound memory even if many distinct client IPs reach the service.
+      while(rateBuckets.size>10000) rateBuckets.delete(rateBuckets.keys().next().value);
+    }
   }
   next();
 });
@@ -1104,7 +1113,10 @@ app.get('/api/phase6/order-events', async (req,res)=>{
   }catch(e){res.status(502).json({ok:false,error:e?.message||'Order events unavailable'});}
 });
 
-app.get("/api/health",(req,res)=>res.json({ok:true,service:"PARTHAVI TRADE DESK PRO",phase:12,demo:DEMO,time:nowISO(),pid:process.pid,uptimeSec:Math.round(process.uptime())}));
+app.get("/api/health",(req,res)=>{
+  const m=process.memoryUsage();
+  res.json({ok:true,service:"PARTHAVI TRADE DESK PRO",phase:12,demo:DEMO,time:nowISO(),pid:process.pid,uptimeSec:Math.round(process.uptime()),memoryMb:{rss:Number((m.rss/1048576).toFixed(1)),heapUsed:Number((m.heapUsed/1048576).toFixed(1)),heapTotal:Number((m.heapTotal/1048576).toFixed(1)),external:Number((m.external/1048576).toFixed(1))}});
+});
 app.get("/api/keepalive",async(req,res)=>{
   try{
     const st=angelStatus();
@@ -1241,6 +1253,7 @@ async function resolveIndexToken(symbol){
 }
 const candleCache=new Map();
 const candleInflight=new Map();
+const candleRetryAfter=new Map();
 function candleRows(raw){
   return (raw?.data||[]).map(x=>({t:x[0],o:Number(x[1]),h:Number(x[2]),l:Number(x[3]),c:Number(x[4]),v:Number(x[5]||0)}))
     .filter(x=>[x.o,x.h,x.l,x.c].every(Number.isFinite));
@@ -1287,6 +1300,8 @@ async function loadBase5m(symbol){
   const key=String(symbol||'NIFTY').toUpperCase(), now=Date.now(), cached=candleCache.get(key);
   if(cached && now-cached.at<15000) return cached.rows;
   if(candleInflight.has(key)) return await candleInflight.get(key);
+  // Back off noisy 403/429 periods. Continue serving verified stale candles when available.
+  if(now<(candleRetryAfter.get(key)||0)) return cached?.rows||[];
   const job=(async()=>{
     const ins=await resolveIndexToken(key), end=new Date(), start=new Date(end.getTime()-15*86400000);
     const f=x=>{const d=new Date(x),p=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(d),m=Object.fromEntries(p.map(z=>[z.type,z.value]));return m.year+'-'+m.month+'-'+m.day+' '+m.hour+':'+m.minute;};
@@ -1297,10 +1312,12 @@ async function loadBase5m(symbol){
       rows=candleRows(raw);
       console.log('[ANGEL_CANDLES] '+key+' rows='+rows.length);
     }catch(e){
-      console.warn('[ANGEL_CANDLES] '+key+' '+(e?.message||e));
+      candleRetryAfter.set(key,Date.now()+60000);
+      console.warn('[ANGEL_CANDLES] '+key+' '+(e?.message||e)+'; retry delayed 60s');
     }
     rows=[...new Map(rows.map(r=>[r.t,r])).values()].sort((a,b)=>Date.parse(a.t)-Date.parse(b.t));
     if(rows.length){
+      candleRetryAfter.delete(key);
       candleCache.set(key,{at:Date.now(),rows,source:'ANGEL'});
       return rows;
     }
