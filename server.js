@@ -530,9 +530,10 @@ function eventRowsWithFeedStatus(rows,feedConnected){
 async function events(){
   try{
     const raw=await fetchProviderJson(process.env.EVENTS_PROVIDER_URL,process.env.EVENTS_PROVIDER_TOKEN,{country:"IN",region:"global",days:2});
-    if(raw==null) return eventRowsWithFeedStatus([],false);
-    const rows=raw?.events||raw?.items||raw?.data||raw;
-    return eventRowsWithFeedStatus(Array.isArray(rows)?rows:[],true);
+    if(raw==null||raw?.connected===false||raw?.ok===false) return eventRowsWithFeedStatus([],false);
+    const rows=Array.isArray(raw)?raw:[raw?.events,raw?.items,raw?.data,raw?.results].find(Array.isArray);
+    if(!Array.isArray(rows)) return eventRowsWithFeedStatus([],false);
+    return eventRowsWithFeedStatus(rows,true);
   }catch{
     return eventRowsWithFeedStatus([],false);
   }
