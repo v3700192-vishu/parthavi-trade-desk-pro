@@ -30,6 +30,31 @@ test("a high-impact event with an invalid timestamp is blocked", () => {
   assert.equal(result.eventSafe, false);
 });
 
+test("a high-impact release outside NSE hours does not block the full Indian session", () => {
+  const day = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit"
+  }).format(new Date());
+  const result = analyzeEvents([{
+    title: "North American labour release",
+    risk: "HIGH",
+    time: day + "T18:00:00+05:30"
+  }]);
+  assert.equal(result.eventDayBlock, false);
+});
+
+test("a high-impact release during NSE hours keeps the session blocked", () => {
+  const day = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit"
+  }).format(new Date());
+  const result = analyzeEvents([{
+    title: "RBI policy decision",
+    risk: "HIGH",
+    time: day + "T13:00:00+05:30"
+  }]);
+  assert.equal(result.eventDayBlock, true);
+  assert.equal(result.eventSafe, false);
+});
+
 test("fusion cannot pass when event safety was not explicitly verified", () => {
   const base = { technicalScore: 80, marketOpen: true, feeds: {
     market: true, options: true, news: true, global: true
