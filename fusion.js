@@ -177,7 +177,8 @@ function analyzeEvents(raw){
     if(mins>=0&&mins<=15) hardBlock=true;
     else if(mins>=0&&mins<=60) watch=true;
   }
-  const connected=events.length>0;
+  const unverifiedTimes=events.some(e=>!Number.isFinite(new Date(e.time).getTime()));
+  const connected=events.length>0 && !unverifiedTimes;
   const eventSafe=connected && !hardBlock && !eventDayBlock && !unverifiedHighImpact;
   return {
     connected,
@@ -186,10 +187,11 @@ function analyzeEvents(raw){
     watch,
     eventDayBlock,
     unverifiedHighImpact,
+    unverifiedTimes,
     eventSafe,
     highImpactCount:highImpact.length,
     reason:!connected
-      ? 'Economic-event calendar is not connected or returned no usable events. Event safety is UNKNOWN; new entries stay blocked.'
+      ? 'Economic-event calendar is not connected or one or more event times are unverified. Event safety is UNKNOWN; new entries stay blocked.'
       : unverifiedHighImpact
         ? 'A high-impact event has no verified timestamp. Event safety is UNKNOWN; new entries stay blocked.'
         : eventDayBlock
