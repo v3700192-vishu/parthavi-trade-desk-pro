@@ -366,7 +366,7 @@ async function loadUnderlyingMaster(underlying){
       const ch=text[i];
       if(inString){
         if(escaped) escaped=false;
-        else if(ch==='\\\\') escaped=true;
+        else if(ch==='\\') escaped=true;
         else if(ch==='"') inString=false;
         continue;
       }
@@ -380,7 +380,7 @@ async function loadUnderlyingMaster(underlying){
           const end=i+1;
           const segment=text.slice(start,end);
           // Only parse the tiny subset belonging to this index's NFO options.
-          if(segment.includes(`"name":"${key}"`) && /"exch_seg":"nse_fo"/i.test(segment) && /"(?:symbol|tradingSymbol)":"[^"]*(?:CE|PE)"/i.test(segment)){
+          if(segment.includes(`"name":"${key}"`) && /"exch_seg"\s*:\s*"(?:nse_fo|nfo)"/i.test(segment) && /"(?:symbol|tradingSymbol)":"[^"]*(?:CE|PE)"/i.test(segment)){
             try{
               const x=JSON.parse(segment);
               items.push({
@@ -436,7 +436,7 @@ export async function findLightFutures({underlying='',expiry='',query=''}={}){
       const ch=text[i];
       if(inString){
         if(escaped) escaped=false;
-        else if(ch==='\\\\') escaped=true;
+        else if(ch==='\\') escaped=true;
         else if(ch==='"') inString=false;
         continue;
       }
@@ -444,7 +444,7 @@ export async function findLightFutures({underlying='',expiry='',query=''}={}){
       if(ch==='{'){if(depth===0) start=i;depth++;}
       else if(ch==='}'&&depth>0){depth--;if(depth===0&&start>=0){
         const segment=text.slice(start,i+1);
-        if(segment.includes(`"name":"${key}"`) && /"exch_seg":"nse_fo"/i.test(segment) && /"instrumenttype":"FUTIDX"/i.test(segment)){
+        if(segment.includes(`"name":"${key}"`) && /"exch_seg"\s*:\s*"(?:nse_fo|nfo)"/i.test(segment) && /"instrumenttype":"FUTIDX"/i.test(segment)){
           try{const x=JSON.parse(segment);items.push({token:x?.token,symbol:x?.symbol,name:x?.name,expiry:x?.expiry,strike:x?.strike,lotsize:x?.lotsize,instrumenttype:x?.instrumenttype,exch_seg:x?.exch_seg,exchange:x?.exchange,tick_size:x?.tick_size});}catch{}
         }
         start=-1;
@@ -479,7 +479,7 @@ export async function loadMaster(force=false){
       const ch=text[i];
       if(inString){
         if(escaped) escaped=false;
-        else if(ch==='\\\\') escaped=true;
+        else if(ch==='\\') escaped=true;
         else if(ch==='"') inString=false;
         continue;
       }
