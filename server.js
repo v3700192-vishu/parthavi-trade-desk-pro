@@ -3,7 +3,7 @@ import express from "express";
 import path from "path";
 import crypto from "crypto";
 import { fileURLToPath } from "url";
-import { angelStatus, loginAngel, logoutAngel, ltp as angelLtp, quote as angelQuote, candles as angelCandles, searchScrip as angelSearchScrip, loadMaster, findContracts, findLightContracts, findInstrumentByToken, subscribe as angelSubscribe, reconnectWebSocket as angelReconnectWebSocket, quoteInstruments, optionGreeks, getLatestTicks, rms as angelRms, orderBook as angelOrderBook, placeOrder as angelPlaceOrder, cancelOrder as angelCancelOrder, holdings as angelHoldings, allHoldings as angelAllHoldings, positions as angelPositions, tradeBook as angelTradeBook, modifyOrder as angelModifyOrder } from "./angelone.js";
+import { angelStatus, loginAngel, logoutAngel, ltp as angelLtp, quote as angelQuote, candles as angelCandles, searchScrip as angelSearchScrip, loadMaster, findContracts, findLightContracts, findLightFutures, findInstrumentByToken, subscribe as angelSubscribe, reconnectWebSocket as angelReconnectWebSocket, quoteInstruments, optionGreeks, getLatestTicks, rms as angelRms, orderBook as angelOrderBook, placeOrder as angelPlaceOrder, cancelOrder as angelCancelOrder, holdings as angelHoldings, allHoldings as angelAllHoldings, positions as angelPositions, tradeBook as angelTradeBook, modifyOrder as angelModifyOrder } from "./angelone.js";
 import { normalizeNews, analyzeNews, normalizeGlobal, analyzeGlobal, analyzeEvents, fuse } from "./fusion.js";
 import { buildPrediction, backtestFiveMinute } from "./prediction.js";
 import { productionReadiness } from "./phase12.js";
@@ -258,7 +258,7 @@ async function market(symbol){
   out.GLOBAL_RISK={label:"WAIT"};
   return out;
 }
-async function options(symbol){
+async function fetchOptionsInternal(symbol){
   if(DEMO) return {atm:null,ceoi:null,cedoi:null,peoi:null,pedoi:null,iv:null,pcr:null};
   if(!angelStatus().connected) return null;
   try{
@@ -293,6 +293,24 @@ async function options(symbol){
       peMaxOi:peMax?{strike:Number(peMax._strike),oi:peMax.oi,symbol:peMax.symbol}:null,
       resistance,support,oiInterpretation:ceMax&&peMax?`CE OI concentration ${ceMax._strike} resistance • PE OI concentration ${peMax._strike} support`:'Partial OI chain',chainCount:enriched.length};
   }catch(e){console.warn('[OPTIONS_FEED]',e?.message||e);return {connected:false,atm:null,ceoi:null,cedoi:null,peoi:null,pedoi:null,iv:null,pcr:null,error:e?.message||'Live option-chain lookup failed'};}
+}
+const optionChainCache=new Map();
+const optionChainInflight=new Map();
+async function options(symbol){
+  const key=String(symbol||'NIFTY').toUpperCase();
+  if(DEMO || !angelStatus().connected) return await fetchOptionsInternal(key);
+  const now=Date.now(), cached=optionChainCache.get(key);
+  if(cached && now-cached.at<7000) return cached.data;
+  if(optionChainInflight.has(key)) return await optionChainInflight.get(key);
+  const job=fetchOptionsInternal(key);
+  optionChainInflight.set(key,job);
+  try{
+    const data=await job;
+    if(data?.connected) optionChainCache.set(key,{at:Date.now(),data});
+    return data;
+  }finally{
+    optionChainInflight.delete(key);
+  }
 }
 const greekCache=new Map();
 async function liveOptionGreeks(symbol,expiry){
@@ -338,7 +356,7 @@ async function findBuyableOptionPlan(symbol, direction, underlyingEntry, underly
     const atm=Number(od?.atm);
     if(!expiry||!Number.isFinite(atm)) return {available:false,reason:'Live option chain/expiry is not verified.'};
 
-    let contracts=await findContracts({exchange:'NSE',segment:'OPTIDX',underlying:symbol,expiry,optionType});
+    let contracts=await findLightContracts({underlying:symbol,expiry,optionType});
     contracts=contracts.map(x=>({...x,_strike:Number(x.strike)/100}))
       .filter(x=>Number.isFinite(x._strike))
       .sort((a,b)=>Math.abs(a._strike-atm)-Math.abs(b._strike-atm))
@@ -729,7 +747,19 @@ app.get("/api/angel/expiries", async (req,res)=>{
 app.get("/api/angel/contracts", async (req,res)=>{
   try{
     if(!angelStatus().connected) return res.json({ok:true,connected:false,count:0,contracts:[],message:"Connect Angel One first."});
-    const base=await findContracts(req.query);
+    const q=req.query||{};
+    const exchange=String(q.exchange||'NSE').toUpperCase();
+    const segment=String(q.segment||'OPTIDX').toUpperCase();
+    const underlying=String(q.underlying||q.name||'').toUpperCase();
+    const lightIndices=new Set(['NIFTY','BANKNIFTY','FINNIFTY','MIDCPNIFTY','SENSEX']);
+    let base;
+    if(exchange==='NSE' && lightIndices.has(underlying) && segment==='FUTIDX'){
+      base=await findLightFutures({underlying,expiry:q.expiry||''});
+    }else if(exchange==='NSE' && lightIndices.has(underlying) && ['OPTIDX','OPTSTK'].includes(segment)){
+      base=await findLightContracts({underlying,expiry:q.expiry||'',optionType:q.optionType||'',strike:q.strike||''});
+    }else{
+      base=await findContracts(q);
+    }
     let rows=[];
     try{ rows=await quoteInstruments(base.slice(0,10)); }catch(e){ console.warn('[CONTRACT_QUOTE]',e?.message||e); }
     // FULL quote can be partial; explicitly backfill any missing LTPs for the
@@ -750,9 +780,12 @@ app.get("/api/angel/contracts", async (req,res)=>{
     const contracts=base.slice(0,50).map(x=>{
       const q=qmap.get(String(x.token))||{};
       const buy=q.bestFive?.buy?.[0]||q.bestFive?.Buy?.[0]||{}, sell=q.bestFive?.sell?.[0]||q.bestFive?.Sell?.[0]||{};
-      return {contract:x.symbol, exchange:x.exchange||'NFO', underlying:x.name, expiry:x.expiry, optionType:x.optionType, strike:x.strike, token:x.token, lotsize:x.lotsize,
+      const rawStrike=Number(x.strike);
+      const strike=Number.isFinite(rawStrike)&&rawStrike>0?(rawStrike>=100000?rawStrike/100:rawStrike):(x.strike??null);
+      const optionType=x.optionType||(/PE$/i.test(String(x.symbol||''))?'PE':/CE$/i.test(String(x.symbol||''))?'CE':'');
+      return {contract:x.symbol, exchange:x.exchange||'NFO', underlying:x.name, expiry:x.expiry, optionType, strike, token:x.token, lotsize:x.lotsize,
         ltp:q.ltp??null, change:q.change??null, bid:buy.price??buy.Price??null, ask:sell.price??sell.Price??null,
-        oi:q.opnInterest??null, doi:null, volume:q.tradeVolume??null, iv:null};
+        oi:q.opnInterest??q.openInterest??q.oi??null, doi:null, volume:q.tradeVolume??q.volume??null, iv:null};
     });
     res.json({ok:true,connected:true,count:contracts.length,contracts});
   }catch(e){res.status(502).json({ok:false,error:e?.message||"Contract search failed"});}
@@ -860,7 +893,7 @@ app.post('/api/risk/position-size',async(req,res)=>{
     const strike=Number(req.body?.strike), optionType=String(req.body?.optionType||'CE').toUpperCase();
     const riskBudget=Math.max(0,Number(req.body?.riskBudget??numEnv('MAX_RISK_RUPEES',1000))), underlyingStopPoints=Math.abs(Number(req.body?.underlyingStopPoints||0));
     if(!expiry||!Number.isFinite(strike)||!['CE','PE'].includes(optionType)) return res.status(400).json({ok:false,error:'symbol, expiry, strike and optionType are required'});
-    const contracts=await findContracts({exchange:'NSE',segment:'OPTIDX',underlying:symbol,expiry,optionType});
+    const contracts=await findLightContracts({underlying:symbol,expiry,optionType});
     const c0=contracts.map(x=>({...x,_strike:Number(x.strike)/100})).find(x=>Math.abs(x._strike-strike)<0.01);
     if(!c0) return res.status(404).json({ok:false,error:'LIVE_OPTION_CONTRACT_NOT_FOUND'});
     const q=(await quoteInstruments([c0]))[0]||{}, entry=Number(q.ltp);
@@ -1404,7 +1437,7 @@ async function loadFuturesVolume(symbol){
   const job=(async()=>{
     try{
       if(!angelStatus().connected) return {ratio10d:null,source:null,benchmarkDays:0};
-      const contracts=await findContracts({exchange:'NSE',segment:'FUTIDX',underlying:key});
+      const contracts=await findLightFutures({underlying:key});
       const now=Date.now();
       const parseExpiry=x=>{
         const m=String(x||'').match(/^(\d{2})([A-Z]{3})(\d{4})$/i);
