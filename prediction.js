@@ -140,8 +140,6 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
   if(!hasVerifiedVolume || vr10==null || !Number.isFinite(vr10)) {
     noTradeReasons.push('No Trade: verified 10-day futures-volume benchmark is unavailable.');
   }
-  if(!events?.connected) noTradeReasons.push('No Trade: economic-event calendar is not verified live.');
-  else if(events?.eventDayBlock) noTradeReasons.push('No Trade: high-impact event day gate is active.');
   const theta=hasGreeks?Math.abs(Number(thetaRaw)):NaN, delta=hasGreeks?Math.abs(Number(deltaRaw)):NaN;
   if(!hasGreeks) noTradeReasons.push('No Trade: live option Theta/Delta is not verified.');
   else if(theta>=10 || delta<0.20) noTradeReasons.push('No Trade: Theta Decay is too high or Delta is too low. Option buying is risky today.');
