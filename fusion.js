@@ -207,7 +207,7 @@ function fuse({technicalScore=0,newsScore=0,globalScore=0,eventRisk=false,market
   // News +8%, global +6%, technical retains 86%; event risk is a hard gate when imminent.
   const tech=clamp(technicalScore,-100,100);
   const raw=clamp(tech*.86+clamp(newsScore,-100,100)*.08+clamp(globalScore,-100,100)*.06,-100,100);
-  const gate=!marketOpen||eventRisk||feeds.eventDayBlock||!feeds.market||!feeds.options||!feeds.news||!feeds.global;
+  const gate=!marketOpen||eventRisk||feeds.eventDayBlock||feeds.eventSafe!==true||!feeds.market||!feeds.options||!feeds.news||!feeds.global;
   return {score:Number(raw.toFixed(1)),direction:raw>20?'BULLISH':raw<-20?'BEARISH':'NEUTRAL',hardGate:gate};
 }
 
