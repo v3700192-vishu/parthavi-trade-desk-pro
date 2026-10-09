@@ -147,8 +147,8 @@ export async function quoteInstruments(instruments){
   for(const k of Object.keys(exchangeTokens)) exchangeTokens[k]=[...new Set(exchangeTokens[k])].slice(0,50);
   let rows=[];
   try{
-    const data=await a.getMarketData('FULL', exchangeTokens);
-    rows=mergeMarketData(data?.data?.fetched||[]);
+    const data=await quote({mode:'FULL', exchangeTokens});
+    rows=mergeMarketData(data?.data?.fetched||data?.fetched||[]);
   }catch(e){
     console.warn('[ANGEL_QUOTE] FULL quote unavailable:',e?.message||e);
   }
