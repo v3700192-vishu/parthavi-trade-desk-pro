@@ -1533,7 +1533,7 @@ function renderEvents(es){
  $('events').innerHTML=arr.map(e=>`<div class="event"><span>${escapeHtml(e.label||'Event')}<br><span style="color:#65738a">${escapeHtml(e.time||'')}</span></span><b>${escapeHtml(e.risk||'WATCH')}</b></div>`).join('')||'<div class="event"><span>No event feed</span><b>WAIT</b></div>';
  const high=arr.filter(e=>['HIGH','RED','CRITICAL'].includes(String(e.risk||'').toUpperCase())).length;
  setToneText('eventGate', high?'WATCH':'NORMAL'); setToneText('eventWatch', high?'ACTIVE':'NONE'); setToneText('eventFreeze', 'WAIT');
- $('eventReason').textContent=high?'Connected calendar contains high-impact events.':'No high-impact event detected from connected feed.'; $('eventFeedMeta').textContent=arr.length?`Feed status: CONNECTED • ${arr.length} event(s)`:'Feed status: UNVERIFIED • no usable event calendar data';
+ $('eventReason').textContent=high?'Connected calendar contains high-impact events.':'No high-impact event detected from connected feed.'; const financeCalendar=arr.some(e=>e.source==='FINANCE_CALENDAR_PUBLIC_API'); $('eventFeedMeta').innerHTML=arr.length?`Feed status: CONNECTED • ${arr.length} event(s)${financeCalendar?' • Source: <a href="https://www.financecalendar.com/" target="_blank" rel="noopener noreferrer">FinanceCalendar.com</a>':''}`:'Feed status: UNVERIFIED • no usable event calendar data';
 }
 function renderEventStrategy(st){
  const x=st||{};
