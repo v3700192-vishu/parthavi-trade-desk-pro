@@ -522,13 +522,19 @@ async function globalData(){
     return normalizeGlobal({});
   }
 }
+function eventRowsWithFeedStatus(rows,feedConnected){
+  const arr=Array.isArray(rows)?rows:[];
+  Object.defineProperty(arr,'feedConnected',{value:!!feedConnected,enumerable:false,configurable:true});
+  return arr;
+}
 async function events(){
   try{
     const raw=await fetchProviderJson(process.env.EVENTS_PROVIDER_URL,process.env.EVENTS_PROVIDER_TOKEN,{country:"IN",region:"global",days:2});
-    if(raw==null) return [];
-    return (raw?.events||raw?.items||raw?.data||raw||[]);
+    if(raw==null) return eventRowsWithFeedStatus([],false);
+    const rows=raw?.events||raw?.items||raw?.data||raw;
+    return eventRowsWithFeedStatus(Array.isArray(rows)?rows:[],true);
   }catch{
-    return [];
+    return eventRowsWithFeedStatus([],false);
   }
 }
 
