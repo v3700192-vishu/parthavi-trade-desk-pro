@@ -279,7 +279,7 @@ async function options(symbol){
     const p=pes.reduce((a,b)=>Math.abs(b._strike-atm)<Math.abs((a?._strike??atm)-atm)?b:a,null);
     const ceoi=Number(ce?.oi), peoi=Number(p?.oi),
       resistance=ceMax?Number(ceMax._strike):null, support=peMax?Number(peMax._strike):null;
-    return {connected:true,atm,expiry:liveExpiry,ceoi:Number.isFinite(ceoi)?ceoi:null,cedoi:null,peoi:Number.isFinite(peoi)?peoi:null,pedoi:null,iv:null,pcr:Number.isFinite(ceoi)&&Number.isFinite(peoi)&&ceoi?Number((peoi/ceoi).toFixed(3)):null,
+    return {connected:!!liveExpiry&&!!ceMax&&!!peMax&&Number.isFinite(ceoi)&&Number.isFinite(peoi),atm,expiry:liveExpiry,ceoi:Number.isFinite(ceoi)?ceoi:null,cedoi:null,peoi:Number.isFinite(peoi)?peoi:null,pedoi:null,iv:null,pcr:Number.isFinite(ceoi)&&Number.isFinite(peoi)&&ceoi?Number((peoi/ceoi).toFixed(3)):null,
       ceMaxOi:ceMax?{strike:Number(ceMax._strike),oi:ceMax.oi,symbol:ceMax.symbol}:null,
       peMaxOi:peMax?{strike:Number(peMax._strike),oi:peMax.oi,symbol:peMax.symbol}:null,
       resistance,support,oiInterpretation:ceMax&&peMax?`CE OI concentration ${ceMax._strike} resistance • PE OI concentration ${peMax._strike} support`:'Partial OI chain',chainCount:enriched.length};
