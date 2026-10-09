@@ -204,6 +204,11 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
     !candlesFresh ||
     !hasVerifiedVolume ||
     !hasVix ||
+    !newsVerified ||
+    !globalVerified ||
+    !options?.connected ||
+    !hasGreeks ||
+    !eventSafe ||
     !events?.connected ||
     !!events?.unverifiedTimes ||
     !!events?.unverifiedHighImpact ||
