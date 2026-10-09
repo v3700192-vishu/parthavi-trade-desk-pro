@@ -359,54 +359,68 @@ async function loadSharedIndexMaster(){
   const job=(async()=>{
     const r=await fetch(MASTER_URL,{headers:{accept:'application/json','user-agent':'PARTHAVI-TRADE-DESK-PRO/2.1'},signal:AbortSignal.timeout(20000)});
     if(!r.ok) throw new Error('Instrument master HTTP '+r.status);
-    const text=await r.text();
+    if(!r.body?.getReader) throw new Error('Instrument master streaming response is unavailable');
     const byUnderlying=new Map([...INDEX_UNDERLYINGS].map(k=>[k,[]]));
-    let start=-1,depth=0,inString=false,escaped=false;
-    for(let i=0;i<text.length;i++){
-      const ch=text[i];
-      if(inString){
-        if(escaped) escaped=false;
-        else if(ch==='\\') escaped=true;
-        else if(ch==='"') inString=false;
-        continue;
-      }
-      if(ch==='"'){inString=true;continue;}
-      if(ch==='{'){if(depth===0) start=i;depth++;}
-      else if(ch==='}'&&depth>0){
-        depth--;
-        if(depth===0&&start>=0){
-          const segment=text.slice(start,i+1);
-          start=-1;
-          // Fast-filter before JSON.parse: most master rows are irrelevant.
-          if(!/"exch_seg"\s*:\s*"(?:nse_fo|nfo)"/i.test(segment)) continue;
-          if(!/"(?:instrumenttype"\s*:\s*"FUTIDX"|(?:symbol|tradingSymbol)"\s*:\s*"[^"]*(?:CE|PE)")/i.test(segment)) continue;
-          if(!/"name"\s*:\s*"(?:NIFTY|BANKNIFTY|FINNIFTY|MIDCPNIFTY|SENSEX)"/i.test(segment)) continue;
-          try{
-            const x=JSON.parse(segment);
-            const underlying=normalizeUnderlyingName(x?.name);
-            const symbol=String(x?.symbol||x?.tradingSymbol||'').toUpperCase();
-            const type=String(x?.instrumenttype||'').toUpperCase();
-            const exchange=String(x?.exch_seg||'').toLowerCase();
-            if(!byUnderlying.has(underlying)||!['nse_fo','nfo'].includes(exchange)) continue;
-            if(type!=='FUTIDX' && !/(?:CE|PE)$/.test(symbol)) continue;
-            byUnderlying.get(underlying).push({
-              token:x?.token,symbol:String(x?.symbol||x?.tradingSymbol||''),name:underlying,
-              expiry:x?.expiry,strike:x?.strike,lotsize:x?.lotsize,instrumenttype:x?.instrumenttype,
-              exch_seg:x?.exch_seg,exchange:x?.exchange,tick_size:x?.tick_size
-            });
-          }catch{}
+    const reader=r.body.getReader(), decoder=new TextDecoder();
+    let depth=0,inString=false,escaped=false,objectParts=null,parsed=0;
+    const parseSegment=segment=>{
+      parsed++;
+      // Most instrument-master rows are irrelevant. Filter before allocating an object.
+      if(!/"exch_seg"\s*:\s*"(?:nse_fo|nfo)"/i.test(segment)) return;
+      if(!/"(?:instrumenttype"\s*:\s*"FUTIDX"|(?:symbol|tradingSymbol)"\s*:\s*"[^"]*(?:CE|PE)")/i.test(segment)) return;
+      if(!/"name"\s*:\s*"(?:NIFTY|BANKNIFTY|FINNIFTY|MIDCPNIFTY|SENSEX)"/i.test(segment)) return;
+      try{
+        const x=JSON.parse(segment);
+        const underlying=normalizeUnderlyingName(x?.name);
+        const symbol=String(x?.symbol||x?.tradingSymbol||'').toUpperCase();
+        const type=String(x?.instrumenttype||'').toUpperCase();
+        const exchange=String(x?.exch_seg||'').toLowerCase();
+        if(!byUnderlying.has(underlying)||!['nse_fo','nfo'].includes(exchange)) return;
+        if(type!=='FUTIDX' && !/(?:CE|PE)$/.test(symbol)) return;
+        byUnderlying.get(underlying).push({
+          token:x?.token,symbol:String(x?.symbol||x?.tradingSymbol||''),name:underlying,
+          expiry:x?.expiry,strike:x?.strike,lotsize:x?.lotsize,instrumenttype:x?.instrumenttype,
+          exch_seg:x?.exch_seg,exchange:x?.exchange,tick_size:x?.tick_size
+        });
+      }catch{}
+    };
+    const consume=chunk=>{
+      for(let i=0;i<chunk.length;i++){
+        const ch=chunk[i];
+        if(objectParts) objectParts.push(ch);
+        if(inString){
+          if(escaped) escaped=false;
+          else if(ch==='\\') escaped=true;
+          else if(ch==='"') inString=false;
+          continue;
+        }
+        if(ch==='"'){inString=true;continue;}
+        if(ch==='{'){
+          if(depth===0) objectParts=[ch];
+          depth++;
+        }else if(ch==='}'&&depth>0){
+          depth--;
+          if(depth===0&&objectParts){
+            parseSegment(objectParts.join(''));
+            objectParts=null;
+          }
         }
       }
+    };
+    while(true){
+      const {done,value}=await reader.read();
+      if(done) break;
+      consume(decoder.decode(value,{stream:true}));
     }
-    if(![...byUnderlying.values()].some(items=>items.length)) throw new Error('Instrument master contained no supported index futures/options');
+    consume(decoder.decode());
+    if(![...byUnderlying.values()].some(items=>items.length)) throw new Error('Instrument master contained no supported index futures/options; parsed rows='+parsed);
     indexMasterCache={loadedAt:Date.now(),byUnderlying};
-    console.log('[ANGEL_MASTER] shared index cache loaded counts='+[...byUnderlying].map(([k,v])=>k+':'+v.length).join(','));
+    console.log('[ANGEL_MASTER] streamed index cache loaded rows='+parsed+' counts='+[...byUnderlying].map(([k,v])=>k+':'+v.length).join(','));
     return byUnderlying;
   })();
   indexMasterInflight=job;
   try{return await job;}finally{indexMasterInflight=null;}
 }
-
 async function loadUnderlyingMaster(underlying){
   const key=normalizeUnderlyingName(underlying);
   const all=await loadSharedIndexMaster();
