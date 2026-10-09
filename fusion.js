@@ -178,7 +178,8 @@ function analyzeEvents(raw){
     else if(mins>=0&&mins<=60) watch=true;
   }
   const unverifiedTimes=events.some(e=>!Number.isFinite(new Date(e.time).getTime()));
-  const connected=events.length>0 && !unverifiedTimes;
+  const sourceConnected=Array.isArray(raw)?raw.feedConnected===true:(raw?.feedConnected===true||raw?.connected===true);
+  const connected=(events.length>0||sourceConnected) && !unverifiedTimes;
   const eventSafe=connected && !hardBlock && !watch && !eventDayBlock && !unverifiedHighImpact;
   return {
     connected,
