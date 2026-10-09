@@ -1254,6 +1254,7 @@ async function resolveIndexToken(symbol){
 const candleCache=new Map();
 const candleInflight=new Map();
 const candleRetryAfter=new Map();
+const candleOfflineRetry=new Set();
 function candleRows(raw){
   return (raw?.data||[]).map(x=>({t:x[0],o:Number(x[1]),h:Number(x[2]),l:Number(x[3]),c:Number(x[4]),v:Number(x[5]||0)}))
     .filter(x=>[x.o,x.h,x.l,x.c].every(Number.isFinite));
@@ -1300,8 +1301,16 @@ async function loadBase5m(symbol){
   const key=String(symbol||'NIFTY').toUpperCase(), now=Date.now(), cached=candleCache.get(key);
   if(cached && now-cached.at<15000) return cached.rows;
   if(candleInflight.has(key)) return await candleInflight.get(key);
-  // Back off noisy 403/429 periods. Continue serving verified stale candles when available.
-  if(now<(candleRetryAfter.get(key)||0)) return cached?.rows||[];
+  // Back off noisy 403/429 periods. An offline-only cooldown is cleared as
+  // soon as the broker session comes back, so a fresh login is not blocked.
+  if(now<(candleRetryAfter.get(key)||0)){
+    if(angelStatus().connected && candleOfflineRetry.has(key)){
+      candleOfflineRetry.delete(key);
+      candleRetryAfter.delete(key);
+    }else{
+      return cached?.rows||[];
+    }
+  }
   const job=(async()=>{
     const ins=await resolveIndexToken(key), end=new Date(), start=new Date(end.getTime()-15*86400000);
     const f=x=>{const d=new Date(x),p=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(d),m=Object.fromEntries(p.map(z=>[z.type,z.value]));return m.year+'-'+m.month+'-'+m.day+' '+m.hour+':'+m.minute;};
@@ -1312,11 +1321,14 @@ async function loadBase5m(symbol){
       rows=candleRows(raw);
       console.log('[ANGEL_CANDLES] '+key+' rows='+rows.length);
     }catch(e){
+      if(!angelStatus().connected) candleOfflineRetry.add(key);
+      else candleOfflineRetry.delete(key);
       candleRetryAfter.set(key,Date.now()+60000);
       console.warn('[ANGEL_CANDLES] '+key+' '+(e?.message||e)+'; retry delayed 60s');
     }
     rows=[...new Map(rows.map(r=>[r.t,r])).values()].sort((a,b)=>Date.parse(a.t)-Date.parse(b.t));
     if(rows.length){
+      candleOfflineRetry.delete(key);
       candleRetryAfter.delete(key);
       candleCache.set(key,{at:Date.now(),rows,source:'ANGEL'});
       return rows;
