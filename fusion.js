@@ -201,7 +201,7 @@ function analyzeEvents(raw){
             ? 'High-impact event inside 15 minutes: NO TRADE gate.'
             : watch
               ? 'High-impact event inside 60 minutes: caution modifier.'
-              : 'Calendar data is connected; no high-impact event block was detected in the current session.'; 
+              : 'Calendar data is connected; no high-impact event block was detected in the current session.'
   };
 }
 
