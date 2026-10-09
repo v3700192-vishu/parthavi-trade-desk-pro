@@ -1486,7 +1486,6 @@ app.get('/api/phase10/prediction',async(req,res)=>{
     const historical=backtestFiveMinute(m5.rows||[]);
     const vixRaw=md?.VIX?.ltp;
     const vix=vixRaw==null||vixRaw===''?NaN:Number(vixRaw);
-    const futuresVol=await loadFuturesVolume(symbol);
     if(futuresVol?.ratio10d!=null && Number.isFinite(Number(futuresVol.ratio10d)) && futuresVol.source){
       m5.summary.volumeRatio10d=Number(futuresVol.ratio10d);
       m5.summary.volumeBreakout=Number(futuresVol.ratio10d)>=1.5;
