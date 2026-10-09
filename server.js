@@ -1279,7 +1279,9 @@ function fiveMinuteVolumeBenchmark(rows){
     const m=before.filter(x=>istDayKey(x.t)===day&&istMinuteKey(x.t)===slot&&Number(x.v)>0);
     if(m.length) samples.push(Number(m.at(-1).v));
   }
-  if(!samples.length) return {ratio10d:null,source:null,benchmarkDays:0};
+  // Require enough prior same-slot samples for a genuine 10-day benchmark.
+  // Sparse history is unverified, not a weak-volume breakout.
+  if(samples.length<8) return {ratio10d:null,source:null,benchmarkDays:samples.length,reason:'Insufficient same-slot futures-volume history for a 10-day benchmark.'};
   const avg=samples.reduce((a,b)=>a+b,0)/samples.length;
   return {ratio10d:avg>0?Number((Number(last.v)/avg).toFixed(3)):null,source:'NIFTY FUTURES 5M',benchmarkDays:samples.length};
 }
