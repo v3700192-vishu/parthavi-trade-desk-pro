@@ -795,7 +795,24 @@ app.get('/api/phase11/signal-token',async(req,res)=>{
       loadTfSummary(symbol,'ONE_HOUR',45),loadTfSummary(symbol,'FIFTEEN_MINUTE',30),loadTfSummary(symbol,'FIVE_MINUTE',15),news(symbol),globalData(),events(),market(symbol)
     ]);
     const ns=analyzeNews(ni),gs=analyzeGlobal(gd),es=analyzeEvents(ev); let opt={connected:false};
-    try{ const od=await options(symbol); if(od) opt={connected:true,...od}; }catch{}
+    try{
+      const od=await options(symbol); if(od) opt={connected:true,...od};
+      if(opt.expiry){
+        const greekRows=await liveOptionGreeks(symbol,opt.expiry);
+        const pickStrike=Number(opt.atm);
+        const preferredType=Number(opt.pcr)>=1?'CE':'PE';
+        const candidates=greekRows.filter(x=>Math.abs(Number(x.strike)-pickStrike)<0.01);
+        const g=candidates.find(x=>x.optionType===preferredType)||candidates[0];
+        if(g){opt.greeks=g;opt.theta=g.theta;opt.delta=g.delta;opt.iv=g.iv;opt.greekRisk=greekRiskWarning(g);}
+      }
+    }catch{}
+    const futuresVol=await loadFuturesVolume(symbol);
+    if(futuresVol?.ratio10d!=null && Number.isFinite(Number(futuresVol.ratio10d)) && futuresVol.source){
+      m5.summary.volumeRatio10d=Number(futuresVol.ratio10d);
+      m5.summary.volumeBreakout=Number(futuresVol.ratio10d)>=1.5;
+      m5.summary.volumeUnavailable=false;
+      m5.summary.volumeSource=futuresVol.source;
+    }
     const historical=backtestFiveMinute(m5.rows||[]);
     const vixRaw=md?.VIX?.ltp;
     const vix=vixRaw==null||vixRaw===''?NaN:Number(vixRaw);
@@ -1369,7 +1386,7 @@ app.get('/api/phase10/prediction',async(req,res)=>{
     const vixRaw=md?.VIX?.ltp;
     const vix=vixRaw==null||vixRaw===''?NaN:Number(vixRaw);
     const futuresVol=await loadFuturesVolume(symbol);
-    if(Number.isFinite(Number(futuresVol?.ratio10d))){
+    if(futuresVol?.ratio10d!=null && Number.isFinite(Number(futuresVol.ratio10d)) && futuresVol.source){
       m5.summary.volumeRatio10d=Number(futuresVol.ratio10d);
       m5.summary.volumeBreakout=Number(futuresVol.ratio10d)>=1.5;
       m5.summary.volumeUnavailable=false;
@@ -1400,7 +1417,7 @@ app.get("/api/analyze",async(req,res)=>{
         options(symbol),
         loadFuturesVolume(symbol)
       ]);
-      if(Number.isFinite(Number(volProxy?.ratio10d))){
+      if(volProxy?.ratio10d!=null && Number.isFinite(Number(volProxy.ratio10d)) && volProxy.source){
         m5.summary.volumeRatio10d=Number(volProxy.ratio10d);
         m5.summary.volumeBreakout=Number(volProxy.ratio10d)>=1.5;
         m5.summary.volumeUnavailable=false;
