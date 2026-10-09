@@ -179,7 +179,7 @@ function analyzeEvents(raw){
   }
   const unverifiedTimes=events.some(e=>!Number.isFinite(new Date(e.time).getTime()));
   const connected=events.length>0 && !unverifiedTimes;
-  const eventSafe=connected && !hardBlock && !eventDayBlock && !unverifiedHighImpact;
+  const eventSafe=connected && !hardBlock && !watch && !eventDayBlock && !unverifiedHighImpact;
   return {
     connected,
     events,
