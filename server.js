@@ -869,7 +869,6 @@ app.get('/api/phase11/signal-token',async(req,res)=>{
         if(g){opt.greeks=g;opt.theta=g.theta;opt.delta=g.delta;opt.iv=g.iv;opt.greekRisk=greekRiskWarning(g);}
       }
     }catch{}
-    const futuresVol=await loadFuturesVolume(symbol);
     if(futuresVol?.ratio10d!=null && Number.isFinite(Number(futuresVol.ratio10d)) && futuresVol.source){
       m5.summary.volumeRatio10d=Number(futuresVol.ratio10d);
       m5.summary.volumeBreakout=Number(futuresVol.ratio10d)>=1.5;
@@ -1440,19 +1439,22 @@ app.get('/api/phase10/prediction',async(req,res)=>{
   const symbol=String(req.query.symbol||'NIFTY').toUpperCase();
   try{
     if(!angelStatus().connected) return res.json({ok:true,phase:10,locked:true,prediction:buildPrediction({marketOpen:false}),message:'Connect Angel One before running live prediction.'});
+    // Start all independent live-feed work together so futures volume and the
+    // option chain do not add their network latency after the candle/news scan.
     const settled=await Promise.allSettled([
       loadTfSummary(symbol,'ONE_HOUR',45),
       loadTfSummary(symbol,'FIFTEEN_MINUTE',30),
       loadTfSummary(symbol,'FIVE_MINUTE',15),
-      news(symbol),globalData(),events(),market(symbol)
+      news(symbol),globalData(),events(),market(symbol),
+      options(symbol),loadFuturesVolume(symbol)
     ]);
     const val=(i,f)=>settled[i]?.status==='fulfilled'?settled[i].value:f;
     const h1=val(0,{rows:[],summary:{trend:'WAIT'}}), m15=val(1,{rows:[],summary:{trend:'WAIT'}}), m5=val(2,{rows:[],summary:{trend:'WAIT'}});
     const ni=val(3,[]), gd=val(4,{}), ev=val(5,[]), md=val(6,{});
     const ns=analyzeNews(ni), gs=analyzeGlobal(gd), es=analyzeEvents(ev);
-    let opt={connected:false}, greeks=[];
+    let opt=val(7,{connected:false}), greeks=[];
+    const futuresVol=val(8,{ratio10d:null,source:null,benchmarkDays:0});
     try{
-      const od=await options(symbol); if(od) opt={connected:true,...od};
       if(opt.expiry) greeks=await liveOptionGreeks(symbol,opt.expiry);
       const pickStrike=Number(opt.atm);
       const pickType=Number(opt.pcr)>=1?'CE':'PE';
