@@ -176,20 +176,29 @@ function analyzeEvents(raw){
     if(mins>=0&&mins<=15) hardBlock=true;
     else if(mins>=0&&mins<=60) watch=true;
   }
+  const connected=events.length>0;
+  const unverifiedHighImpact=highImpact.some(e=>!Number.isFinite(new Date(e.time).getTime()));
+  const eventSafe=connected && !hardBlock && !eventDayBlock && !unverifiedHighImpact;
   return {
-    connected:events.length>0,
+    connected,
     events,
     hardBlock,
     watch,
     eventDayBlock,
+    unverifiedHighImpact,
+    eventSafe,
     highImpactCount:highImpact.length,
-    reason:eventDayBlock
-      ? 'High-impact event day detected (e.g. RBI/Fed/Budget-type event): NO TRADE for the session.'
-      : hardBlock
-        ? 'High-impact event inside 15 minutes: NO TRADE gate.'
-        : watch
-          ? 'High-impact event inside 60 minutes: caution modifier.'
-          : 'No imminent high-impact event detected from the connected calendar.'
+    reason:!connected
+      ? 'Economic-event calendar is not connected or returned no usable events. Event safety is UNKNOWN; new entries stay blocked.'
+      : unverifiedHighImpact
+        ? 'A high-impact event has no verified timestamp. Event safety is UNKNOWN; new entries stay blocked.'
+        : eventDayBlock
+          ? 'High-impact event day detected (e.g. RBI/Fed/Budget-type event): NO TRADE for the session.'
+          : hardBlock
+            ? 'High-impact event inside 15 minutes: NO TRADE gate.'
+            : watch
+              ? 'High-impact event inside 60 minutes: caution modifier.'
+              : 'Calendar data is connected; no high-impact event block was detected in the current session.'; 
   };
 }
 
