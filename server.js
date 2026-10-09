@@ -1445,7 +1445,9 @@ app.get("/api/analyze",async(req,res)=>{
   if(!Number.isFinite(vix)) noTradeReasons.push('No Trade: India VIX is not verified live.'); else if(vix<12||vix>22) noTradeReasons.push('No Trade: Market is too slow or too volatile.');
   if(Number.isFinite(s5?.adx) && s5.adx<20) noTradeReasons.push('No Trade: ADX below 20 — market is choppy/sideways.');
   if(!Number.isFinite(volumeRatio10d)) noTradeReasons.push('No Trade: 10-day breakout volume benchmark is not verified.'); else if(volumeRatio10d<1.5) noTradeReasons.push(`No Trade: breakout volume ${volumeRatio10d.toFixed(2)}x is below the 1.5x 10-day requirement.`);
-  if(!eventStrat.connected) noTradeReasons.push('No Trade: economic-event calendar is not verified live.'); else if(eventStrat.eventDayBlock||eventStrat.hardBlock) noTradeReasons.push(eventStrat.reason);
+  if(!eventStrat.connected) noTradeReasons.push('No Trade: economic-event calendar is not verified live.');
+  else if(eventStrat.unverifiedHighImpact) noTradeReasons.push('No Trade: a high-impact event has no verified timestamp.');
+  else if(eventStrat.eventDayBlock||eventStrat.hardBlock) noTradeReasons.push(eventStrat.reason);
   let action='NO TRADE',reason='Live Angel One connection is required before indicator analysis can run.',score=0,confidence='LOCKED';
   let trend=s1?.trend||'WAIT',setup=s15?.trend||'WAIT',trigger=s5?.candle||'WAIT';
   const bullishVotes=[trend==='BULLISH',setup==='BULLISH',s5?.rsi>50,s5?.macd?.hist>0,s5?.last>s5?.vwap,s5?.adx>=20].filter(Boolean).length;
@@ -1455,7 +1457,7 @@ app.get("/api/analyze",async(req,res)=>{
   const fused=fuse({technicalScore:techSigned,newsScore:newsStrat.score,globalScore:globalStrat.score,eventRisk:eventStrat.hardBlock,marketOpen:marketSession(),feeds:{market:h.market,options:h.options,news:newsStrat.connected,global:globalStrat.connected,eventSafe:eventStrat.eventSafe}});
   score=Math.round(Math.abs(fused.score)); confidence=h.market?(score>=67?'SETUP':score>=45?'WATCH':'WAIT'):'LOCKED';
   if(h.market) reason=`Technical confluence ${Math.round(Math.abs(techSigned))} • News ${newsStrat.bias} • Global ${globalStrat.bias}. ${eventStrat.reason}`;
-  const complete=marketSession()&&h.market&&h.options&&newsStrat.connected&&globalStrat.connected&&!eventStrat.hardBlock;
+  const complete=marketSession()&&h.market&&h.options&&newsStrat.connected&&globalStrat.connected&&eventStrat.eventSafe===true&&!eventStrat.unverifiedHighImpact&&!eventStrat.hardBlock&&!eventStrat.eventDayBlock;
   if(complete && score>=67 && noTradeReasons.length===0){action=fused.direction==='BULLISH'?'CALL':fused.direction==='BEARISH'?'PUT':'NO TRADE';}
   else {action='NO TRADE'; if(noTradeReasons.length) reason=noTradeReasons.join(' • '); else if(!marketSession()) reason='Exchange session is closed. No live trade is permitted.'; else if(!newsStrat.connected||!globalStrat.connected) reason='News/global feeds are not verified fresh. Final decision stays locked.'; else if(!h.options) reason='Option positioning feed is not verified. Final options decision stays locked.';}
   const last=s5?.last||s15?.last||s1?.last; const atr=s5?.atr; const levels={r2:s15?.last&&s15?.atr?(s15.last+s15.atr*2).toFixed(2):'—',r1:s15?.last&&s15?.atr?(s15.last+s15.atr).toFixed(2):'—',vwap:s15?.vwap?.toFixed?.(2)||'—',s1:s15?.last&&s15?.atr?(s15.last-s15.atr).toFixed(2):'—',s2:s15?.last&&s15?.atr?(s15.last-s15.atr*2).toFixed(2):'—'};
