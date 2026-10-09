@@ -89,7 +89,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
   x5.volumeUnavailable=!hasVerifiedVolume;
   x5.volumeSource=hasVerifiedVolume?String(m5.volumeSource):null;
   const h1d=tfDirection(h1), m15d=tfDirection(m15);
-  const rsi=n(x5.rsi), adx=n(x5.adx), atr=n(x5.atr), vwap=n(x5.vwap), last=n(x5.last);
+  const rsi=n(x5.rsi), adx=n(x5.adx), atr=n(x5.atr), vwap=x5.vwap==null||x5.vwap===''||!Number.isFinite(Number(x5.vwap))?null:Number(x5.vwap), last=n(x5.last);
   const macdHist=n(x5.macd?.hist);
   const vr=n(x5.volumeRatio);
   const vr10=hasVerifiedVolume?verifiedVolumeRatio:null;
