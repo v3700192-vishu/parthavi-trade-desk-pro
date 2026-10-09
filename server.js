@@ -1488,7 +1488,12 @@ function verifiedFuturesSessionVWAP(rows){
 async function loadFuturesVolume(symbol){
   const key=String(symbol||'NIFTY').toUpperCase();
   const cached=futuresVolumeCache.get(key);
-  if(cached&&Date.now()-cached.at<30000) return cached.data;
+  if(cached){
+    const rejectedHistory=(cached.data?.fetchErrors||[]).some(e=>/HTTP 403|HTTP 429|Too many requests|Access denied|rate limit/i.test(String(e))) ||
+      /historical.*403|static outbound IP/i.test(String(cached.data?.reason||''));
+    const cacheTtl=rejectedHistory?5*60*1000:30000;
+    if(Date.now()-cached.at<cacheTtl) return cached.data;
+  }
   if(futuresVolumeInflight.has(key)) return await futuresVolumeInflight.get(key);
   const job=(async()=>{
     try{
@@ -1526,6 +1531,9 @@ async function loadFuturesVolume(symbol){
       result.expiry=String(fut.expiry||'');
       result.token=String(fut.token||'');
       result.fetchErrors=fetchErrors.slice(0,4);
+      if(fetchErrors.some(e=>/HTTP 403|HTTP 429|Too many requests|Access denied|rate limit/i.test(String(e)))){
+        result.reason='Angel One historical candle endpoint is rejecting requests (HTTP 403/429). Check the registered server outbound static IP and SmartAPI historical-data access. Until fresh futures candles are returned, volume benchmark and VWAP remain unverified.';
+      }
       result.vwap=session.vwap;
       result.vwapSource=session.vwap!=null?'ANGEL NFO FUTURES SESSION VWAP • '+String(fut.symbol):null;
       result.vwapBars=session.vwapBars;
@@ -1626,6 +1634,7 @@ app.get('/api/phase10/prediction',async(req,res)=>{
       m5.summary.volumeBreakout=false;
       m5.summary.volumeUnavailable=true;
       m5.summary.volumeSource=null;
+      m5.summary.volumeRatio=null;
     }
     // Index spot candles generally carry no volume. Use verified current-session
     // futures VWAP, translated to index-equivalent points by the live futures basis.
@@ -1681,9 +1690,16 @@ app.get("/api/analyze",async(req,res)=>{
       ]);
       if(volProxy?.ratio10d!=null && Number.isFinite(Number(volProxy.ratio10d)) && volProxy.source){
         m5.summary.volumeRatio10d=Number(volProxy.ratio10d);
+        m5.summary.volumeRatio=Number(volProxy.ratio10d);
         m5.summary.volumeBreakout=Number(volProxy.ratio10d)>=1.5;
         m5.summary.volumeUnavailable=false;
         m5.summary.volumeSource=volProxy.source;
+      }else{
+        m5.summary.volumeRatio10d=null;
+        m5.summary.volumeRatio=null;
+        m5.summary.volumeBreakout=false;
+        m5.summary.volumeUnavailable=true;
+        m5.summary.volumeSource=null;
       }
       packs={h1,m15,m5,opt}; h.market=!!(m5?.rows?.length); h.options=!!opt?.connected;
     }
