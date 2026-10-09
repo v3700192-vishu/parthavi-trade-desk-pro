@@ -1519,7 +1519,13 @@ async function loadFuturesVolume(symbol){
           const batch=candleRows(raw);
           if(batch.length) rows.push(...batch);
           else fetchErrors.push('No candles returned for '+formatAngelDate(cursor)+' to '+formatAngelDate(chunkEnd));
-        }catch(e){fetchErrors.push((e?.message||'Candle request failed').slice(0,180));}
+        }catch(e){
+          const message=(e?.message||'Candle request failed').slice(0,180);
+          fetchErrors.push(message);
+          // 401/403/429 are not fixed by retrying adjacent date windows. Stop early
+          // so a blocked historical endpoint cannot multiply load and delay NO TRADE.
+          if(/HTTP (?:401|403|429)|Too many requests|Access denied|rate limit|not connected/i.test(message)) break;
+        }
         if(chunkEnd.getTime()>=end.getTime()) break;
       }
       rows=[...new Map(rows.map(x=>[x.t,x])).values()].sort((a,b)=>Date.parse(a.t)-Date.parse(b.t));
