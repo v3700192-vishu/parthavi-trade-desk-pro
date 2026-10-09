@@ -28,7 +28,7 @@ jobs:
       - name: Run safety-gate regression tests
         run: node --test
 
-      - name: Build Windows installer and portable EXE
+      - name: Build Windows installer
         run: npm run desktop:build -- --publish never
 
       - name: Upload desktop builds
