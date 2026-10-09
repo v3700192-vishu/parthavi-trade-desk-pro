@@ -686,6 +686,20 @@ async function connectMarketWebSocket(){
             wsError=null;
           }catch{}
         });
+        // Handle socket loss immediately instead of waiting for the tick watchdog.
+        socket.on('close',()=>{
+          if(generation!==wsGeneration || ws!==socket) return;
+          wsConnected=false;
+          wsError='Angel One WebSocket closed; reconnect scheduled';
+          if(session.connected && marketHoursNow()) scheduleReconnect();
+        });
+        socket.on('error',err=>{
+          if(generation!==wsGeneration || ws!==socket) return;
+          wsConnected=false;
+          wsError=err?.message||'Angel One WebSocket error; reconnect scheduled';
+          console.warn('[ANGEL_WS] socket error:',wsError);
+          if(session.connected && marketHoursNow()) scheduleReconnect();
+        });
       }catch{}
 
       console.log('[ANGEL_WS] connecting client='+String(session.clientCode||'').slice(0,24));
