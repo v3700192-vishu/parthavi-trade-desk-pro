@@ -23,6 +23,7 @@ let wsConnectBusy = false;
 let wsConnectPromise=null;
 let reconnectDelayMs=5000;
 let latestTicks = new Map();
+const MAX_LATEST_TICKS = 250;
 let lastTickAt = null;
 let wsGeneration = 0;
 let lastRefreshAt = 0;
@@ -704,8 +705,16 @@ async function connectMarketWebSocket(){
         socket.on('tick', data=>{
           if(generation!==wsGeneration || ws!==socket) return;
           try{
-            const token=String(data?.token ?? data?.symbolToken ?? data?.symboltoken ?? JSON.stringify(data));
-            latestTicks.set(token,{data,at:Date.now()});
+            // Only use stable instrument identifiers as cache keys. JSON.stringify(data)
+            // changes as prices/timestamps change and could create an unbounded Map.
+            const rawToken=data?.token ?? data?.tokenId ?? data?.symbolToken ?? data?.symboltoken ??
+              data?.instrumentToken ?? data?.tradingSymbol ?? data?.tradingsymbol ?? data?.symbol;
+            if(rawToken!=null && String(rawToken).trim()){
+              const token=String(rawToken).trim();
+              latestTicks.delete(token);
+              latestTicks.set(token,{data,at:Date.now()});
+              while(latestTicks.size>MAX_LATEST_TICKS) latestTicks.delete(latestTicks.keys().next().value);
+            }
             lastTickAt=Date.now();
             wsConnected=true;
             wsError=null;
