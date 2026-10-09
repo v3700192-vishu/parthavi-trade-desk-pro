@@ -917,8 +917,8 @@ app.get('/api/phase11/signal-token',async(req,res)=>{
   try{
     if(!angelStatus().connected) return res.status(401).json({ok:false,error:'ANGEL_NOT_CONNECTED'});
     if(!marketSession()) return res.status(409).json({ok:false,error:'EXCHANGE_CLOSED'});
-    const [h1,m15,m5,ni,gd,ev,md]=await Promise.all([
-      loadTfSummary(symbol,'ONE_HOUR',45),loadTfSummary(symbol,'FIFTEEN_MINUTE',30),loadTfSummary(symbol,'FIVE_MINUTE',15),news(symbol),globalData(),events(),market(symbol)
+    const [h1,m15,m5,ni,gd,ev,md,futuresVol]=await Promise.all([
+      loadTfSummary(symbol,'ONE_HOUR',45),loadTfSummary(symbol,'FIFTEEN_MINUTE',30),loadTfSummary(symbol,'FIVE_MINUTE',15),news(symbol),globalData(),events(),market(symbol),loadFuturesVolume(symbol)
     ]);
     const ns=analyzeNews(ni),gs=analyzeGlobal(gd),es=analyzeEvents(ev); let opt={connected:false};
     try{
@@ -937,11 +937,31 @@ app.get('/api/phase11/signal-token',async(req,res)=>{
       m5.summary.volumeBreakout=Number(futuresVol.ratio10d)>=1.5;
       m5.summary.volumeUnavailable=false;
       m5.summary.volumeSource=futuresVol.source;
+    }else{
+      m5.summary.volumeRatio10d=null;m5.summary.volumeBreakout=false;
+      m5.summary.volumeUnavailable=true;m5.summary.volumeSource=null;
     }
+    if(futuresVol?.vwap!=null && Number.isFinite(Number(futuresVol.vwap)) &&
+       futuresVol?.futuresLast!=null && Number.isFinite(Number(futuresVol.futuresLast)) &&
+       m5.summary.last!=null && Number.isFinite(Number(m5.summary.last))){
+      const basis=Number(futuresVol.futuresLast)-Number(m5.summary.last);
+      const adjustedVwap=Number(futuresVol.vwap)-basis;
+      if(Number.isFinite(adjustedVwap)){m5.summary.vwap=Number(adjustedVwap.toFixed(2));m5.summary.vwapVerified=true;m5.summary.vwapSource=futuresVol.vwapSource;}
+    }else{m5.summary.vwap=null;m5.summary.vwapVerified=false;m5.summary.vwapSource=null;}
     const historical=backtestFiveMinute(m5.rows||[]);
     const vixRaw=md?.VIX?.ltp;
     const vix=vixRaw==null||vixRaw===''?NaN:Number(vixRaw);
     const prediction=buildPrediction({h1:h1.summary,m15:m15.summary,m5:m5.summary,rows5:m5.rows,news:ns,global:gs,events:es,options:opt,marketOpen:true,backtest:historical,vix:Number.isFinite(vix)?vix:null,oi:opt});
+    prediction.vwapVerified=!!m5.summary.vwapVerified;
+    prediction.vwapSource=m5.summary.vwapSource||null;
+    prediction.volumeBenchmark={
+      ratio10d:futuresVol?.ratio10d??null,source:futuresVol?.source??null,
+      benchmarkDays:futuresVol?.benchmarkDays??0,candles:futuresVol?.candles??0,
+      lastCandleTime:futuresVol?.lastCandleTime??null,lastVolume:futuresVol?.lastVolume??null,
+      averageSameSlotVolume:futuresVol?.averageSameSlotVolume??null,
+      contract:futuresVol?.contract??null,expiry:futuresVol?.expiry??null,
+      reason:futuresVol?.reason??null,fetchErrors:futuresVol?.fetchErrors??[]
+    };
     if(prediction.signalState!=='CONFIRMED') return res.status(409).json({ok:false,error:'SIGNAL_NOT_CONFIRMED',prediction});
     const optionPlan=await findBuyableOptionPlan(symbol,prediction.action,prediction.finalPlan?.entry,prediction.finalPlan?.sl,prediction.finalPlan?.target1,prediction.finalPlan?.target2);
     prediction.optionPlan=optionPlan;
@@ -1406,70 +1426,118 @@ function formatAngelDate(ts){
   const m=Object.fromEntries(p.map(x=>[x.type,x.value]));
   return `${m.year}-${m.month}-${m.day} ${m.hour}:${m.minute}`;
 }
+function minuteOfDayIST(ts){
+  const minute=istMinuteKey(ts)?.split(' ')[1];
+  if(!minute) return null;
+  const [hh,mm]=minute.split(':').map(Number);
+  return Number.isFinite(hh)&&Number.isFinite(mm)?hh*60+mm:null;
+}
 function fiveMinuteVolumeBenchmark(rows){
   const chronological=(rows||[])
-    .filter(x=>Number.isFinite(Number(x.v))&&istDayKey(x.t)&&Number.isFinite(Date.parse(x.t)))
+    .filter(x=>Number.isFinite(Date.parse(x.t))&&Number.isFinite(Number(x.v)))
     .slice().sort((a,b)=>Date.parse(a.t)-Date.parse(b.t));
-  if(chronological.length<11) return {ratio10d:null,source:null,benchmarkDays:0};
-  // The newest completed candle must itself have positive, usable volume.
-  // Never skip a zero/missing current candle and silently report the prior bar as live.
-  const last=chronological.at(-1);
-  if(!(Number(last.v)>0)) return {ratio10d:null,source:null,benchmarkDays:0,reason:'Latest completed futures candle has no verified positive volume.'};
-  const lastTime=Date.parse(last.t), lastDay=istDayKey(last.t), slot=istMinuteKey(last.t);
+  const last=chronological.at(-1)||null;
+  const candleCount=chronological.length;
+  const diagnostics={
+    candles:candleCount,
+    lastCandleTime:last?.t||null,
+    lastVolume:last?Number(last.v):null
+  };
+  if(candleCount<11) return {...diagnostics,ratio10d:null,source:null,benchmarkDays:0,reason:'Not enough completed futures candles were returned.'};
+  if(!(Number(last.v)>0)) return {...diagnostics,ratio10d:null,source:null,benchmarkDays:0,reason:'Latest completed futures candle has no verified positive volume.'};
+  const ageMinutes=(Date.now()-Date.parse(last.t))/60000;
+  if(!Number.isFinite(ageMinutes)||ageMinutes< -1||ageMinutes>10)
+    return {...diagnostics,ratio10d:null,source:null,benchmarkDays:0,reason:'Latest futures-volume candle is not fresh (must be within 10 minutes).'};
+  const lastTime=Date.parse(last.t), lastDay=istDayKey(last.t), slotMinute=minuteOfDayIST(last.t);
   const before=chronological.filter(x=>Date.parse(x.t)<lastTime);
   const priorDays=[...new Set(before.map(x=>istDayKey(x.t)).filter(d=>d&&d!==lastDay))].slice(-10);
   const samples=[];
   for(const day of priorDays){
-    const m=before.filter(x=>istDayKey(x.t)===day&&istMinuteKey(x.t)===slot&&Number(x.v)>0);
-    if(m.length) samples.push(Number(m.at(-1).v));
+    // Candle timestamps can differ slightly between broker responses. Prefer
+    // the closest same-session candle within +/- one 5-minute interval.
+    const matches=before.filter(x=>{
+      if(istDayKey(x.t)!==day||!(Number(x.v)>0)) return false;
+      const m=minuteOfDayIST(x.t);
+      return m!=null&&slotMinute!=null&&Math.abs(m-slotMinute)<=5;
+    }).sort((x,y)=>Math.abs(minuteOfDayIST(x.t)-slotMinute)-Math.abs(minuteOfDayIST(y.t)-slotMinute));
+    if(matches.length) samples.push(Number(matches[0].v));
   }
-  // Require enough prior same-slot samples for a genuine 10-day benchmark.
-  // Sparse history is unverified, not a weak-volume breakout.
-  if(samples.length<8) return {ratio10d:null,source:null,benchmarkDays:samples.length,reason:'Insufficient same-slot futures-volume history for a 10-day benchmark.'};
+  if(samples.length<8) return {...diagnostics,ratio10d:null,source:null,benchmarkDays:samples.length,reason:'Insufficient same-time futures-volume samples: at least 8 of the previous 10 trading days are required.'};
   const avg=samples.reduce((a,b)=>a+b,0)/samples.length;
-  return {ratio10d:avg>0?Number((Number(last.v)/avg).toFixed(3)):null,source:'NIFTY FUTURES 5M',benchmarkDays:samples.length};
+  const ratio=avg>0?Number((Number(last.v)/avg).toFixed(3)):null;
+  return {...diagnostics,ratio10d:ratio,source:ratio!=null?'ANGEL NFO FUTURES 5M':null,benchmarkDays:samples.length,
+    averageSameSlotVolume:Number(avg.toFixed(2)),ageMinutes:Number(ageMinutes.toFixed(1)),
+    reason:ratio!=null?null:'Same-time average futures volume was zero or invalid.'};
+}
+function verifiedFuturesSessionVWAP(rows){
+  const chronological=(rows||[]).filter(x=>Number.isFinite(Date.parse(x.t))&&[x.o,x.h,x.l,x.c,x.v].every(v=>Number.isFinite(Number(v))))
+    .slice().sort((a,b)=>Date.parse(a.t)-Date.parse(b.t));
+  const last=chronological.at(-1)||null;
+  if(!last) return {vwap:null,vwapBars:0,lastPrice:null,lastCandleTime:null,lastVolume:null,vwapDay:null,vwapReason:'No futures candles were returned.'};
+  const ageMinutes=(Date.now()-Date.parse(last.t))/60000;
+  if(!(Number(last.v)>0)||!Number.isFinite(ageMinutes)||ageMinutes< -1||ageMinutes>10)
+    return {vwap:null,vwapBars:0,lastPrice:Number(last.c),lastCandleTime:last.t,lastVolume:Number(last.v),vwapDay:istDayKey(last.t),vwapReason:'Latest futures candle is untraded or older than 10 minutes.'};
+  const day=istDayKey(last.t);
+  const session=chronological.filter(x=>istDayKey(x.t)===day&&Number(x.v)>0);
+  if(session.length<3) return {vwap:null,vwapBars:session.length,lastPrice:Number(last.c),lastCandleTime:last.t,lastVolume:Number(last.v),vwapDay:day,vwapReason:'At least three positive-volume candles are required for a session VWAP.'};
+  let pv=0,vol=0;
+  for(const r of session){const v=Number(r.v);pv+=((Number(r.h)+Number(r.l)+Number(r.c))/3)*v;vol+=v;}
+  const value=vol>0?pv/vol:null;
+  return {vwap:value!=null?Number(value.toFixed(2)):null,vwapBars:session.length,lastPrice:Number(last.c),lastCandleTime:last.t,lastVolume:Number(last.v),vwapDay:day,vwapReason:value!=null?null:'Session volume sum was zero.'};
 }
 async function loadFuturesVolume(symbol){
   const key=String(symbol||'NIFTY').toUpperCase();
   const cached=futuresVolumeCache.get(key);
-  if(cached&&Date.now()-cached.at<15000) return cached.data;
+  if(cached&&Date.now()-cached.at<30000) return cached.data;
   if(futuresVolumeInflight.has(key)) return await futuresVolumeInflight.get(key);
   const job=(async()=>{
     try{
-      if(!angelStatus().connected) return {ratio10d:null,source:null,benchmarkDays:0};
+      if(!angelStatus().connected) return {ratio10d:null,source:null,benchmarkDays:0,reason:'Angel One is disconnected.'};
       const contracts=await findLightFutures({underlying:key});
-      const now=Date.now();
       const parseExpiry=x=>{
         const m=String(x||'').match(/^(\d{2})([A-Z]{3})(\d{4})$/i);
         if(!m) return 0;
         const mo={JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11}[m[2].toUpperCase()];
-        return mo==null?0:new Date(Number(m[3]),mo,Number(m[1]),23,59,59).getTime();
+        return mo==null?0:Date.UTC(Number(m[3]),mo,Number(m[1]),23,59,59);
       };
       const fut=(contracts||[])
         .filter(x=>String(x.instrumenttype||'').toUpperCase()==='FUTIDX')
-        .filter(x=>parseExpiry(x.expiry)>=now)
+        .filter(x=>parseExpiry(x.expiry)>=Date.now())
         .sort((a,b)=>parseExpiry(a.expiry)-parseExpiry(b.expiry))[0];
-      if(!fut?.token) return {ratio10d:null,source:null,benchmarkDays:0};
-      const end=new Date(), start=new Date(end.getTime()-15*86400000);
-      let rows=[];
-      for(let cursor=start;cursor<end;cursor=new Date(Math.min(end.getTime(),cursor.getTime()+7*86400000))){
-        const chunkEnd=new Date(Math.min(end.getTime(),cursor.getTime()+7*86400000));
+      if(!fut?.token) return {ratio10d:null,source:null,benchmarkDays:0,contractCount:contracts?.length||0,reason:'No unexpired index FUTIDX contract was found.'};
+      const end=new Date(), start=new Date(end.getTime()-15*86400000), chunkMs=5*86400000;
+      let rows=[];const fetchErrors=[];
+      for(let cursor=start;cursor<end;cursor=new Date(Math.min(end.getTime(),cursor.getTime()+chunkMs))){
+        const chunkEnd=new Date(Math.min(end.getTime(),cursor.getTime()+chunkMs));
         try{
           const raw=await angelCandles({exchange:'NFO',symboltoken:String(fut.token),interval:'FIVE_MINUTE',fromdate:formatAngelDate(cursor),todate:formatAngelDate(chunkEnd)});
-          rows=rows.concat(candleRows(raw));
-        }catch{}
+          const batch=candleRows(raw);
+          if(batch.length) rows.push(...batch);
+          else fetchErrors.push('No candles returned for '+formatAngelDate(cursor)+' to '+formatAngelDate(chunkEnd));
+        }catch(e){fetchErrors.push((e?.message||'Candle request failed').slice(0,180));}
         if(chunkEnd.getTime()>=end.getTime()) break;
       }
       rows=[...new Map(rows.map(x=>[x.t,x])).values()].sort((a,b)=>Date.parse(a.t)-Date.parse(b.t));
-      const result=fiveMinuteVolumeBenchmark(dropIncompleteCandle(rows,5));
-      result.source=result.source?result.source+' • '+String(fut.symbol):null;
+      const completed=dropIncompleteCandle(rows,5);
+      const result=fiveMinuteVolumeBenchmark(completed);
+      const session=verifiedFuturesSessionVWAP(completed);
+      result.source=result.ratio10d!=null?'ANGEL NFO FUTURES 5M • '+String(fut.symbol):null;
       result.contract=String(fut.symbol||'');
       result.expiry=String(fut.expiry||'');
       result.token=String(fut.token||'');
+      result.fetchErrors=fetchErrors.slice(0,4);
+      result.vwap=session.vwap;
+      result.vwapSource=session.vwap!=null?'ANGEL NFO FUTURES SESSION VWAP • '+String(fut.symbol):null;
+      result.vwapBars=session.vwapBars;
+      result.futuresLast=session.lastPrice;
+      result.vwapLastCandleTime=session.lastCandleTime;
+      result.vwapLastVolume=session.lastVolume;
+      result.vwapDay=session.vwapDay;
+      result.vwapReason=session.vwapReason;
       futuresVolumeCache.set(key,{at:Date.now(),data:result});
       return result;
-    }catch{
-      return {ratio10d:null,source:null,benchmarkDays:0};
+    }catch(e){
+      return {ratio10d:null,source:null,benchmarkDays:0,reason:(e?.message||'Futures-volume request failed').slice(0,240)};
     }
   })();
   futuresVolumeInflight.set(key,job);
@@ -1553,8 +1621,40 @@ app.get('/api/phase10/prediction',async(req,res)=>{
       m5.summary.volumeBreakout=Number(futuresVol.ratio10d)>=1.5;
       m5.summary.volumeUnavailable=false;
       m5.summary.volumeSource=futuresVol.source;
+    }else{
+      m5.summary.volumeRatio10d=null;
+      m5.summary.volumeBreakout=false;
+      m5.summary.volumeUnavailable=true;
+      m5.summary.volumeSource=null;
+    }
+    // Index spot candles generally carry no volume. Use verified current-session
+    // futures VWAP, translated to index-equivalent points by the live futures basis.
+    if(futuresVol?.vwap!=null && Number.isFinite(Number(futuresVol.vwap)) &&
+       futuresVol?.futuresLast!=null && Number.isFinite(Number(futuresVol.futuresLast)) &&
+       m5.summary.last!=null && Number.isFinite(Number(m5.summary.last))){
+      const basis=Number(futuresVol.futuresLast)-Number(m5.summary.last);
+      const adjustedVwap=Number(futuresVol.vwap)-basis;
+      if(Number.isFinite(adjustedVwap)){
+        m5.summary.vwap=Number(adjustedVwap.toFixed(2));
+        m5.summary.vwapVerified=true;
+        m5.summary.vwapSource=futuresVol.vwapSource;
+      }
+    }else{
+      m5.summary.vwap=null;
+      m5.summary.vwapVerified=false;
+      m5.summary.vwapSource=null;
     }
     const prediction=buildPrediction({h1:h1.summary,m15:m15.summary,m5:m5.summary,rows5:m5.rows,news:ns,global:gs,events:es,options:opt,marketOpen:marketSession(),backtest:historical,vix:Number.isFinite(vix)?vix:null,oi:opt});
+    prediction.vwapVerified=!!m5.summary.vwapVerified;
+    prediction.vwapSource=m5.summary.vwapSource||null;
+    prediction.volumeBenchmark={
+      ratio10d:futuresVol?.ratio10d??null,source:futuresVol?.source??null,
+      benchmarkDays:futuresVol?.benchmarkDays??0,candles:futuresVol?.candles??0,
+      lastCandleTime:futuresVol?.lastCandleTime??null,lastVolume:futuresVol?.lastVolume??null,
+      averageSameSlotVolume:futuresVol?.averageSameSlotVolume??null,
+      contract:futuresVol?.contract??null,expiry:futuresVol?.expiry??null,
+      reason:futuresVol?.reason??null,fetchErrors:futuresVol?.fetchErrors??[]
+    };
     let optionPlan={available:false,reason:'Wait until model confidence reaches 78% for live CE/PE contract selection.'};
     if(prediction.opportunityEligible && prediction.finalPlan?.available){
       const optionAction=prediction.prediction==='BULLISH'?'CALL':prediction.prediction==='BEARISH'?'PUT':'';
