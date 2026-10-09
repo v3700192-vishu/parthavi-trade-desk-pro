@@ -892,7 +892,7 @@ body.chart-fullscreen-open>.app>.bottom{
     <div class="bt"><small>Wins / Losses</small><b id="p10WinsLosses">—</b></div>
     <div class="bt"><small>Expected R*</small><b id="p10ExpectedR">—</b></div>
   </div>
-  <div class="finder-note"><b>*Backtest note:</b> 1.0R stop vs 1.25R target, up to 20 five-minute bars forward, using a transparent rolling technical trigger. It excludes brokerage, taxes, slippage and real-time execution effects. This is a historical statistic, not a promise that a future trade will be profitable.</div>
+  <div class="finder-note"><b>*Backtest note:</b> 1.0R stop vs 2.0R target, up to 20 five-minute bars forward, using a rolling 5M EMA20/EMA50 + RSI price-only trigger. It does not model futures-volume filters, news/events, option premiums/Greeks, brokerage, taxes or slippage. This underlying-index historical statistic is not a promise that a future trade will be profitable.</div>
   <div class="exec" style="margin-top:8px"><button class="btn primary" onclick="loadPrediction(true)">⚡ Run Advanced Prediction</button><button class="btn" onclick="scrollToPhase10Backtest()">▣ View Confirmation</button></div>
 </section>
 
@@ -1535,7 +1535,14 @@ function renderEvents(es){
  setToneText('eventGate', high?'WATCH':'NORMAL'); setToneText('eventWatch', high?'ACTIVE':'NONE'); setToneText('eventFreeze', 'WAIT');
  $('eventReason').textContent=high?'Connected calendar contains high-impact events.':'No high-impact event detected from connected feed.'; $('eventFeedMeta').textContent=arr.length?`Feed status: CONNECTED • ${arr.length} event(s)`:'Feed status: UNVERIFIED • no usable event calendar data';
 }
-function renderEventStrategy(st){ const x=st||{}; setToneText('eventGate',x.hardBlock?'NO TRADE':'NORMAL'); setToneText('eventWatch',x.watch?'ACTIVE':'NONE'); setToneText('eventFreeze',x.hardBlock?'ACTIVE':'NONE'); $('eventReason').textContent=x.reason||'Calendar feed not connected'; }
+function renderEventStrategy(st){
+ const x=st||{};
+ const state=!x.connected?'UNVERIFIED':(x.unverifiedHighImpact||x.hardBlock||x.eventDayBlock)?'NO TRADE':x.watch?'CAUTION':'SAFE';
+ setToneText('eventGate',state);
+ setToneText('eventWatch',!x.connected?'WAIT':x.watch?'ACTIVE':'NONE');
+ setToneText('eventFreeze',!x.connected||x.unverifiedHighImpact?'UNKNOWN':(x.hardBlock||x.eventDayBlock)?'ACTIVE':'NONE');
+ $('eventReason').textContent=x.reason||'Economic-event calendar is not verified.';
+}
 async function getJSON(path){
   const r=await fetch(API_BASE+path,{cache:'no-store'});
   const d=await r.json().catch(()=>({}));
@@ -2044,7 +2051,8 @@ function renderPredictionPanel(resp){
   if(grid){
     grid.innerHTML=labels.map(([k,label])=>{
       const ok=!!checks[k];
-      const val=ok?'PASS':'WAIT';
+      const eventState=String(p?.eventSafetyStatus||'UNKNOWN').toUpperCase();
+      const val=ok?'PASS':(k==='eventSafe'?(eventState==='BLOCKED'?'BLOCKED':eventState==='CAUTION'?'CAUTION':'UNKNOWN'):'WAIT');
       return '<div class="confirm-item"><span>'+escapeHtml(label)+'</span><b class="'+(ok?'yes':'no')+'">'+val+'</b></div>';
     }).join('');
   }
