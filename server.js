@@ -284,8 +284,8 @@ async function fetchOptionsInternal(symbol){
     const ces=enriched.filter(x=>x.side==='CE'), pes=enriched.filter(x=>x.side==='PE');
     const maxOi=(arr)=>arr.length?arr.reduce((a,b)=>b.oi>a.oi?b:a,arr[0]):null;
     const ceMax=maxOi(ces), peMax=maxOi(pes);
-    const ce=ces.reduce((a,b)=>Math.abs(b._strike-atm)<Math.abs((a?._strike??atm)-atm)?b:a,null);
-    const p=pes.reduce((a,b)=>Math.abs(b._strike-atm)<Math.abs((a?._strike??atm)-atm)?b:a,null);
+    const ce=ces.reduce((a,b)=>!a||Math.abs(b._strike-atm)<Math.abs(a._strike-atm)?b:a,null);
+    const p=pes.reduce((a,b)=>!a||Math.abs(b._strike-atm)<Math.abs(a._strike-atm)?b:a,null);
     const ceoi=Number(ce?.oi), peoi=Number(p?.oi),
       resistance=ceMax?Number(ceMax._strike):null, support=peMax?Number(peMax._strike):null;
     return {connected:!!liveExpiry&&!!ceMax&&!!peMax&&Number.isFinite(ceoi)&&Number.isFinite(peoi),atm,expiry:liveExpiry,ceoi:Number.isFinite(ceoi)?ceoi:null,cedoi:null,peoi:Number.isFinite(peoi)?peoi:null,pedoi:null,iv:null,pcr:Number.isFinite(ceoi)&&Number.isFinite(peoi)&&ceoi?Number((peoi/ceoi).toFixed(3)):null,
