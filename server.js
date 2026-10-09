@@ -97,6 +97,29 @@ const execution = {
   recentOrderIds: new Set()
 };
 
+// Cache historical backtest results until the completed candle set changes.
+// The backtest is allocation-heavy; the dashboard refreshes more often than new 5M candles form.
+const backtestResultCache = new Map();
+function cachedBacktestFiveMinute(symbol, rows) {
+  const key = String(symbol || 'NIFTY').toUpperCase();
+  const candles = Array.isArray(rows) ? rows : [];
+  const first = candles[0], last = candles.at(-1);
+  const fingerprint = [
+    candles.length, first?.t, last?.t,
+    last?.o, last?.h, last?.l, last?.c, last?.v
+  ].join('|');
+  const cached = backtestResultCache.get(key);
+  if (cached?.fingerprint === fingerprint) return cached.result;
+
+  const result = backtestFiveMinute(candles);
+  backtestResultCache.delete(key);
+  backtestResultCache.set(key, { fingerprint, result });
+  while (backtestResultCache.size > 8) {
+    backtestResultCache.delete(backtestResultCache.keys().next().value);
+  }
+  return result;
+}
+
 const PHASE11_SECRET = String(process.env.PHASE11_SECRET || 'CHANGE_ME_PHASE11_SECRET');
 function signedPayload(payload){
   const body=Buffer.from(JSON.stringify(payload)).toString('base64url');
@@ -948,7 +971,7 @@ app.get('/api/phase11/signal-token',async(req,res)=>{
       const adjustedVwap=Number(futuresVol.vwap)-basis;
       if(Number.isFinite(adjustedVwap)){m5.summary.vwap=Number(adjustedVwap.toFixed(2));m5.summary.vwapVerified=true;m5.summary.vwapSource=futuresVol.vwapSource;}
     }else{m5.summary.vwap=null;m5.summary.vwapVerified=false;m5.summary.vwapSource=null;}
-    const historical=backtestFiveMinute(m5.rows||[]);
+    const historical=cachedBacktestFiveMinute(symbol,m5.rows||[]);
     const vixRaw=md?.VIX?.ltp;
     const vix=vixRaw==null||vixRaw===''?NaN:Number(vixRaw);
     const prediction=buildPrediction({h1:h1.summary,m15:m15.summary,m5:m5.summary,rows5:m5.rows,news:ns,global:gs,events:es,options:opt,marketOpen:true,backtest:historical,vix:Number.isFinite(vix)?vix:null,oi:opt});
@@ -1627,7 +1650,7 @@ app.get('/api/phase10/prediction',async(req,res)=>{
       const g=candidates.find(x=>x.optionType===pickType)||candidates[0];
       if(g){opt.greeks=g;opt.theta=g.theta;opt.delta=g.delta;opt.iv=g.iv;opt.greekRisk=greekRiskWarning(g);}
     }catch{}
-    const historical=backtestFiveMinute(m5.rows||[]);
+    const historical=cachedBacktestFiveMinute(symbol,m5.rows||[]);
     const vixRaw=md?.VIX?.ltp;
     const vix=vixRaw==null||vixRaw===''?NaN:Number(vixRaw);
     if(futuresVol?.ratio10d!=null && Number.isFinite(Number(futuresVol.ratio10d)) && futuresVol.source){
