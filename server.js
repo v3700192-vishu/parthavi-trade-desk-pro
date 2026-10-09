@@ -412,6 +412,7 @@ async function findBuyableOptionPlan(symbol, direction, underlyingEntry, underly
 
 const newsCache=new Map();
 const globalCache={at:0,data:null};
+const eventCalendarCache={at:0,rows:[],connected:false,source:null,promise:null};
 async function news(symbol){
   const key=String(symbol||'NIFTY').toUpperCase(), now=Date.now(), cached=newsCache.get(key);
   if(cached && now-cached.at<60000) return cached.items;
@@ -527,16 +528,70 @@ function eventRowsWithFeedStatus(rows,feedConnected){
   Object.defineProperty(arr,'feedConnected',{value:!!feedConnected,enumerable:false,configurable:true});
   return arr;
 }
+function normalizeCalendarImpact(value){
+  const s=String(value||'').trim().toUpperCase();
+  if(['HIGH','RED','CRITICAL'].includes(s)) return 'HIGH';
+  if(['MEDIUM','MODERATE','ORANGE'].includes(s)) return 'MEDIUM';
+  if(['LOW','HOLIDAY','GREEN'].includes(s)) return 'LOW';
+  return 'WATCH';
+}
+function normalizeCalendarRows(rows,source){
+  return rows.map(x=>({
+    label:String(x?.label||x?.title||x?.event||x?.name||'Economic event'),
+    title:String(x?.title||x?.event||x?.name||x?.label||'Economic event'),
+    time:x?.time||x?.datetime||x?.timestamp||x?.start||x?.date||x?.date_time||'',
+    risk:normalizeCalendarImpact(x?.risk||x?.impact||x?.importance),
+    country:String(x?.country||x?.currency||''),
+    source:String(x?.source||source||'CALENDAR')
+  })).filter(x=>x.label);
+}
 async function events(){
-  try{
-    const raw=await fetchProviderJson(process.env.EVENTS_PROVIDER_URL,process.env.EVENTS_PROVIDER_TOKEN,{country:"IN",region:"global",days:2});
-    if(raw==null||raw?.connected===false||raw?.ok===false) return eventRowsWithFeedStatus([],false);
-    const rows=Array.isArray(raw)?raw:[raw?.events,raw?.items,raw?.data,raw?.results].find(Array.isArray);
-    if(!Array.isArray(rows)) return eventRowsWithFeedStatus([],false);
-    return eventRowsWithFeedStatus(rows,true);
-  }catch{
-    return eventRowsWithFeedStatus([],false);
+  const now=Date.now();
+  if(eventCalendarCache.at && now-eventCalendarCache.at<5*60*1000){
+    return eventRowsWithFeedStatus(eventCalendarCache.rows,eventCalendarCache.connected);
   }
+  if(eventCalendarCache.promise) return await eventCalendarCache.promise;
+  eventCalendarCache.promise=(async()=>{
+    let normalized=null,source=null,providerVerified=false;
+    if(process.env.EVENTS_PROVIDER_URL){
+      try{
+        const raw=await fetchProviderJson(process.env.EVENTS_PROVIDER_URL,process.env.EVENTS_PROVIDER_TOKEN,{country:"IN",region:"global",days:2});
+        if(raw!=null&&raw?.connected!==false&&raw?.ok!==false){
+          const rows=Array.isArray(raw)?raw:[raw?.events,raw?.items,raw?.data,raw?.results].find(Array.isArray);
+          if(Array.isArray(rows)){
+            normalized=normalizeCalendarRows(rows,'CONFIGURED_EVENT_PROVIDER');
+            source='CONFIGURED_EVENT_PROVIDER';
+            providerVerified=rows.every(x=>Number.isFinite(Date.parse(x?.time||x?.datetime||x?.timestamp||x?.start||x?.date||x?.date_time||'')));
+          }
+        }
+      }catch(e){console.warn('[EVENT_CALENDAR] configured provider failed:',e?.message||e);}
+    }
+    if(!normalized){
+      try{
+        const response=await fetch('https://nfs.faireconomy.media/ff_calendar_thisweek.json',{
+          headers:{accept:'application/json','user-agent':'PARTHAVI-TRADE-DESK-PRO/1.0'},
+          signal:AbortSignal.timeout(10000)
+        });
+        if(!response.ok) throw new Error('Forex Factory calendar HTTP '+response.status);
+        const raw=await response.json();
+        if(!Array.isArray(raw)||raw.length===0) throw new Error('Forex Factory calendar returned no usable rows');
+        const good=raw.filter(x=>String(x?.title||'').trim()&&Number.isFinite(Date.parse(x?.date||'')));
+        if(!good.length) throw new Error('Forex Factory calendar has no verified timestamps');
+        normalized=normalizeCalendarRows(good,'FOREX_FACTORY_PUBLIC_CALENDAR');
+        source='FOREX_FACTORY_PUBLIC_CALENDAR';
+        providerVerified=true;
+      }catch(e){console.warn('[EVENT_CALENDAR] public fallback failed:',e?.message||e);}
+    }
+    const allTimesValid=Array.isArray(normalized)&&normalized.every(x=>Number.isFinite(Date.parse(x.time||'')));
+    const connected=!!normalized&&providerVerified&&allTimesValid;
+    eventCalendarCache.at=Date.now();
+    eventCalendarCache.rows=connected?normalized:[];
+    eventCalendarCache.connected=connected;
+    eventCalendarCache.source=connected?source:null;
+    return eventRowsWithFeedStatus(eventCalendarCache.rows,connected);
+  })();
+  try{return await eventCalendarCache.promise;}
+  finally{eventCalendarCache.promise=null;}
 }
 
 
