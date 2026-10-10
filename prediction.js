@@ -5,7 +5,7 @@
 */
 
 function clamp(x,a,b){ return Math.max(a,Math.min(b,x)); }
-function n(v,d=null){ const x=Number(v); return Number.isFinite(x)?x:d; }
+function n(v,d=null){ if(v==null || (typeof v==='string' && v.trim()==='')) return d; const x=Number(v); return Number.isFinite(x)?x:d; }
 function dirScore(flagBull,flagBear,weight){ return flagBull?weight:flagBear?-weight:0; }
 
 function istSlot(ts){
@@ -57,9 +57,12 @@ function summarizeLatest(rows){
 
 function tfDirection(tf){
   const s=tf||{};
-  const bull = s.trend==='BULLISH' || (n(s.last)!=null && n(s.ema20)!=null && n(s.ema50)!=null && s.ema20>s.ema50);
-  const bear = s.trend==='BEARISH' || (n(s.last)!=null && n(s.ema20)!=null && n(s.ema50)!=null && s.ema20<s.ema50);
-  return bull?'BULLISH':bear?'BEARISH':'NEUTRAL';
+  const explicit=['BULLISH','BEARISH'].includes(String(s.trend||'').toUpperCase())?String(s.trend).toUpperCase():null;
+  const ema20=n(s.ema20), ema50=n(s.ema50);
+  const emaDirection=ema20!=null&&ema50!=null?(ema20>ema50?'BULLISH':ema20<ema50?'BEARISH':null):null;
+  // A timeframe must not vote directionally when its declared trend conflicts with its EMA structure.
+  if(explicit&&emaDirection&&explicit!==emaDirection) return 'NEUTRAL';
+  return explicit||emaDirection||'NEUTRAL';
 }
 
 function finalTradePlan(prediction, last, atr){
@@ -94,9 +97,12 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
   const vr=n(x5.volumeRatio);
   const vr10=hasVerifiedVolume?verifiedVolumeRatio:null;
   const latestBarTime=rows5?.at?.(-1)?.t;
-  const rawCandleAge=latestBarTime?((Date.now()-new Date(latestBarTime).getTime())/60000):NaN;
-  const candleAgeMinutes=Number.isFinite(rawCandleAge)?Number(Math.max(0,rawCandleAge).toFixed(1)):null;
-  const candlesFresh=candleAgeMinutes!=null&&candleAgeMinutes<=10;
+  const parsedLatestBarTime=latestBarTime==null||latestBarTime===''?NaN:new Date(latestBarTime).getTime();
+  const rawCandleAge=Number.isFinite(parsedLatestBarTime)?(Date.now()-parsedLatestBarTime)/60000:NaN;
+  // Allow at most 15 seconds of clock skew; a candle timestamp materially in the future is invalid, not fresh.
+  const futureCandleTimestamp=Number.isFinite(rawCandleAge)&&rawCandleAge < -0.25;
+  const candleAgeMinutes=Number.isFinite(rawCandleAge)&&rawCandleAge>=-0.25?Number(Math.max(0,rawCandleAge).toFixed(1)):null;
+  const candlesFresh=candleAgeMinutes!=null&&candleAgeMinutes<=10&&!futureCandleTimestamp;
   const hasVix=vix!==null&&vix!==undefined&&vix!==''&&Number.isFinite(Number(vix));
   const thetaRaw=options?.theta,deltaRaw=options?.delta;
   const hasGreeks=thetaRaw!==null&&thetaRaw!==undefined&&thetaRaw!==''&&deltaRaw!==null&&deltaRaw!==undefined&&deltaRaw!==''&&Number.isFinite(Number(thetaRaw))&&Number.isFinite(Number(deltaRaw));
@@ -118,10 +124,15 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
   if(adx!=null) score += adx>=20?(score>=0?weights.volatility*0.25:-weights.volatility*0.25):0;
   if(vr10!=null&&vr10>=1.5) score += x5.candle==='BULLISH'?weights.volume:x5.candle==='BEARISH'?-weights.volume:0;
 
-  const pcr=n(options?.pcr); const ceDoi=n(options?.cedoi), peDoi=n(options?.pedoi);
-  const optBull=options?.connected && (pcr>=1.05 || (peDoi!=null&&ceDoi!=null&&peDoi>ceDoi));
-  const optBear=options?.connected && (pcr<=0.95 || (peDoi!=null&&ceDoi!=null&&ceDoi>peDoi));
-  if(options?.connected) score += dirScore(optBull,optBear,weights.options);
+  const pcr=n(options?.pcr);
+  // The live adapter returns ceoi/peoi; keep cedoi/pedoi aliases for older payloads.
+  const ceDoi=n(options?.ceoi ?? options?.cedoi), peDoi=n(options?.peoi ?? options?.pedoi);
+  const optionPcrVerified=pcr!=null&&pcr>0;
+  const optionOiVerified=ceDoi!=null&&peDoi!=null&&ceDoi>=0&&peDoi>=0&&(ceDoi>0||peDoi>0);
+  const optionFlowVerified=!!options?.connected&&(optionPcrVerified||optionOiVerified);
+  const optBull=optionFlowVerified&&((optionPcrVerified&&pcr>=1.05)||(optionOiVerified&&peDoi>ceDoi));
+  const optBear=optionFlowVerified&&((optionPcrVerified&&pcr<=0.95)||(optionOiVerified&&ceDoi>peDoi));
+  if(optionFlowVerified) score += dirScore(optBull,optBear,weights.options);
 
   const newsBull=String(news?.bias||'')==='BULLISH', newsBear=String(news?.bias||'')==='BEARISH';
   if(news?.connected) score += dirScore(newsBull,newsBear,weights.news);
@@ -134,7 +145,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
   if(!candlesFresh) noTradeReasons.push('No Trade: the latest completed 5-minute candle is stale or unavailable.');
   if(!newsVerified) noTradeReasons.push('No Trade: fresh market news is not verified.');
   if(!globalVerified) noTradeReasons.push('No Trade: fewer than three fresh global-risk inputs are verified.');
-  if(!options?.connected) noTradeReasons.push('No Trade: live option-chain/OI data is not verified.');
+  if(!optionFlowVerified) noTradeReasons.push('No Trade: live option-chain PCR/OI values are unavailable or unverified.');
   if(adx!=null && Number.isFinite(adx) && adx<20)
     noTradeReasons.push('No Trade: ADX below 20 — market is choppy/sideways.');
   if(!hasVerifiedVolume || vr10==null || !Number.isFinite(vr10)) {
@@ -172,7 +183,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
     momentum: prediction==='BULLISH'?(rsi!=null&&rsi>50&&macdHist!=null&&macdHist>0):(prediction==='BEARISH'?(rsi!=null&&rsi<50&&macdHist!=null&&macdHist<0):false),
     volume: volumePass,
     strength: adx!=null&&adx>=20,
-    options: !!options?.connected && ((prediction==='BULLISH'&&optBull)||(prediction==='BEARISH'&&optBear)),
+    options: optionFlowVerified && ((prediction==='BULLISH'&&optBull)||(prediction==='BEARISH'&&optBear)),
     greeks: hasGreeks&&theta<6&&delta>=0.35,
     news: newsVerified,
     global: globalVerified,
@@ -183,7 +194,13 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
   const confirmationPct=Math.round(confirmedCount/required.length*100);
   // Conservative confidence: high scores are earned only when confirmations and feed quality agree.
   const backtestRate=n(backtest?.targetHitRate);
-  const backtestBonus=backtest?.available&&backtestRate!=null
+  // An index-only proxy is not evidence about CE/PE premium outcomes. Only a
+  // verified option-premium backtest with costs + slippage may ever affect confidence.
+  const qualifiedOptionBacktest=backtest?.kind==='OPTION_PREMIUM'
+    && backtest?.verified===true
+    && backtest?.feesIncluded===true
+    && backtest?.slippageIncluded===true;
+  const backtestBonus=qualifiedOptionBacktest&&backtest?.available&&backtestRate!=null
     ? clamp((backtestRate-55)*0.20,0,8)
     : 0;
   const modelConfidence=Math.round(clamp(
@@ -194,7 +211,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
     + backtestBonus,
     50,95
   ));
-  const feedComplete=!!marketOpen && candlesFresh && hasVerifiedVolume && hasVix && Number(vix)>=12 && Number(vix)<=22 && newsVerified && globalVerified && !!options?.connected && hasGreeks && eventSafe;
+  const feedComplete=!!marketOpen && candlesFresh && hasVerifiedVolume && hasVix && Number(vix)>=12 && Number(vix)<=22 && newsVerified && globalVerified && optionFlowVerified && hasGreeks && eventSafe;
   const hardNoTrade=noTradeReasons.length>0;
   // Opportunity tiers: keep directional opportunities visible early, while
   // preserving hard safety blockers and the existing confirmed-entry gate.
@@ -206,7 +223,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
     !hasVix ||
     !newsVerified ||
     !globalVerified ||
-    !options?.connected ||
+    !optionFlowVerified ||
     !hasGreeks ||
     !eventSafe ||
     !events?.connected ||
@@ -221,8 +238,13 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
   const signalState=(!marketOpen||events?.hardBlock||events?.eventDayBlock)?'NO TRADE':(eliteSetup?'CONFIRMED':(watchEligible?'WATCH':'NO TRADE'));
   const action=signalState==='CONFIRMED'?(prediction==='BULLISH'?'CALL':'PUT'):'NO TRADE';
   const watchAction=watchEligible?(prediction==='BULLISH'?'CE WATCH':'PE WATCH'):'NO TRADE';
-  const plan=finalTradePlan(prediction,last,atr);
-  const opportunityEligible=prediction!=='NEUTRAL' && modelConfidence>=opportunityConfidenceThreshold && !hardSafetyBlock && marketOpen && plan.available;
+  const candidatePlan=finalTradePlan(prediction,last,atr);
+  // Never expose an actionable entry/SL/target when a safety gate failed or the setup is below WATCH.
+  const planGatesPassed=!!marketOpen&&feedComplete&&!hardNoTrade&&['WATCH','CONFIRMED'].includes(signalState);
+  const plan=planGatesPassed&&candidatePlan.available
+    ? candidatePlan
+    : {...finalTradePlan('NEUTRAL',null,null),reason:'Entry plan withheld because live feeds or confirmation gates are incomplete.'};
+  const opportunityEligible=prediction!=='NEUTRAL' && modelConfidence>=opportunityConfidenceThreshold && !hardSafetyBlock && !hardNoTrade && marketOpen && plan.available;
   const reasoning = signalState==='CONFIRMED'
     ? `${prediction} structure aligns across 1H/15M/5M with ${confirmedCount}/${required.length} confirmation checks; VIX/ADX/volume/event filters passed and minimum RR is 1:2.`
     : signalState==='WATCH' && modelConfidence>=opportunityConfidenceThreshold
@@ -240,10 +262,11 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
     modelConfidenceBand:modelConfidence>=78?'OPTION OPPORTUNITY':modelConfidence>=70?'WATCH':'WEAK',
     confirmationPct, confirmedCount, confirmationTotal:required.length,
     confirmations, trend1h:h1d, setup15m:m15d, trigger5m:String(m5?.candle||'WAIT'),
-    volumeRatio:vr, volumeRatio10d:vr10, volumeBreakout:!!x5.volumeBreakout, volumeSource:x5.volumeSource||null, volumeUnavailable:!hasVerifiedVolume, candleAgeMinutes, candlesFresh, eventCalendarConnected:!!events?.connected, eventTimestampsVerified:!events?.unverifiedTimes, eventSafetyStatus, eventSafe, rsi, adx, atr, vwap, last, vix:hasVix?Number(vix):null, delta:hasGreeks?delta:null, theta:hasGreeks?theta:null, greekRisk:options?.greekRisk||null, oi:oi||null, noTradeReasons, rrGate:'1:2 MINIMUM',
+    volumeRatio:vr, volumeRatio10d:vr10, volumeBreakout:!!x5.volumeBreakout, volumeSource:x5.volumeSource||null, volumeUnavailable:!hasVerifiedVolume, candleAgeMinutes, candlesFresh, futureCandleTimestamp, optionDataVerified:optionFlowVerified, eventCalendarConnected:!!events?.connected, eventTimestampsVerified:!events?.unverifiedTimes, eventSafetyStatus, eventSafe, rsi, adx, atr, vwap, last, vix:hasVix?Number(vix):null, delta:hasGreeks?delta:null, theta:hasGreeks?theta:null, greekRisk:options?.greekRisk||null, oi:oi||null, noTradeReasons, rrGate:'1:2 MINIMUM',
     finalPlan:plan,
     signalBarTime:rows5?.at?.(-1)?.t||null,
-    historical:backtest||{available:false,reason:'Historical backtest not available.'},
+    historical:backtest||{available:false,kind:'UNDERLYING_PRICE_ONLY',instrument:'NIFTY INDEX',reason:'Index price-only backtest unavailable.'},
+    optionBacktest:{available:false,verified:false,kind:'OPTION_PREMIUM',feesIncluded:false,slippageIncluded:false,reason:'Historical CE/PE option-premium backtest is not connected to a verified historical contract dataset. Do not use index-candle statistics as option win rate or P&L.'},
     feedComplete, eventBlocked:!!events?.hardBlock, eventCalendarConnected:!!events?.connected, eventTimestampsVerified:!events?.unverifiedTimes, eventSafetyStatus,
     tradeFinder:{enabled:true,targetOpportunitiesPerSession:2,volumeMode:volumeContinuation?'CONTINUATION':'BREAKOUT',watchThreshold:70,contractThreshold:78},
     note:'Two-trade finder is active: the scanner searches continuously for up to two high-quality opportunities per NSE session. A 1.5x 10-day same-slot volume breakout is preferred; strong trend-continuation may qualify from 0.90x when 1H/15M/5M, momentum and ADX agree. India VIX 12–22, event safety, complete verified feeds and minimum 1:2 risk-to-reward remain hard protections. This is a quality filter, not a guarantee of profit. Final SL/targets are volatility-based planning levels on the underlying index; option premium SL/targets must be verified from the selected live contract and its Greeks.',
@@ -252,7 +275,8 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
 }
 
 export function backtestFiveMinute(rows=[]){
-  const r=rows||[]; if(r.length<260) return {available:false,reason:'Need at least 260 five-minute candles for a meaningful rolling test.',sample:0};
+  // This is deliberately classified as an UNDERLYING proxy, never an option backtest.
+  const r=rows||[]; if(r.length<260) return {available:false,kind:'UNDERLYING_PRICE_ONLY',instrument:'NIFTY INDEX',verified:false,optionsPremiumIncluded:false,feesIncluded:false,slippageIncluded:false,notValidForOptionPnl:true,reason:'Need at least 260 five-minute index candles. This does not backtest CE/PE option premiums.',sample:0};
   const wins=[]; const outcomes=[]; let candidates=0, resolved=0, hits=0;
   const closes=[]; const trs=[];
   const ema=(vals,n)=>{if(vals.length<n)return null;const k=2/(n+1);let e=vals.slice(0,n).reduce((a,b)=>a+b,0)/n;for(let i=n;i<vals.length;i++)e=vals[i]*k+e*(1-k);return e;};
@@ -281,5 +305,5 @@ export function backtestFiveMinute(rows=[]){
     if(outcome==='WIN'){hits++;resolved++;} else if(outcome==='LOSS'){resolved++;}
   }
   const rate=resolved?Number((hits/resolved*100).toFixed(1)):null;
-  const expectedR=rate!=null?Number((rate/100*2.0-(1-rate/100)).toFixed(2)):null; return {available:resolved>=30,signals:candidates,resolved,wins:hits,losses:resolved-hits,targetHitRate:rate,expectedR,sample:resolved,minSample:30,method:'5M rolling EMA20/EMA50 + RSI price-only trigger; 1.0R stop vs 2.0R target; max 20 bars forward; no volume/news/event/option-premium model, fees or slippage.'};
+  const expectedR=rate!=null?Number((rate/100*2.0-(1-rate/100)).toFixed(2)):null; return {available:resolved>=30,kind:'UNDERLYING_PRICE_ONLY',instrument:'NIFTY INDEX',verified:false,optionsPremiumIncluded:false,feesIncluded:false,slippageIncluded:false,notValidForOptionPnl:true,signals:candidates,resolved,wins:hits,losses:resolved-hits,targetHitRate:rate,expectedR,sample:resolved,minSample:30,method:'5M rolling EMA20/EMA50 + RSI on NIFTY index candles; 1.0 index-point ATR-risk unit vs 2.0R target; max 20 bars forward. NOT an option-premium test; excludes contract selection, CE/PE premium, spread, fees and slippage.',disclaimer:'Underlying index-only proxy. targetHitRate/expectedR must never be presented as CE/PE win rate, option returns or evidence of profitability.'};
 }

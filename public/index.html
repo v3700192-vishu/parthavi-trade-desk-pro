@@ -548,7 +548,31 @@ body.chart-fullscreen-open>.app>.bottom{
   .bottom a:active{transform:scale(.96)}
   .bottom a.active{color:#fff!important;background:#102039!important;box-shadow:inset 0 0 0 1px #344c6d}
 }
-</style></style></head>
+</style></style>
+<style id="mobile-nav-refresh-v2">
+.p10-head-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+#p10RefreshBtn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:44px;min-width:106px;padding:10px 13px;border-radius:12px;font-size:12px;font-weight:900;touch-action:manipulation}
+#p10RefreshBtn .refresh-icon{font-size:19px;line-height:1}
+#p10RefreshBtn[disabled]{opacity:.65;cursor:wait}
+#p10RefreshBtn.is-refreshing .refresh-icon{animation:ptd-spin .8s linear infinite}
+@keyframes ptd-spin{to{transform:rotate(360deg)}}
+@media(max-width:760px){
+  .app{padding-bottom:calc(118px + env(safe-area-inset-bottom))}
+  #phase10Prediction .card-head{align-items:flex-start;gap:10px;flex-wrap:wrap}
+  #phase10Prediction .card-head>div:first-child{min-width:0;flex:1 1 100%}
+  #phase10Prediction .card-head>div:first-child h3{font-size:17px;line-height:1.3}
+  .p10-head-actions{width:100%;justify-content:space-between}
+  #p10RefreshBtn{min-width:136px;min-height:48px;font-size:13px}
+  #bottomNav.bottom{display:grid!important;position:fixed!important;left:0;right:0;bottom:0;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px;padding:8px 8px calc(9px + env(safe-area-inset-bottom))!important;min-height:82px;background:rgba(4,7,15,.97);border-top:1px solid #2a3b58;z-index:9999;backdrop-filter:blur(18px);box-shadow:0 -9px 30px rgba(0,0,0,.32)}
+  #bottomNav .bottom-button{display:flex;flex-direction:column;justify-content:center;align-items:center;gap:4px;min-width:0;min-height:64px;width:100%;padding:7px 3px;border:1px solid transparent;border-radius:13px;background:transparent;color:#9daac0;text-decoration:none;font:inherit;touch-action:manipulation;-webkit-tap-highlight-color:transparent;cursor:pointer}
+  #bottomNav .bottom-icon{display:block;font-size:22px;line-height:1.05;font-weight:800}
+  #bottomNav .bottom-label{display:block;font-size:12px;line-height:1.15;font-weight:750;letter-spacing:.1px}
+  #bottomNav .bottom-button.active{color:#fff;background:#102039;border-color:#3b5578;box-shadow:inset 0 0 0 1px rgba(110,157,218,.14)}
+  #bottomNav .bottom-button:focus-visible{outline:2px solid #64e6ff;outline-offset:1px}
+  #bottomNav .bottom-button:active{transform:scale(.96)}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto!important}#bottomNav .bottom-button:active{transform:none}#p10RefreshBtn .refresh-icon{animation:none!important}}
+</style></head>
 <body>
 <script id="ANDROID_LAYOUT_GUARD">
 (function(){try{window.scrollTo(0,0);document.documentElement.scrollLeft=0;document.body.scrollLeft=0}catch(e){}})();
@@ -854,7 +878,10 @@ body.chart-fullscreen-open>.app>.bottom{
 </section>
 
 <section class="card" id="phase10Prediction">
-  <div class="card-head"><h3>Phase 10 • Advanced Prediction & Confirmation</h3><span id="p10Time" class="p10-time">Updated • --:--:-- --</span><span id="p10State">LOCKED</span></div>
+  <div class="card-head">
+    <div><h3>Phase 10 • Advanced Prediction & Confirmation</h3><span id="p10Time" class="p10-time">Updated • --:--:-- --</span></div>
+    <div class="p10-head-actions"><span id="p10State">LOCKED</span><button class="btn primary" type="button" id="p10RefreshBtn" onclick="refreshPredictionNow()" aria-label="Refresh prediction and live market inputs" title="Fetch a fresh prediction and check market feeds"><span class="refresh-icon" aria-hidden="true">↻</span><span>Refresh Prediction</span></button></div>
+  </div>
   <div class="prediction-grid">
     <div class="prediction-hero">
       <div class="eyebrow">PB Predictive Fusion</div>
@@ -864,7 +891,7 @@ body.chart-fullscreen-open>.app>.bottom{
         <div class="prediction-stat"><small>Suggested action</small><b id="p10Action" class="neutral">NO TRADE</b></div>
         <div class="prediction-stat"><small>Model confidence • directional</small><b id="p10Confidence">—</b></div>
         <div class="prediction-stat"><small>Confirmation</small><b id="p10Confirmation">—</b></div>
-        <div class="prediction-stat"><small>Backtest target-hit</small><b id="p10HitRate">—</b></div>
+        <div class="prediction-stat"><small>Option-premium backtest</small><b id="p10HitRate">NOT VERIFIED</b></div>
       </div>
       <div class="prediction-meter"><i id="p10Meter"></i></div>
       <div class="finder-note" id="p10TradeFinder">🎯 <b>TWO-TRADE FINDER ACTIVE</b> • Confirmed opportunities today: <b id="p10OpportunityCount">0 / 2</b> • Scanner keeps searching during the NSE session and never manufactures a weak second trade.</div>
@@ -887,12 +914,12 @@ body.chart-fullscreen-open>.app>.bottom{
     </div>
   </div>
   <div class="backtest">
-    <div class="bt"><small>Backtest signals</small><b id="p10Signals">—</b></div>
-    <div class="bt"><small>Resolved</small><b id="p10Resolved">—</b></div>
-    <div class="bt"><small>Wins / Losses</small><b id="p10WinsLosses">—</b></div>
-    <div class="bt"><small>Expected R*</small><b id="p10ExpectedR">—</b></div>
+    <div class="bt"><small>Option test signals</small><b id="p10Signals">N/A</b></div>
+    <div class="bt"><small>Verified outcomes</small><b id="p10Resolved">N/A</b></div>
+    <div class="bt"><small>Option wins / losses</small><b id="p10WinsLosses">N/A</b></div>
+    <div class="bt"><small>Option expected R</small><b id="p10ExpectedR">N/A</b></div>
   </div>
-  <div class="finder-note"><b>*Backtest note:</b> 1.0R stop vs 2.0R target, up to 20 five-minute bars forward, using a rolling 5M EMA20/EMA50 + RSI price-only trigger. It does not model futures-volume filters, news/events, option premiums/Greeks, brokerage, taxes or slippage. This underlying-index historical statistic is not a promise that a future trade will be profitable.</div>
+  <div class="finder-note" id="p10BacktestNote"><b>OPTION BACKTEST NOT VERIFIED:</b> The earlier test uses NIFTY index candles only; it is not a CE/PE win-rate or option-return test. Historical contract-specific option premiums must be mapped to each signal's expiry, strike and option type, then spread, fees and slippage included. Until this dataset is verified, option metrics stay N/A and cannot increase model confidence.</div>
   <div class="exec" style="margin-top:8px"><button class="btn primary" onclick="loadPrediction(true)">⚡ Run Advanced Prediction</button><button class="btn" onclick="scrollToPhase10Backtest()">▣ View Confirmation</button></div>
 </section>
 
@@ -970,8 +997,7 @@ body.chart-fullscreen-open>.app>.bottom{
           <button onclick="setDrawMode('trend')">╱ Trendline</button>
           <button onclick="setDrawMode('hline')">— Horizontal</button>
           <button onclick="setDrawMode('vline')">│ Vertical</button>
-          <button onclick="clearDrawings()">Clear drawings</button>
-        </div>
+          <button onclick="clearDrawings()">Clear drawings</button>        </div>
         <span class="a1-status" id="chartStatus">15M • CANDLES • REGULAR • AUTO</span>
       </div>
 
@@ -1223,12 +1249,12 @@ body.chart-fullscreen-open>.app>.bottom{
 <footer class="footer"><span>PARTHAVI TRADE DESK PRO • PB SIGNATURE</span><span>LIVE DATA + BROKER BACKEND REQUIRED • PHASE 10 ACTIVE • TWO-TRADE FINDER • NO GUARANTEED PROFIT</span></footer>
 </div>
 
-<nav class="bottom" id="bottomNav">
-  <a href="#home" class="active" data-target="home">⌂<br>Home</a>
-  <a href="#chart" data-target="chart">◫<br>Chart</a>
-  <a href="#signals" data-target="signals">◎<br>Signals</a>
-  <a href="#news" data-target="news">◌<br>News</a>
-  <a href="#trade" data-target="trade">↗<br>Trade</a>
+<nav class="bottom" id="bottomNav" aria-label="Main navigation">
+  <button type="button" class="bottom-button active" data-target="home" aria-label="Go to Home" aria-current="page"><span class="bottom-icon" aria-hidden="true">⌂</span><span class="bottom-label">Home</span></button>
+  <button type="button" class="bottom-button" data-target="chart" aria-label="Go to Chart"><span class="bottom-icon" aria-hidden="true">▥</span><span class="bottom-label">Chart</span></button>
+  <button type="button" class="bottom-button" data-target="signals" aria-label="Go to Signals"><span class="bottom-icon" aria-hidden="true">◎</span><span class="bottom-label">Signals</span></button>
+  <button type="button" class="bottom-button" data-target="news" aria-label="Go to News"><span class="bottom-icon" aria-hidden="true">◉</span><span class="bottom-label">News</span></button>
+  <button type="button" class="bottom-button" data-target="trade" aria-label="Go to Trade"><span class="bottom-icon" aria-hidden="true">↗</span><span class="bottom-label">Trade</span></button>
 </nav>
 
 
@@ -1944,11 +1970,18 @@ function stccRender(x){
     setP10Tone(state,'BULLISH');
     reason.textContent='Confirmed setup. Review the exact entry, SL and targets below. Nothing is auto-placed; lock the plan when you decide to take it.';
   }else{
-    decision.textContent='WAIT FOR CONFIRMED SETUP';
+    const marketClosed=p?.marketOpen===false;
+    const signalState=String(p?.signalState||'').toUpperCase();
+    const blockers=Array.isArray(p?.noTradeReasons)?p.noTradeReasons.filter(Boolean):[];
+    decision.textContent=marketClosed?'NO TRADE • MARKET CLOSED':signalState==='NO TRADE'?'NO TRADE • GATES BLOCKED':signalState==='WATCH'?'WATCH • WAIT FOR CONFIRMATION':'WAIT FOR CONFIRMED SETUP';
     setP10Tone(decision,'NEUTRAL');
-    state.textContent='SCANNING';
+    state.textContent=marketClosed?'MARKET CLOSED':signalState==='NO TRADE'?'GATES BLOCKED':signalState==='WATCH'?'WATCH ONLY':'SCANNING';
     setP10Tone(state,'NEUTRAL');
-    reason.textContent='No live confirmed option plan right now. The scanner keeps searching and will not manufacture a trade.';
+    reason.textContent=marketClosed
+      ? 'NSE is closed; live entries stay disabled until the next market session.'
+      : blockers.length
+        ? 'No confirmed trade: '+blockers.slice(0,3).join(' • ')+(blockers.length>3?' • +'+(blockers.length-3)+' more checks pending':'')
+        : (p?.reasoning||'No live confirmed option plan right now. The scanner keeps searching and will not manufacture a trade.');
   }
   $('stccContract').textContent=plan?.contract||'—';
   $('stccContractMeta').textContent=plan?((plan.optionType||'OPTION')+' • Strike '+(plan.strike??'—')+' • Lot '+(plan.lotSize??'—')):'Live contract only';
@@ -1963,8 +1996,7 @@ function stccRender(x){
   $('stccLockMessage').textContent=live?'This exact plan is frozen. A new prediction cannot overwrite Entry / SL / T1 / T2.':(plan?'A confirmed plan is available. Lock it before taking the trade so the next predictions cannot move your levels.':'Prediction is still live-scanning.');
   $('stccLiveStatus').textContent=live?(x.status||'HOLD'):'NOT ACTIVE';
   setP10Tone($('stccLiveStatus'),x?.emergency?'BEARISH':live?'BULLISH':'NEUTRAL');
-  $('stccLockBtn').disabled=!!live;
-  $('stccTakenBtn').disabled=!!live;
+  $('stccLockBtn').disabled=!!live;  $('stccTakenBtn').disabled=!!live;
   $('stccExitBtn').disabled=!live;
   $('stccExitReason').textContent=x?.exitReason
     ? ('🚨 '+x.exitReason+' • Press EXIT NOW to close this command-center lock. No automatic broker order is sent.')
@@ -2018,7 +2050,13 @@ function recordP10Opportunity(p){
 }
 function renderPredictionPanel(resp){
   const p=resp?.prediction||resp||{};
-  const bt=resp?.backtest||p?.historical||{};
+  // Keep the Command Center connected to each fresh prediction result. Without this
+  // handoff, stccCurrentPlan() reads an empty global and can never surface a signal.
+  window.__lastPrediction={...p,marketOpen:resp?.health?.marketOpen??p?.marketOpen??null};
+  stccEvaluate(window.__lastPrediction);
+  stccRender(stccLoad());
+  const bt=resp?.optionBacktest||p?.optionBacktest||resp?.backtest||p?.historical||{};
+  const optionBacktestVerified=bt?.kind==='OPTION_PREMIUM'&&bt?.available===true&&bt?.verified===true&&bt?.feesIncluded===true&&bt?.slippageIncluded===true;
   const pred=String(p?.prediction||'NO TRADE').toUpperCase();
   const action=String(p?.action||'NO TRADE').toUpperCase();
   const state=String(p?.signalState||'LOCKED').toUpperCase();
@@ -2035,11 +2073,11 @@ function renderPredictionPanel(resp){
   const reason=$('p10Reason'); if(reason)reason.textContent=p?.reasoning||p?.reason||'Waiting for verified live inputs and confirmation.';
   const pc=$('p10Confidence'); if(pc)pc.textContent=Number.isFinite(Number(conf))?Number(conf).toFixed(0)+'%':'—';
   const pm=$('p10Confirmation'); if(pm)pm.textContent=Number.isFinite(Number(pct))?Number(pct).toFixed(0)+'% ('+(confirmed??'—')+'/'+total+')':'—';
-  const hr=$('p10HitRate'); if(hr)hr.textContent=Number.isFinite(Number(bt?.targetHitRate))?Number(bt.targetHitRate).toFixed(1)+'%':'—';
+  const hr=$('p10HitRate'); if(hr)hr.textContent=optionBacktestVerified&&Number.isFinite(Number(bt?.targetHitRate))?Number(bt.targetHitRate).toFixed(1)+'%':'NOT VERIFIED';
   const meter=$('p10Meter'); if(meter)meter.style.width=Math.max(0,Math.min(100,Number(pct)||0))+'%';
   const st=$('p10State'); if(st){st.textContent=state;st.className='badge '+(state==='CONFIRMED'?'ok':state==='WATCH'?'warn':'danger');}
   const tm=$('p10Time'); if(tm)tm.textContent='Updated • '+p10Clock(resp?.checkedAt||Date.now());
-  const note=$('p10Note'); if(note)note.textContent=p?.note||'Confidence is a rule-based confluence estimate. Historical target-hit rate is not a guarantee of future profit.';
+  const note=$('p10Note'); if(note)note.textContent=(p?.note||'Confidence is a rule-based confluence estimate.')+' Option-premium backtest is NOT VERIFIED and adds no confidence bonus.';
 
   const checks=p?.confirmations||{};
   const labels=[
@@ -2056,10 +2094,10 @@ function renderPredictionPanel(resp){
       return '<div class="confirm-item"><span>'+escapeHtml(label)+'</span><b class="'+(ok?'yes':'no')+'">'+val+'</b></div>';
     }).join('');
   }
-  const sig=$('p10Signals'); if(sig)sig.textContent=bt?.signals??'—';
-  const resolved=$('p10Resolved'); if(resolved)resolved.textContent=bt?.resolved??'—';
-  const wl=$('p10WinsLosses'); if(wl)wl.textContent=(bt?.wins??'—')+' / '+(bt?.losses??'—');
-  const er=$('p10ExpectedR'); if(er)er.textContent=bt?.expectedR!=null?String(bt.expectedR)+'R':'—';
+  const sig=$('p10Signals'); if(sig)sig.textContent=optionBacktestVerified?(bt?.signals??'—'):'N/A';
+  const resolved=$('p10Resolved'); if(resolved)resolved.textContent=optionBacktestVerified?(bt?.resolved??'—'):'N/A';
+  const wl=$('p10WinsLosses'); if(wl)wl.textContent=optionBacktestVerified?((bt?.wins??'—')+' / '+(bt?.losses??'—')):'N/A';
+  const er=$('p10ExpectedR'); if(er)er.textContent=optionBacktestVerified&&bt?.expectedR!=null?String(bt.expectedR)+'R':'N/A';
   const finder=$('p10TradeFinder');
   if(finder){
     const contractLine=optionPlan?.available
@@ -2132,11 +2170,15 @@ function renderPredictionPanel(resp){
 }
 
 let ptdLoadPredictionPromise=null;
-async function loadPrediction(showToast=false){
-  if(ptdLoadPredictionPromise) return ptdLoadPredictionPromise;
+async function loadPrediction(showToast=false,forceFresh=false){
+  if(ptdLoadPredictionPromise){
+    if(!forceFresh)return ptdLoadPredictionPromise;
+    try{await ptdLoadPredictionPromise;}catch(_){}
+  }
   ptdLoadPredictionPromise=(async()=>{
   try{
-    const r=await getJSON('/api/phase10/prediction?symbol='+encodeURIComponent(symbol));
+    const refreshQuery=forceFresh?'&refresh='+Date.now():'';
+    const r=await getJSON('/api/phase10/prediction?symbol='+encodeURIComponent(symbol)+refreshQuery);
     renderPredictionPanel(r);
     announcePrediction(r?.prediction||{});
     if(r?.prediction?.signalState!=='CONFIRMED'){window.phase11SignalToken='';window.phase11Snapshot=null;$('p11SignalStatus').textContent='No live signal token loaded.';}
@@ -2547,7 +2589,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 });
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&ptdAutoRefreshEnabled)manualLiveRefresh()});
 setInterval(()=>{if(!document.hidden)loadPhase11Shield()},30000);
-setInterval(()=>{if(!document.hidden)loadBrokerAccount()},60000);
+setInterval(()=>{if(!document.hidden)loadBrokerAccount()},300000);
 setInterval(()=>{if(!document.hidden)loadExecutionStatus()},30000);
 setInterval(()=>{if(!document.hidden)loadPhase12Readiness()},30000);
 setInterval(()=>{if(!document.hidden)phase6Monitor()},15000);
@@ -2597,6 +2639,85 @@ document.addEventListener('DOMContentLoaded',()=>{
     if($(id))jump(id);
   });
 });
+</script>
+<script id="MOBILE_NAV_REFRESH_RELIABILITY_V2">
+/* Independent UI recovery layer: mobile navigation and prediction refresh do not depend on the dashboard's main initializer. */
+(function(){
+  'use strict';
+  const nav=document.getElementById('bottomNav');
+  const buttons=nav?[...nav.querySelectorAll('[data-target]')]:[];
+  const reduceMotion=()=>window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const setActive=id=>{
+    buttons.forEach(b=>{
+      const active=b.dataset.target===id;
+      b.classList.toggle('active',active);
+      if(active)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');
+    });
+  };
+  const go=id=>{
+    const target=document.getElementById(id);
+    if(!target)return false;
+    setActive(id);
+    try{target.style.scrollMarginTop='90px';target.style.scrollMarginBottom='calc(100px + env(safe-area-inset-bottom))';}catch(_){}
+    const top=Math.max(0,target.getBoundingClientRect().top+window.scrollY-78);
+    try{window.scrollTo({top,behavior:reduceMotion()?'auto':'smooth'});}catch(_){target.scrollIntoView();}
+    try{history.replaceState(null,'','#'+id);}catch(_){}
+    return true;
+  };
+  if(nav){
+    nav.addEventListener('click',function(event){
+      const button=event.target&&event.target.closest?event.target.closest('button[data-target]'):null;
+      if(!button||!nav.contains(button))return;
+      const id=String(button.dataset.target||'');
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      event.stopPropagation();
+      if(!go(id)) {
+        const toast=document.getElementById('toast');
+        if(toast){toast.textContent='Section unavailable: '+id;toast.classList.add('show');}
+      }
+    },true);
+    const initial=(location.hash||'#home').slice(1);
+    setActive(document.getElementById(initial)?initial:'home');
+    if('IntersectionObserver' in window){
+      try{
+        const observer=new IntersectionObserver(entries=>{
+          const visible=entries.filter(e=>e.isIntersecting).sort((a,b)=>b.intersectionRatio-a.intersectionRatio)[0];
+          if(visible&&visible.target&&visible.target.id)setActive(visible.target.id);
+        },{rootMargin:'-10% 0px -58% 0px',threshold:[0.05,0.2,0.45]});
+        buttons.forEach(b=>{const target=document.getElementById(b.dataset.target);if(target)observer.observe(target);});
+      }catch(_){}
+    }
+  }
+
+  window.refreshPredictionNow=async function(){
+    const button=document.getElementById('p10RefreshBtn');
+    if(button&&button.disabled)return;
+    const label=button?button.querySelector('span:last-child'):null;
+    const previous=label?label.textContent:'Refresh Prediction';
+    if(button){button.disabled=true;button.classList.add('is-refreshing');button.setAttribute('aria-busy','true');if(label)label.textContent='Refreshing…';}
+    try{
+      if(typeof window.loadPrediction==='function'){
+        await window.loadPrediction(true,true);
+      }else{
+        const symbol=(document.getElementById('chartSymbol')&&document.getElementById('chartSymbol').value)||'NIFTY';
+        const base=(typeof window.API_BASE==='string'&&window.API_BASE)||location.origin;
+        const response=await fetch(base+'/api/phase10/prediction?symbol='+encodeURIComponent(symbol)+'&refresh='+Date.now(),{cache:'no-store',headers:{'Cache-Control':'no-cache'}});
+        const result=await response.json();
+        if(!response.ok)throw new Error(result.message||result.error||'Prediction refresh failed');
+        if(typeof window.renderPredictionPanel==='function')window.renderPredictionPanel(result);
+        else throw new Error('Dashboard renderer is unavailable. Reload the app and try again.');
+      }
+    }catch(error){
+      const status=document.getElementById('p10Reason');
+      if(status)status.textContent='Refresh failed: '+(error&&error.message||'Prediction endpoint is unavailable')+'. Previous values should be treated as stale until a successful refresh.';
+      const toast=document.getElementById('toast');
+      if(toast){toast.textContent='Prediction refresh failed';toast.classList.add('show');}
+    }finally{
+      if(button){button.disabled=false;button.classList.remove('is-refreshing');button.removeAttribute('aria-busy');if(label)label.textContent=previous;}
+    }
+  };
+})();
 </script>
 </body>
 </html>

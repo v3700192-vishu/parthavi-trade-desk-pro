@@ -1,5 +1,6 @@
 import SmartApiPackage from "smartapi-javascript";
 import address from "address";
+import { isFreshExchangeTick } from "./marketFreshness.js";
 
 const { SmartAPI, WebSocketV2 } = SmartApiPackage;
 
@@ -23,14 +24,20 @@ let wsConnectBusy = false;
 let wsConnectPromise=null;
 let reconnectDelayMs=5000;
 let latestTicks = new Map();
-const MAX_LATEST_TICKS = 250;
 let lastTickAt = null;
 let wsGeneration = 0;
 let lastRefreshAt = 0;
 let refreshPromise=null;
 const AUTH_REFRESH_GRACE_MS = 5 * 60 * 1000;
 
+function pruneStaleTicks(now = Date.now()) {
+  for (const [token, tick] of latestTicks) {
+    if (!isFreshExchangeTick(tick?.data, now)) latestTicks.delete(token);
+  }
+}
+
 export function angelStatus(){
+  pruneStaleTicks();
   return {
     connected:session.connected,
     clientCode:session.clientCode,
@@ -191,7 +198,7 @@ export async function optionGreeks({name, expirydate}){
     'X-ClientPublicIP':(process.env.ANGEL_CLIENT_PUBLIC_IP || process.env.ANGELONE_PUBLIC_IP || '127.0.0.1'),
     'X-MACAddress':(process.env.ANGEL_MAC_ADDRESS || process.env.ANGELONE_MAC_ADDRESS || '00:00:00:00:00:00')
   };
-  const r=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({name,expirydate:normalizeExpiry(expirydate)})});
+  const r=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({name,expirydate:normalizeExpiry(expirydate)}),signal:AbortSignal.timeout(8000)});
   const out=await r.json().catch(()=>({status:false,message:'Invalid JSON'}));
   if(!r.ok || out?.status===false) throw new Error(out?.message||`Option Greeks HTTP ${r.status}`);
   return out?.data||[];
@@ -307,7 +314,7 @@ export async function findInstrumentByToken(token, hint={}){
   }catch{return null;}
 }
 
-export function getLatestTicks(){ return [...latestTicks.values()].sort((a,b)=>b.at-a.at).slice(0,200); }
+export function getLatestTicks(){ pruneStaleTicks(); return [...latestTicks.values()].sort((a,b)=>b.at-a.at).slice(0,200); }
 
 export async function subscribeMasterTokens(items){
   const groups=new Map([[1,[]],[2,[]],[3,[]],[4,[]],[5,[]]]);
@@ -705,15 +712,23 @@ async function connectMarketWebSocket(){
         socket.on('tick', data=>{
           if(generation!==wsGeneration || ws!==socket) return;
           try{
-            // Only use stable instrument identifiers as cache keys. JSON.stringify(data)
-            // changes as prices/timestamps change and could create an unbounded Map.
-            const rawToken=data?.token ?? data?.tokenId ?? data?.symbolToken ?? data?.symboltoken ??
-              data?.instrumentToken ?? data?.tradingSymbol ?? data?.tradingsymbol ?? data?.symbol;
-            if(rawToken!=null && String(rawToken).trim()){
-              const token=String(rawToken).trim();
-              latestTicks.delete(token);
-              latestTicks.set(token,{data,at:Date.now()});
-              while(latestTicks.size>MAX_LATEST_TICKS) latestTicks.delete(latestTicks.keys().next().value);
+            // SmartAPI may surface the WebSocket heartbeat as a "tick" event.
+            // Heartbeats prove the socket is alive, but are not market-price ticks.
+            if(data === 'pong' || data?.data === 'pong' || data?.type === 'pong' || data?.event === 'pong'){
+              wsConnected=true;
+              wsError=null;
+              return;
+            }
+            const payload=(data?.data && typeof data.data==='object')?data.data:data;
+            const rawToken=payload?.token ?? payload?.symbolToken ?? payload?.symboltoken;
+            const rawPrice=payload?.last_traded_price ?? payload?.ltp ?? payload?.lastTradedPrice;
+            if(rawToken==null || rawPrice==null || !Number.isFinite(Number(rawPrice))) return;
+            const token=String(rawToken).replace(/^"|"$/g,'');
+            if(!isFreshExchangeTick(payload)) return;
+            latestTicks.set(token,{data:payload,at:Date.now()});
+            if(latestTicks.size>200){
+              const oldest=[...latestTicks.entries()].sort((x,y)=>x[1].at-y[1].at).slice(0,latestTicks.size-200);
+              for(const [key] of oldest) latestTicks.delete(key);
             }
             lastTickAt=Date.now();
             wsConnected=true;

@@ -19,10 +19,10 @@ const NEG = [
   [/bearish|negative|slump|drop|fall|weak|outflows|risk-off/i, 0.55]
 ];
 
-function n(v, d=null){ const x=Number(v); return Number.isFinite(x)?x:d; }
+function n(v, d=null){ if(v==null || (typeof v==='string' && v.trim()==='')) return d; const x=Number(v); return Number.isFinite(x)?x:d; }
 function clamp(x,a,b){ return Math.max(a,Math.min(b,x)); }
 function pctToFreshness(ageMin, halfLife){ if(!Number.isFinite(ageMin)) return 0; return clamp(Math.exp(-Math.max(0,ageMin)/halfLife),0,1); }
-function ageMinutes(ts){ if(!ts) return Infinity; const t=new Date(ts).getTime(); return Number.isFinite(t)?Math.max(0,(Date.now()-t)/60000):Infinity; }
+function ageMinutes(ts){ if(!ts) return Infinity; const t=new Date(ts).getTime(); if(!Number.isFinite(t)||t>Date.now()+15000) return Infinity; return Math.max(0,(Date.now()-t)/60000); }
 function sourceWeight(source=''){ for(const [re,w] of SOURCE_WEIGHTS) if(re.test(source)) return w; return 0.7; }
 function lexicalScore(title=''){
   let s=0; for(const [re,w] of POS) if(re.test(title)) s+=w; for(const [re,w] of NEG) if(re.test(title)) s-=w; return clamp(s,-2,2);
@@ -54,7 +54,7 @@ function normalizeNews(raw, symbol='NIFTY'){
 }
 function analyzeNews(items){
   const all=items||[];
-  const xs=all.filter(x=>(x.status==='LIVE'||x.status==='DELAYED') && Number.isFinite(Number(x.ageMin)) && Number(x.ageMin)<=180);
+  const xs=all.filter(x=>(x.status==='LIVE'||x.status==='DELAYED') && x.ageMin!==null && x.ageMin!==undefined && x.ageMin!=='' && Number.isFinite(Number(x.ageMin)) && Number(x.ageMin)>=0 && Number(x.ageMin)<=180);
   if(!xs.length) return {connected:false,score:0,bias:'WAIT',confidence:0,highImpact:false,hardBlock:false,reason:'No fresh verified news headlines available.',freshCount:0,totalCount:all.length};
   const top=xs.slice(0,12);
   const pos=top.filter(x=>x.score>10).reduce((a,x)=>a+x.score,0);
@@ -95,11 +95,11 @@ function normalizeGlobal(raw){
     const change=(rawChange===null||rawChange===undefined||rawChange==='')?null:n(rawChange);
     const asOf=obj.asOf??obj.timestamp??obj.time??null;
     const rawAgeSec=obj.ageSec;
-    const ageMin=(rawAgeSec===null||rawAgeSec===undefined||rawAgeSec==='')?ageMinutes(asOf)
-      : (Number.isFinite(Number(rawAgeSec))?Math.max(0,Number(rawAgeSec))/60:ageMinutes(asOf));
+    const suppliedAgeSec=(rawAgeSec===null||rawAgeSec===undefined||rawAgeSec==='')?null:n(rawAgeSec);
+    const ageMin=suppliedAgeSec===null?ageMinutes(asOf):(suppliedAgeSec < -15?Infinity:Math.max(0,suppliedAgeSec)/60);
     const status=String(obj.status||'').toUpperCase() || (ageMin===Infinity?'UNVERIFIED':ageMin<=10?'LIVE':ageMin<=240?'DELAYED':'UNVERIFIED');
     const usableValue=value!==null && value!==undefined && value!=='WAIT' && value!=='';
-    const usableChange=Number.isFinite(Number(change));
+    const usableChange=change!==null && change!==undefined && change!=='' && Number.isFinite(Number(change));
     out[k]={
       value:usableValue?value:'WAIT',
       change:usableChange?Number(change):null,
@@ -118,7 +118,7 @@ function analyzeGlobal(global){
   const freshKeys=[];
   for(const [k,r] of Object.entries(global||{})){
     const c=n(r.change); const rule=GLOBAL_RULES[k];
-    const age=Number(r.ageMin);
+    const age=r.ageMin===null||r.ageMin===undefined||r.ageMin===''?NaN:Number(r.ageMin);
     const status=String(r.status||'UNVERIFIED').toUpperCase();
     const fresh=(status==='LIVE'||status==='DELAYED') && Number.isFinite(age) && age<=240;
     if(!fresh||c==null||!rule||r.value==='WAIT') continue;
