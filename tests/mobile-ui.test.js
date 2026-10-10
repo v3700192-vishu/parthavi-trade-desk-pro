@@ -47,3 +47,13 @@ test("service-worker cache version is bumped and never caches live API responses
   assert.match(serviceWorker, /if\(u\.pathname\.startsWith\('\/api\/'\)\) return/);
   assert.doesNotMatch(serviceWorker, /const CACHE='ptd-shell-v3'/);
 });
+
+test("Data Health badges show OFF for missing inputs instead of hard-coded ON", () => {
+  const block = html.match(/function renderGates\(h\)\s*\{[\s\S]*?\n\}/)?.[0] || "";
+  assert.ok(block, "renderGates is present");
+  assert.match(block, /gateText\s*=\s*\(ok\)\s*=>\s*ok\s*\?\s*'ON'\s*:\s*'OFF'/);
+  for (const id of ["gMarket", "gOptions", "gNews", "gGlobal", "dhPrice", "dhOpt", "dhNews", "dhGlobal"]) {
+    assert.match(block, new RegExp(`setGate\\('${id}',!!h\\.`));
+  }
+  assert.doesNotMatch(block, /setGate\('[^']+',!!h\.[a-zA-Z]+,'ON'\)/);
+});
