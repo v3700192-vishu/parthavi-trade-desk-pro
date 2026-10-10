@@ -247,8 +247,7 @@ body{-webkit-overflow-scrolling:touch}
 /* Live UX: sticky prediction, top notification, and mobile-safe scrolling. */
 .sticky-prediction{
   position:sticky;top:86px;z-index:34;display:grid;grid-template-columns:auto 1fr auto;align-items:center;
-  gap:9px;margin:8px 0;padding:8px 10px;border:1px solid #33445f;border-radius:14px;
-  background:rgba(7,13,24,.94);backdrop-filter:blur(16px);box-shadow:0 12px 32px rgba(0,0,0,.32)
+  gap:9px;margin:8px 0;padding:8px 10px;border:1px solid #33445f;border-radius:14px;  background:rgba(7,13,24,.94);backdrop-filter:blur(16px);box-shadow:0 12px 32px rgba(0,0,0,.32)
 }
 .sticky-prediction .sp-label{display:block;color:var(--muted);font-size:7px;font-weight:900;letter-spacing:.7px;text-transform:uppercase}
 .sticky-prediction .sp-value{display:block;font-size:17px;font-weight:950;line-height:1.1;margin-top:2px}
@@ -497,8 +496,7 @@ body.chart-fullscreen-open .selector{display:none!important}
   height:100dvh!important;min-height:0!important;max-height:none!important;
   margin:0!important;border:0!important;border-radius:0!important;
   display:flex!important;flex-direction:column!important;overflow:hidden!important;
-}
-.chart-app-fullscreen .angel-chart .a1-head,
+}.chart-app-fullscreen .angel-chart .a1-head,
 .chart-app-fullscreen .angel-chart .a1-toolbar,
 .chart-app-fullscreen .angel-chart .a1-menu-row,
 .chart-app-fullscreen .angel-chart .a1-timeframes,
@@ -747,8 +745,7 @@ body.chart-fullscreen-open>.app>.bottom{
     <div class="strategy-box"><small>Market</small><b id="p12Market" class="neutral">WAIT</b><span>Exchange session</span></div>
     <div class="strategy-box"><small>Execution</small><b id="p12Exec" class="neutral">LOCKED</b><span>Server + kill switch</span></div>
   </div>
-  <div id="p12Checks" class="finder-note">Readiness is checked server-side. No credentials are displayed here.</div>
-  <div class="exec"><button class="btn" onclick="loadPhase12Readiness()">✓ Check Go-Live Readiness</button></div>
+  <div id="p12Checks" class="finder-note">Readiness is checked server-side. No credentials are displayed here.</div>  <div class="exec"><button class="btn" onclick="loadPhase12Readiness()">✓ Check Go-Live Readiness</button></div>
 </section>
 
 <section class="card">
@@ -1246,8 +1243,7 @@ body.chart-fullscreen-open>.app>.bottom{
   <div class="note" id="journalSummary">Journal: 0 trades • Wins 0 • Losses 0 • Net P&L ₹0</div>
 </div>
 
-<footer class="footer"><span>PARTHAVI TRADE DESK PRO • PB SIGNATURE</span><span>LIVE DATA + BROKER BACKEND REQUIRED • PHASE 10 ACTIVE • TWO-TRADE FINDER • NO GUARANTEED PROFIT</span></footer>
-</div>
+<footer class="footer"><span>PARTHAVI TRADE DESK PRO • PB SIGNATURE</span><span>LIVE DATA + BROKER BACKEND REQUIRED • PHASE 10 ACTIVE • TWO-TRADE FINDER • NO GUARANTEED PROFIT</span></footer></div>
 
 <nav class="bottom" id="bottomNav" aria-label="Main navigation">
   <button type="button" class="bottom-button active" data-target="home" aria-label="Go to Home" aria-current="page"><span class="bottom-icon" aria-hidden="true">⌂</span><span class="bottom-label">Home</span></button>
@@ -1496,8 +1492,7 @@ function renderDecision(d){
    d.volumeRatio10d!=null?`Vol ${Number(d.volumeRatio10d).toFixed(2)}x 10D`:'',
    d.oi?.resistance!=null?`R OI ${d.oi.resistance}`:'',
    d.oi?.support!=null?`S OI ${d.oi.support}`:''
- ].filter(Boolean).join(' • ');
- $('decisionReason').textContent=(d.reason||'Waiting for verified data.')+(diag?' | '+diag:'');
+ ].filter(Boolean).join(' • '); $('decisionReason').textContent=(d.reason||'Waiting for verified data.')+(diag?' | '+diag:'');
  const c=action==='CALL'?'bullish':action==='PUT'?'bearish':'neutral'; $('decision').className=c; $('action').className=c;
  const map={m1h:'trend1h',m15:'setup15m',m5:'trigger5m',ema:'ema',rsi:'rsi',macd:'macd',adx:'adx',vwap:'vwap',pa:'priceAction',volume:'volume',atr:'atr'};
  for(const [id,k] of Object.entries(map)) paintSignal(id,d[k]??'WAIT');
@@ -1510,8 +1505,9 @@ function renderDecision(d){
  $('rrOut').textContent=d.rr||'—'; $('execState').textContent=action==='CALL'||action==='PUT'?'READY':'LOCKED'; $('execState').className=action==='CALL'?'bullish':action==='PUT'?'bearish':'neutral';
 }
 function renderGates(h){
- setGate('gMarket',!!h.market,'ON'); setGate('gOptions',!!h.options,'ON'); setGate('gNews',!!h.news,'ON'); setGate('gGlobal',!!h.global,'ON');
- setGate('dhPrice',!!h.market,'ON'); setGate('dhOpt',!!h.options,'ON'); setGate('dhNews',!!h.news,'ON'); setGate('dhGlobal',!!h.global,'ON');
+ const gateText=(ok)=>ok?'ON':'OFF';
+ setGate('gMarket',!!h.market,gateText(!!h.market)); setGate('gOptions',!!h.options,gateText(!!h.options)); setGate('gNews',!!h.news,gateText(!!h.news)); setGate('gGlobal',!!h.global,gateText(!!h.global));
+ setGate('dhPrice',!!h.market,gateText(!!h.market)); setGate('dhOpt',!!h.options,gateText(!!h.options)); setGate('dhNews',!!h.news,gateText(!!h.news)); setGate('dhGlobal',!!h.global,gateText(!!h.global));
  $('feed').textContent=(h.market&&h.options&&h.news&&h.global)?'LIVE':'PARTIAL/OFFLINE';
 }
 function renderTicker(m){
@@ -1745,8 +1741,7 @@ async function phase6Monitor(){
     const r=await getJSON('/api/phase6/status');
     $('phase6State').textContent=r.monitoring||'LOCKED'; $('p6Monitor').textContent=r.monitoring||'LOCKED'; $('p6Time').textContent=indiaNow();
     if($('alertOrder').checked){ for(const ev of (r.events||[])){ const status=String(ev.to||'').toLowerCase(); const tone=['complete','executed'].includes(status)?'bullish':['rejected','cancelled'].includes(status)?'bearish':'neutral'; addAlert(`Order ${ev.to||'updated'}`,`${ev.symbol||''} • Order ${ev.orderId||''} • ${ev.text||''}`,tone,`ord-${ev.orderId}-${ev.to}`); } }
-  }catch(e){$('phase6State').textContent='ERROR';$('p6Monitor').textContent='ERROR'}
-}
+  }catch(e){$('phase6State').textContent='ERROR';$('p6Monitor').textContent='ERROR'}}
 
 function updateStickyPrediction(p){
   try{
@@ -1995,8 +1990,8 @@ function stccRender(x){
   $('stccLockTitle').textContent=live?'🔒 '+(x.mode==='TAKEN'?'ACTIVE TRADE':'LOCKED PLAN'):'No active trade';
   $('stccLockMessage').textContent=live?'This exact plan is frozen. A new prediction cannot overwrite Entry / SL / T1 / T2.':(plan?'A confirmed plan is available. Lock it before taking the trade so the next predictions cannot move your levels.':'Prediction is still live-scanning.');
   $('stccLiveStatus').textContent=live?(x.status||'HOLD'):'NOT ACTIVE';
-  setP10Tone($('stccLiveStatus'),x?.emergency?'BEARISH':live?'BULLISH':'NEUTRAL');
-  $('stccLockBtn').disabled=!!live;  $('stccTakenBtn').disabled=!!live;
+  setP10Tone($('stccLiveStatus'),x?.emergency?'BEARISH':live?'BULLISH':'NEUTRAL');  $('stccLockBtn').disabled=!!live;
+  $('stccTakenBtn').disabled=!!live;
   $('stccExitBtn').disabled=!live;
   $('stccExitReason').textContent=x?.exitReason
     ? ('🚨 '+x.exitReason+' • Press EXIT NOW to close this command-center lock. No automatic broker order is sent.')
@@ -2244,8 +2239,7 @@ async function loadAll(){
 
    renderStatus(s);
    renderTicker(m.data||{});
-   renderNews(n.items||[],n.strategy||{});
-   renderGlobal(g.data||{},g.strategy||{});
+   renderNews(n.items||[],n.strategy||{});   renderGlobal(g.data||{},g.strategy||{});
    renderOptions(o.data||{});
    renderEvents(e.items||[]);
    renderEventStrategy(e.strategy||{});
@@ -2494,7 +2488,6 @@ function saveTradeJournal(entry){
     renderTradeJournal();
   }catch{}
 }
-
 async function executeLiveOrder(){
  if(!pendingOrderPreview){toast('Preview missing or expired');return}
  const confirmation=$('orderConfirm').value.trim(); if(confirmation.toUpperCase()!=='PLACE LIVE ORDER'){toast('Type PLACE LIVE ORDER exactly');return}
