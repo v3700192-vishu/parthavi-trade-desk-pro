@@ -56,16 +56,16 @@ jobs:
       - name: Publish APK release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: android-v1.5.1-build-${{ github.run_number }}
-          name: PARTHAVI TRADE DESK PRO Android v1.5.1 (${{ github.run_number }})
+          tag_name: android-v1.5.2-build-${{ github.run_number }}
+          name: PARTHAVI TRADE DESK PRO Android v1.5.2 (${{ github.run_number }})
           generate_release_notes: true
           files: android-app/app/build/outputs/apk/debug/app-debug.apk
 
       - name: Publish in-app update manifest
         env:
-          APP_VERSION_CODE: "7"
-          APP_VERSION_NAME: "1.5.1"
-          RELEASE_TAG: android-v1.5.1-build-${{ github.run_number }}
+          APP_VERSION_CODE: "8"
+          APP_VERSION_NAME: "1.5.2"
+          RELEASE_TAG: android-v1.5.2-build-${{ github.run_number }}
         shell: bash
         run: |
           cat > public/app-update.json <<EOF
@@ -74,7 +74,7 @@ jobs:
             "versionName": "${APP_VERSION_NAME}",
             "apkUrl": "https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/app-debug.apk",
             "releaseUrl": "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_TAG}",
-            "notes": "Perfect full-width phone layout, one-column vertical scrolling, full-width Angel-style chart, no page horizontal drag, and native alerts/haptics."
+            "notes": "Native Android app opens the private server PC over Tailscale HTTPS. Tailscale must be connected and the server PC online. Existing chart layout, prediction engine and NO TRADE safety gates are unchanged."
           }
           EOF
           git config user.name "github-actions[bot]"
