@@ -561,7 +561,7 @@ body.chart-fullscreen-open>.app>.bottom{
   #phase10Prediction .card-head>div:first-child h3{font-size:17px;line-height:1.3}
   .p10-head-actions{width:100%;justify-content:space-between}
   #p10RefreshBtn{min-width:136px;min-height:48px;font-size:13px}
-  #bottomNav.bottom{display:grid!important;position:fixed!important;left:0;right:0;bottom:0;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px;padding:8px 8px calc(9px + env(safe-area-inset-bottom))!important;min-height:82px;background:rgba(4,7,15,.97);border-top:1px solid #2a3b58;z-index:9999;backdrop-filter:blur(18px);box-shadow:0 -9px 30px rgba(0,0,0,.32)}
+  #bottomNav.bottom{display:grid!important;position:fixed!important;left:0;right:0;bottom:0;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px;padding:8px 8px calc(9px + env(safe-area-inset-bottom))!important;min-height:82px;background:rgba(4,7,15,.97);border-top:1px solid #2a3b58;z-index:60;backdrop-filter:blur(18px);box-shadow:0 -9px 30px rgba(0,0,0,.32)}
   #bottomNav .bottom-button{display:flex;flex-direction:column;justify-content:center;align-items:center;gap:4px;min-width:0;min-height:64px;width:100%;padding:7px 3px;border:1px solid transparent;border-radius:13px;background:transparent;color:#9daac0;text-decoration:none;font:inherit;touch-action:manipulation;-webkit-tap-highlight-color:transparent;cursor:pointer}
   #bottomNav .bottom-icon{display:block;font-size:22px;line-height:1.05;font-weight:800}
   #bottomNav .bottom-label{display:block;font-size:12px;line-height:1.15;font-weight:750;letter-spacing:.1px}
@@ -1216,9 +1216,12 @@ body.chart-fullscreen-open>.app>.bottom{
   </div>
 
   <div class="card">
-    <div class="card-head"><h3>Data Health</h3><span>Staleness blocks the decision engine</span></div>
-    <div class="check"><span>Price / candles</span><span class="badge danger" id="dhPrice">OFF</span></div>
-    <div class="check"><span>Options chain</span><span class="badge danger" id="dhOpt">OFF</span></div>
+    <div class="card-head"><h3>Data Health</h3><span>Verified readiness • missing critical feeds block entries</span></div>
+    <div class="check"><span>Live price / candles</span><span class="badge danger" id="dhPrice">OFF</span></div>
+    <div class="check"><span>Exchange-timestamped tick</span><span class="badge danger" id="dhTick">OFF</span></div>
+    <div class="check"><span>Futures volume (10D)</span><span class="badge danger" id="dhVolume">OFF</span></div>
+    <div class="check"><span>Options chain / OI</span><span class="badge danger" id="dhOpt">OFF</span></div>
+    <div class="check"><span>Live option Greeks</span><span class="badge danger" id="dhGreeks">OFF</span></div>
     <div class="check"><span>News / macro</span><span class="badge danger" id="dhNews">OFF</span></div>
     <div class="check"><span>Global markets</span><span class="badge danger" id="dhGlobal">OFF</span></div>
     <div class="check"><span>Clock / session</span><span class="badge ok">OK</span></div>
@@ -1240,10 +1243,10 @@ body.chart-fullscreen-open>.app>.bottom{
   <div class="tablewrap"><table class="j" id="journalTable">
     <tr><th>Time</th><th>Symbol</th><th>Side</th><th>Decision</th><th>Entry</th><th>SL</th><th>T1</th><th>T2</th><th>Status</th></tr>
     <tbody id="journalBody"><tr><td colspan="9">No trades recorded yet.</td></tr></tbody>  </table></div>
-  <div class="note" id="journalSummary">Journal: 0 trades • Wins 0 • Losses 0 • Net P&L ₹0</div>
-</div>
+  <div class="note" id="journalSummary">Journal: 0 trades • Wins 0 • Losses 0 • Net P&L ₹0</div></div>
 
-<footer class="footer"><span>PARTHAVI TRADE DESK PRO • PB SIGNATURE</span><span>LIVE DATA + BROKER BACKEND REQUIRED • PHASE 10 ACTIVE • TWO-TRADE FINDER • NO GUARANTEED PROFIT</span></footer></div>
+<footer class="footer"><span>PARTHAVI TRADE DESK PRO • PB SIGNATURE</span><span>LIVE DATA + BROKER BACKEND REQUIRED • PHASE 10 ACTIVE • TWO-TRADE FINDER • NO GUARANTEED PROFIT</span></footer>
+</div>
 
 <nav class="bottom" id="bottomNav" aria-label="Main navigation">
   <button type="button" class="bottom-button active" data-target="home" aria-label="Go to Home" aria-current="page"><span class="bottom-icon" aria-hidden="true">⌂</span><span class="bottom-label">Home</span></button>
@@ -1489,10 +1492,10 @@ function renderDecision(d){
  const diag=[
    d.vix!=null?`VIX ${Number(d.vix).toFixed(2)}`:'',
    d.adx!=null?`ADX ${Number(d.adx).toFixed(1)}`:'',
-   d.volumeRatio10d!=null?`Vol ${Number(d.volumeRatio10d).toFixed(2)}x 10D`:'',
-   d.oi?.resistance!=null?`R OI ${d.oi.resistance}`:'',
+   d.volumeRatio10d!=null?`Vol ${Number(d.volumeRatio10d).toFixed(2)}x 10D`:'',   d.oi?.resistance!=null?`R OI ${d.oi.resistance}`:'',
    d.oi?.support!=null?`S OI ${d.oi.support}`:''
- ].filter(Boolean).join(' • '); $('decisionReason').textContent=(d.reason||'Waiting for verified data.')+(diag?' | '+diag:'');
+ ].filter(Boolean).join(' • ');
+ $('decisionReason').textContent=(d.reason||'Waiting for verified data.')+(diag?' | '+diag:'');
  const c=action==='CALL'?'bullish':action==='PUT'?'bearish':'neutral'; $('decision').className=c; $('action').className=c;
  const map={m1h:'trend1h',m15:'setup15m',m5:'trigger5m',ema:'ema',rsi:'rsi',macd:'macd',adx:'adx',vwap:'vwap',pa:'priceAction',volume:'volume',atr:'atr'};
  for(const [id,k] of Object.entries(map)) paintSignal(id,d[k]??'WAIT');
@@ -1506,9 +1509,24 @@ function renderDecision(d){
 }
 function renderGates(h){
  const gateText=(ok)=>ok?'ON':'OFF';
- setGate('gMarket',!!h.market,gateText(!!h.market)); setGate('gOptions',!!h.options,gateText(!!h.options)); setGate('gNews',!!h.news,gateText(!!h.news)); setGate('gGlobal',!!h.global,gateText(!!h.global));
- setGate('dhPrice',!!h.market,gateText(!!h.market)); setGate('dhOpt',!!h.options,gateText(!!h.options)); setGate('dhNews',!!h.news,gateText(!!h.news)); setGate('dhGlobal',!!h.global,gateText(!!h.global));
- $('feed').textContent=(h.market&&h.options&&h.news&&h.global)?'LIVE':'PARTIAL/OFFLINE';
+ const tickVerified=!!h.exchangeTick;
+ const priceVerified=!!h.market&&tickVerified;
+ const volumeVerified=!!h.volume;
+ const greeksVerified=!!h.greeks;
+ const optionsVerified=!!h.options&&greeksVerified;
+ const marketGate=priceVerified&&volumeVerified;
+ setGate('gMarket',marketGate,gateText(marketGate));
+ setGate('gOptions',optionsVerified,gateText(optionsVerified));
+ setGate('gNews',!!h.news,gateText(!!h.news));
+ setGate('gGlobal',!!h.global,gateText(!!h.global));
+ setGate('dhPrice',priceVerified,gateText(priceVerified));
+ setGate('dhTick',tickVerified,gateText(tickVerified));
+ setGate('dhVolume',volumeVerified,gateText(volumeVerified));
+ setGate('dhOpt',!!h.options,gateText(!!h.options));
+ setGate('dhGreeks',greeksVerified,gateText(greeksVerified));
+ setGate('dhNews',!!h.news,gateText(!!h.news));
+ setGate('dhGlobal',!!h.global,gateText(!!h.global));
+ $('feed').textContent=(marketGate&&optionsVerified&&h.news&&h.global)?'LIVE':'PARTIAL/OFFLINE';
 }
 function renderTicker(m){
  const arr=[['nifty','NIFTY'],['bank','BANKNIFTY'],['fin','FINNIFTY'],['mid','MIDCPNIFTY'],['vix','VIX']];
@@ -1723,8 +1741,7 @@ function processAlerts(a){
     }
     if(Number.isFinite(alertState.lastVwap)&&Number.isFinite(vwap)){
       if(crossedUp(alertState.lastPrice,last,vwap)) addAlert('VWAP Bullish Cross',`${symbol} moved above VWAP ${vwap.toFixed(2)}. Await 5M close + volume confirmation.`,'bullish',`vwu-${Math.floor(Date.now()/60000)}`);
-      if(crossedDown(alertState.lastPrice,last,vwap)) addAlert('VWAP Bearish Cross',`${symbol} moved below VWAP ${vwap.toFixed(2)}. Await 5M close + volume confirmation.`,'bearish',`vwd-${Math.floor(Date.now()/60000)}`);
-    }
+      if(crossedDown(alertState.lastPrice,last,vwap)) addAlert('VWAP Bearish Cross',`${symbol} moved below VWAP ${vwap.toFixed(2)}. Await 5M close + volume confirmation.`,'bearish',`vwd-${Math.floor(Date.now()/60000)}`);    }
   }
   if($('alertRisk').checked){
     if(rsi>=70&&alertState.lastRsi<70) addAlert('RSI Overbought',`${symbol} RSI crossed 70. Momentum is stretched; wait for confirmation.`,'neutral',`rsi70-${Math.floor(Date.now()/60000)}`);
@@ -1741,7 +1758,8 @@ async function phase6Monitor(){
     const r=await getJSON('/api/phase6/status');
     $('phase6State').textContent=r.monitoring||'LOCKED'; $('p6Monitor').textContent=r.monitoring||'LOCKED'; $('p6Time').textContent=indiaNow();
     if($('alertOrder').checked){ for(const ev of (r.events||[])){ const status=String(ev.to||'').toLowerCase(); const tone=['complete','executed'].includes(status)?'bullish':['rejected','cancelled'].includes(status)?'bearish':'neutral'; addAlert(`Order ${ev.to||'updated'}`,`${ev.symbol||''} • Order ${ev.orderId||''} • ${ev.text||''}`,tone,`ord-${ev.orderId}-${ev.to}`); } }
-  }catch(e){$('phase6State').textContent='ERROR';$('p6Monitor').textContent='ERROR'}}
+  }catch(e){$('phase6State').textContent='ERROR';$('p6Monitor').textContent='ERROR'}
+}
 
 function updateStickyPrediction(p){
   try{
@@ -1972,8 +1990,7 @@ function stccRender(x){
     setP10Tone(decision,'NEUTRAL');
     state.textContent=marketClosed?'MARKET CLOSED':signalState==='NO TRADE'?'GATES BLOCKED':signalState==='WATCH'?'WATCH ONLY':'SCANNING';
     setP10Tone(state,'NEUTRAL');
-    reason.textContent=marketClosed
-      ? 'NSE is closed; live entries stay disabled until the next market session.'
+    reason.textContent=marketClosed      ? 'NSE is closed; live entries stay disabled until the next market session.'
       : blockers.length
         ? 'No confirmed trade: '+blockers.slice(0,3).join(' • ')+(blockers.length>3?' • +'+(blockers.length-3)+' more checks pending':'')
         : (p?.reasoning||'No live confirmed option plan right now. The scanner keeps searching and will not manufacture a trade.');
@@ -1990,7 +2007,8 @@ function stccRender(x){
   $('stccLockTitle').textContent=live?'🔒 '+(x.mode==='TAKEN'?'ACTIVE TRADE':'LOCKED PLAN'):'No active trade';
   $('stccLockMessage').textContent=live?'This exact plan is frozen. A new prediction cannot overwrite Entry / SL / T1 / T2.':(plan?'A confirmed plan is available. Lock it before taking the trade so the next predictions cannot move your levels.':'Prediction is still live-scanning.');
   $('stccLiveStatus').textContent=live?(x.status||'HOLD'):'NOT ACTIVE';
-  setP10Tone($('stccLiveStatus'),x?.emergency?'BEARISH':live?'BULLISH':'NEUTRAL');  $('stccLockBtn').disabled=!!live;
+  setP10Tone($('stccLiveStatus'),x?.emergency?'BEARISH':live?'BULLISH':'NEUTRAL');
+  $('stccLockBtn').disabled=!!live;
   $('stccTakenBtn').disabled=!!live;
   $('stccExitBtn').disabled=!live;
   $('stccExitReason').textContent=x?.exitReason
@@ -2221,8 +2239,7 @@ async function loadAll(){
  try{
    const reqs=await Promise.allSettled([
     getJSON('/api/status?symbol='+encodeURIComponent(symbol)),
-    getJSON('/api/market?symbol='+encodeURIComponent(symbol)),
-    getJSON('/api/news?symbol='+encodeURIComponent(symbol)),
+    getJSON('/api/market?symbol='+encodeURIComponent(symbol)),    getJSON('/api/news?symbol='+encodeURIComponent(symbol)),
     getJSON('/api/global'),
     getJSON('/api/options?symbol='+encodeURIComponent(symbol)),
     getJSON('/api/events'),
@@ -2239,7 +2256,8 @@ async function loadAll(){
 
    renderStatus(s);
    renderTicker(m.data||{});
-   renderNews(n.items||[],n.strategy||{});   renderGlobal(g.data||{},g.strategy||{});
+   renderNews(n.items||[],n.strategy||{});
+   renderGlobal(g.data||{},g.strategy||{});
    renderOptions(o.data||{});
    renderEvents(e.items||[]);
    renderEventStrategy(e.strategy||{});
@@ -2470,8 +2488,7 @@ async function requestOrder(side){
 }
 function closeOrderModal(){ $('orderModal').classList.remove('show'); pendingOrderPreview=null; }
 function loadTradeJournal(){
-  try{return JSON.parse(localStorage.getItem('PTD_TRADE_JOURNAL')||'[]')}catch{return[]}
-}
+  try{return JSON.parse(localStorage.getItem('PTD_TRADE_JOURNAL')||'[]')}catch{return[]}}
 function renderTradeJournal(){
   const rows=loadTradeJournal(), body=$('journalBody'); if(!body)return;
   if(!rows.length){body.innerHTML='<tr><td colspan="9">No trades recorded yet.</td></tr>';$('journalSummary').textContent='Journal: 0 trades • Wins 0 • Losses 0 • Net P&L ₹0';return}
@@ -2488,6 +2505,7 @@ function saveTradeJournal(entry){
     renderTradeJournal();
   }catch{}
 }
+
 async function executeLiveOrder(){
  if(!pendingOrderPreview){toast('Preview missing or expired');return}
  const confirmation=$('orderConfirm').value.trim(); if(confirmation.toUpperCase()!=='PLACE LIVE ORDER'){toast('Type PLACE LIVE ORDER exactly');return}
@@ -2693,9 +2711,9 @@ document.addEventListener('DOMContentLoaded',()=>{
       if(typeof window.loadPrediction==='function'){
         await window.loadPrediction(true,true);
       }else{
-        const symbol=(document.getElementById('chartSymbol')&&document.getElementById('chartSymbol').value)||'NIFTY';
-        const base=(typeof window.API_BASE==='string'&&window.API_BASE)||location.origin;
-        const response=await fetch(base+'/api/phase10/prediction?symbol='+encodeURIComponent(symbol)+'&refresh='+Date.now(),{cache:'no-store',headers:{'Cache-Control':'no-cache'}});
+        const activeSymbol=(typeof symbol==='string'&&symbol)||document.querySelector('.chip.active')?.dataset?.symbol||'NIFTY';
+        const base=(typeof API_BASE==='string'&&API_BASE)||location.origin;
+        const response=await fetch(base+'/api/phase10/prediction?symbol='+encodeURIComponent(activeSymbol)+'&refresh='+Date.now(),{cache:'no-store',headers:{'Cache-Control':'no-cache'}});
         const result=await response.json();
         if(!response.ok)throw new Error(result.message||result.error||'Prediction refresh failed');
         if(typeof window.renderPredictionPanel==='function')window.renderPredictionPanel(result);
