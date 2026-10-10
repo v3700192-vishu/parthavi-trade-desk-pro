@@ -7,6 +7,7 @@ import { angelStatus, loginAngel, logoutAngel, ltp as angelLtp, quote as angelQu
 import { normalizeNews, analyzeNews, normalizeGlobal, analyzeGlobal, analyzeEvents, fuse } from "./fusion.js";
 import { buildPrediction, backtestFiveMinute } from "./prediction.js";
 import { productionReadiness } from "./phase12.js";
+import { isFreshExchangeTick, exchangeTickAgeMs } from "./marketFreshness.js";
 import { status as phase11ProtectionStatus, evaluate as phase11Evaluate, onOrderSubmitted as phase11OnOrderSubmitted, recordOutcome as phase11RecordOutcome, resetProtection as phase11ResetProtection } from "./riskGuard.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -97,29 +98,6 @@ const execution = {
   recentOrderIds: new Set()
 };
 
-// Cache historical backtest results until the completed candle set changes.
-// The backtest is allocation-heavy; the dashboard refreshes more often than new 5M candles form.
-const backtestResultCache = new Map();
-function cachedBacktestFiveMinute(symbol, rows) {
-  const key = String(symbol || 'NIFTY').toUpperCase();
-  const candles = Array.isArray(rows) ? rows : [];
-  const first = candles[0], last = candles.at(-1);
-  const fingerprint = [
-    candles.length, first?.t, last?.t,
-    last?.o, last?.h, last?.l, last?.c, last?.v
-  ].join('|');
-  const cached = backtestResultCache.get(key);
-  if (cached?.fingerprint === fingerprint) return cached.result;
-
-  const result = backtestFiveMinute(candles);
-  backtestResultCache.delete(key);
-  backtestResultCache.set(key, { fingerprint, result });
-  while (backtestResultCache.size > 8) {
-    backtestResultCache.delete(backtestResultCache.keys().next().value);
-  }
-  return result;
-}
-
 const PHASE11_SECRET = String(process.env.PHASE11_SECRET || 'CHANGE_ME_PHASE11_SECRET');
 function signedPayload(payload){
   const body=Buffer.from(JSON.stringify(payload)).toString('base64url');
@@ -174,9 +152,18 @@ function boolEnv(name, fallback=false){
 }
 function numEnv(name, fallback){ const x=Number(process.env[name]); return Number.isFinite(x)?x:fallback; }
 function executionStatus(exchange='NSE'){
+  const session=angelStatus();
+  const marketOpen=exchangeSessionOpen(exchange);
+  const ticks=getLatestTicks();
+  const freshTick=ticks.find(x=>isFreshExchangeTick(x?.data));
+  const tickAgeMs=freshTick?exchangeTickAgeMs(freshTick.data):null;
+  const marketDataVerified=Boolean(marketOpen && freshTick);
   return {
-    connected:angelStatus().connected,
-    marketOpen:exchangeSessionOpen(exchange),
+    connected:session.connected,
+    websocket:session.websocket,
+    marketOpen,
+    marketDataVerified,
+    exchangeTickAgeSec:tickAgeMs==null?null:Number((Math.max(0,tickAgeMs)/1000).toFixed(1)),
     exchange:String(exchange||'NSE').toUpperCase(),
     executionEnabled:boolEnv('ORDER_EXECUTION_ENABLED',false),
     staticIpVerified:boolEnv('STATIC_IP_VERIFIED',false),
@@ -184,7 +171,7 @@ function executionStatus(exchange='NSE'){
     maxRiskRupees:numEnv('MAX_RISK_RUPEES',null),
     maxOrderQty:numEnv('MAX_ORDER_QTY',0),
     maxEntrySlippagePct:numEnv('MAX_ENTRY_SLIPPAGE_PCT',0.75),
-    ready:angelStatus().connected && exchangeSessionOpen(exchange) && boolEnv('ORDER_EXECUTION_ENABLED',false) && boolEnv('STATIC_IP_VERIFIED',false) && !boolEnv('TRADING_KILL_SWITCH',true)
+    ready:session.connected && marketOpen && marketDataVerified && boolEnv('ORDER_EXECUTION_ENABLED',false) && boolEnv('STATIC_IP_VERIFIED',false) && !boolEnv('TRADING_KILL_SWITCH',true)
   };
 }
 function cleanTradingSymbol(s){ return String(s||'').trim().toUpperCase(); }
@@ -275,7 +262,22 @@ async function market(symbol){
   const tokens={NIFTY:['NSE','Nifty 50','99926000'],BANKNIFTY:['NSE','Nifty Bank','99926009'],FINNIFTY:['NSE','Nifty Fin Service','99926037'],MIDCPNIFTY:['NSE','NIFTY MID SELECT','99926074'],VIX:['NSE','India VIX','99926017']};
   const out={};
   for(const [key,info] of Object.entries(tokens)){
-    try{ const r=await angelLtp({exchange:info[0],tradingsymbol:info[1],symboltoken:info[2]}); const d=r?.data||r; out[key]={ltp:d?.ltp??null,change:d?.percentChange??d?.percentageChange??(Number.isFinite(Number(d?.ltp))&&Number.isFinite(Number(d?.close))&&Number(d?.close)!==0?((Number(d.ltp)-Number(d.close))/Number(d.close))*100:null),open:d?.open??null,high:d?.high??null,low:d?.low??null,close:d?.close??null}; }catch{ out[key]={ltp:null,change:null}; }
+    try{
+      const r=await angelLtp({exchange:info[0],tradingsymbol:info[1],symboltoken:info[2]});
+      const d=r?.data||r;
+      const ltpRaw=d?.ltp, closeRaw=d?.close;
+      const ltp=ltpRaw==null||ltpRaw===''?NaN:Number(ltpRaw);
+      const close=closeRaw==null||closeRaw===''?NaN:Number(closeRaw);
+      const providerChange=d?.percentChange??d?.percentageChange;
+      const providerChangeNum=providerChange==null||providerChange===''?NaN:Number(providerChange);
+      const computedChange=Number.isFinite(ltp)&&ltp>0&&Number.isFinite(close)&&close>0?((ltp-close)/close)*100:null;
+      out[key]={
+        ltp:Number.isFinite(ltp)&&ltp>0?ltp:null,
+        change:Number.isFinite(providerChangeNum)?providerChangeNum:computedChange,
+        open:d?.open??null,high:d?.high??null,low:d?.low??null,
+        close:Number.isFinite(close)&&close>0?close:null
+      };
+    }catch{ out[key]={ltp:null,change:null}; }
   }
   out[symbol]=out[symbol]||{ltp:null,change:null};
   out.GLOBAL_RISK={label:"WAIT"};
@@ -363,7 +365,7 @@ function greekRiskWarning(g){
 function positionSizeFromRisk({riskBudget=1000,entry,sl,lotSize,availableBudget=null}){
   const budget=Math.max(0,Number(riskBudget)||0), e=Number(entry), s=Number(sl), lot=Math.max(1,Math.floor(Number(lotSize)||1));
   const perUnit=Math.abs(e-s), perLot=perUnit*lot;
-  const cap=Number.isFinite(Number(availableBudget))?Math.min(budget,Math.max(0,Number(availableBudget))):budget;
+  const cap=availableBudget!==null&&availableBudget!==undefined&&availableBudget!==''&&Number.isFinite(Number(availableBudget))?Math.min(budget,Math.max(0,Number(availableBudget))):budget;
   const lots=perLot>0?Math.floor(cap/perLot):0;
   return {riskBudget:cap,entry:e,stopLoss:s,lossPerUnit:Number.isFinite(perUnit)?perUnit:null,lotSize:lot,lossPerLot:Number.isFinite(perLot)?perLot:null,recommendedLots:lots,recommendedQuantity:lots*lot,usedRisk:Number((lots*perLot).toFixed(2)),unusedRisk:Number(Math.max(0,cap-lots*perLot).toFixed(2))};
 }
@@ -376,8 +378,10 @@ async function findBuyableOptionPlan(symbol, direction, underlyingEntry, underly
     if(!angelStatus().connected) return {available:false,reason:'Angel One is not connected.'};
     const od=await options(symbol);
     const expiry=String(od?.expiry||'').toUpperCase();
-    const atm=Number(od?.atm);
-    if(!expiry||!Number.isFinite(atm)) return {available:false,reason:'Live option chain/expiry is not verified.'};
+    const atmRaw=od?.atm;
+    const atm=atmRaw==null||atmRaw===''?NaN:Number(atmRaw);
+    if(od?.connected!==true||!expiry||!Number.isFinite(atm)||atm<=0)
+      return {available:false,reason:'Live option chain, positive ATM and expiry are not verified.'};
 
     let contracts=await findLightContracts({underlying:symbol,expiry,optionType});
     contracts=contracts.map(x=>({...x,_strike:Number(x.strike)/100}))
@@ -393,23 +397,27 @@ async function findBuyableOptionPlan(symbol, direction, underlyingEntry, underly
 
     const candidates=contracts.map(x=>{
       const q=qmap.get(String(x.token))||{};
-      const entry=Number(q.ltp);
+      const entryRaw=q.ltp, entry=entryRaw==null||entryRaw===''?NaN:Number(entryRaw);
       const key=String(optionType)+'|'+Number(x._strike).toFixed(2);
       const g=gmap.get(key)||null;
-      const delta=Math.abs(Number(g?.delta)), theta=Math.abs(Number(g?.theta));
-      const oi=Number(q.opnInterest??q.openInterest??q.oi);
-      const volume=Number(q.tradeVolume??q.volume);
+      const delta=g?.delta==null||g.delta===''?NaN:Math.abs(Number(g.delta));
+      const theta=g?.theta==null||g.theta===''?NaN:Math.abs(Number(g.theta));
+      const oiRaw=q.opnInterest??q.openInterest??q.oi;
+      const volumeRaw=q.tradeVolume??q.volume;
+      const oi=oiRaw==null||oiRaw===''?NaN:Number(oiRaw);
+      const volume=volumeRaw==null||volumeRaw===''?NaN:Number(volumeRaw);
       const greekPass=Number.isFinite(delta)&&Number.isFinite(theta)&&theta<6&&delta>=0.35;
       const premiumPass=Number.isFinite(entry)&&entry>=25&&entry<=50;
+      const liquidityPass=Number.isFinite(oi)&&oi>0&&Number.isFinite(volume)&&volume>0;
       const liquidityScore=(Number.isFinite(oi)?Math.log10(Math.max(1,oi)):0)+(Number.isFinite(volume)&&volume>0?Math.log10(Math.max(1,volume)):0);
       const deltaScore=Number.isFinite(delta)?Math.abs(delta-0.50):9;
       const premiumScore=Number.isFinite(entry)?Math.abs(entry-35):99;
-      const score=(greekPass?0:100)+(premiumPass?0:100)+deltaScore*20+premiumScore+Math.max(0,5-liquidityScore);
-      return {x,q,g,entry,delta,theta,oi,volume,score,greekPass,premiumPass};
-    }).filter(v=>v.greekPass&&v.premiumPass&&Number.isFinite(v.entry)).sort((a,b)=>a.score-b.score);
+      const score=(greekPass?0:100)+(premiumPass?0:100)+(liquidityPass?0:100)+deltaScore*20+premiumScore+Math.max(0,5-liquidityScore);
+      return {x,q,g,entry,delta,theta,oi,volume,score,greekPass,premiumPass,liquidityPass};
+    }).filter(v=>v.greekPass&&v.premiumPass&&v.liquidityPass&&Number.isFinite(v.entry)).sort((a,b)=>a.score-b.score);
 
     const best=candidates[0];
-    if(!best) return {available:false,reason:'No live option in ₹25–₹50 passed Delta/Theta and liquidity checks.',expiry,atm,optionType};
+    if(!best) return {available:false,reason:'No live option in ₹25–₹50 passed verified quote, OI, traded-volume and Delta/Theta checks.',expiry,atm,optionType};
 
     const stopPoints=Math.abs(Number(underlyingEntry)-Number(underlyingSl));
     const targetPoints1=Math.abs(Number(target1)-Number(underlyingEntry));
@@ -865,16 +873,21 @@ app.get("/api/angel/stream-test", async (req,res)=>{
       await new Promise(r=>setTimeout(r,250));
     }
     const final=angelStatus();
-    const tickVerified=!!final.lastTickAt && Number(final.lastTickAt)>beforeTick && (Date.now()-Number(final.lastTickAt))<=15000;
-    const websocketConnected=!!final.websocket;
-    const streamVerified=websocketConnected;
     const ticks=getLatestTicks();
+    const freshTick=ticks.find(x=>isFreshExchangeTick(x?.data));
+    const tickAgeMs=freshTick?exchangeTickAgeMs(freshTick.data):null;
+    const tickVerified=Boolean(freshTick);
+    const websocketConnected=!!final.websocket;
     const marketOpen=marketSession();
+    const streamVerified=websocketConnected && (!marketOpen || tickVerified);
     res.json({
       ok:streamVerified,
       connected:true,
       streamVerified,
+      socketVerified:websocketConnected,
+      marketDataVerified:marketOpen && tickVerified,
       tickVerified,
+      exchangeTickAgeSec:tickAgeMs==null?null:Number((Math.max(0,tickAgeMs)/1000).toFixed(1)),
       websocket:websocketConnected,
       marketOpen,
       tickCount:final.tickCount||0,
@@ -884,11 +897,9 @@ app.get("/api/angel/stream-test", async (req,res)=>{
       checkedAt:nowISO(),
       elapsedMs:Date.now()-started,
       note:websocketConnected
-        ? (tickVerified
-          ? "WebSocket connected and a fresh tick was received."
-          : (marketOpen
-            ? "WebSocket connected; waiting for the next market tick."
-            : "WebSocket connected; NSE market is closed, so a new tick is not expected."))
+        ? (marketOpen
+          ? (tickVerified ? "WebSocket connected and an exchange-timestamped fresh tick was received." : "Socket is connected, but no fresh exchange-timestamped tick exists; live entries stay locked.")
+          : "WebSocket connected; market is closed, so live market-data freshness is not verified.")
         : (final.websocketError||reconnectError||"WebSocket is not connected")
     });
   }catch(e){
@@ -971,7 +982,7 @@ app.get('/api/phase11/signal-token',async(req,res)=>{
       const adjustedVwap=Number(futuresVol.vwap)-basis;
       if(Number.isFinite(adjustedVwap)){m5.summary.vwap=Number(adjustedVwap.toFixed(2));m5.summary.vwapVerified=true;m5.summary.vwapSource=futuresVol.vwapSource;}
     }else{m5.summary.vwap=null;m5.summary.vwapVerified=false;m5.summary.vwapSource=null;}
-    const historical=cachedBacktestFiveMinute(symbol,m5.rows||[]);
+    const historical=backtestFiveMinute(m5.rows||[]);
     const vixRaw=md?.VIX?.ltp;
     const vix=vixRaw==null||vixRaw===''?NaN:Number(vixRaw);
     const prediction=buildPrediction({h1:h1.summary,m15:m15.summary,m5:m5.summary,rows5:m5.rows,news:ns,global:gs,events:es,options:opt,marketOpen:true,backtest:historical,vix:Number.isFinite(vix)?vix:null,oi:opt});
@@ -986,8 +997,7 @@ app.get('/api/phase11/signal-token',async(req,res)=>{
       reason:futuresVol?.reason??null,fetchErrors:futuresVol?.fetchErrors??[]
     };
     if(prediction.signalState!=='CONFIRMED') return res.status(409).json({ok:false,error:'SIGNAL_NOT_CONFIRMED',prediction});
-    const optionPlan=await findBuyableOptionPlan(symbol,prediction.action,prediction.finalPlan?.entry,prediction.finalPlan?.sl,prediction.finalPlan?.target1,prediction.finalPlan?.target2);
-    prediction.optionPlan=optionPlan;
+    const optionPlan=await findBuyableOptionPlan(symbol,prediction.action,prediction.finalPlan?.entry,prediction.finalPlan?.sl,prediction.finalPlan?.target1,prediction.finalPlan?.target2);    prediction.optionPlan=optionPlan;
     if(!optionPlan.available) return res.status(409).json({ok:false,error:'BUYABLE_OPTION_NOT_FOUND',prediction});
     const payload={version:2,symbol,prediction:prediction.prediction,action:prediction.action,modelConfidence:prediction.modelConfidence,confirmationPct:prediction.confirmationPct,vix:prediction.vix,adx:prediction.adx,volumeRatio10d:prediction.volumeRatio10d,volumeMode:prediction.tradeFinder?.volumeMode||'BREAKOUT',eventDayBlock:prediction.eventBlocked||prediction.noTradeReasons?.some(x=>String(x).includes('event')),theta:optionPlan.theta,delta:optionPlan.delta,optionPlan,rrGate:'1:2+',createdAt:Date.now(),expiresAt:Date.now()+60000};
     res.json({ok:true,phase:11,token:signedPayload(payload),snapshot:payload,prediction});
@@ -1076,6 +1086,7 @@ app.post('/api/order/preview',async(req,res)=>{
     const exchangeHint=String(req.body?.exchange||'NSE').toUpperCase();
     const gate=executionStatus(exchangeHint);
     if(!gate.marketOpen) return res.status(409).json({ok:false,error:'EXCHANGE_CLOSED',exchange:exchangeHint});
+    if(!gate.marketDataVerified) return res.status(423).json({ok:false,error:'FRESH_MARKET_TICK_REQUIRED',message:'No exchange-timestamped tick within 120 seconds; new orders remain locked.'});
     if(!gate.connected) return res.status(401).json({ok:false,error:'ANGEL_NOT_CONNECTED'});
     if(gate.killSwitch) return res.status(423).json({ok:false,error:'TRADING_KILL_SWITCH_ON'});
     if(!gate.executionEnabled) return res.status(423).json({ok:false,error:'ORDER_EXECUTION_DISABLED'});
@@ -1111,6 +1122,7 @@ app.post('/api/order/execute',async(req,res)=>{
     const previewPeek=execution.previews.get(String(req.body?.previewId||''));
     const gate=executionStatus(previewPeek?.order?.exchange||'NSE');
     if(!gate.marketOpen) return res.status(409).json({ok:false,error:'EXCHANGE_CLOSED',exchange:gate.exchange});
+    if(!gate.marketDataVerified) return res.status(423).json({ok:false,error:'FRESH_MARKET_TICK_REQUIRED',message:'No exchange-timestamped tick within 120 seconds; new orders remain locked.'});
     if(!gate.connected) return res.status(401).json({ok:false,error:'ANGEL_NOT_CONNECTED'});
     if(gate.killSwitch) return res.status(423).json({ok:false,error:'TRADING_KILL_SWITCH_ON'});
     if(!gate.executionEnabled) return res.status(423).json({ok:false,error:'ORDER_EXECUTION_DISABLED'});
@@ -1206,7 +1218,7 @@ app.get("/api/keepalive",async(req,res)=>{
 app.get("/api/phase12/readiness",(req,res)=>{
   const exchange=String(req.query.exchange||"NSE").toUpperCase()==="BSE"?"BSE":"NSE";
   const gate=executionStatus(exchange);
-  const result=productionReadiness({angelConnected:angelStatus().connected,marketOpen:gate.marketOpen,exchange});
+  const result=productionReadiness({angelConnected:angelStatus().connected,marketOpen:gate.marketOpen,exchange,marketDataFresh:gate.marketDataVerified});
   res.status(result.liveReady?200:423).json({ok:true,...result});
 });
 
@@ -1626,15 +1638,61 @@ app.get('/api/chart/candles',async(req,res)=>{
 app.get('/api/phase10/prediction',async(req,res)=>{
   const symbol=String(req.query.symbol||'NIFTY').toUpperCase();
   try{
-    if(!angelStatus().connected) return res.json({ok:true,phase:10,locked:true,prediction:buildPrediction({marketOpen:false}),message:'Connect Angel One before running live prediction.'});
+    // Off-session fast path: do not make broker/provider requests when NSE is closed.
+    // Historical candles may be shown for context, but every live-trade gate stays closed.
+    if(!marketSession()){
+      const cachedRows=candleCache.get(symbol)?.rows||[];
+      const rows5=dropIncompleteCandle(cachedRows,5);
+      const rows15=dropIncompleteCandle(aggregateCandles(rows5,15),15);
+      const rows60=dropIncompleteCandle(aggregateCandles(rows5,60),60);
+      const h1Rows=rows60.slice(-225),m15Rows=rows15.slice(-500),m5Rows=rows5.slice(-500);
+      const historical=backtestFiveMinute(m5Rows);
+      const prediction=buildPrediction({
+        h1:summarize(h1Rows),m15:summarize(m15Rows),m5:summarize(m5Rows),rows5:m5Rows,
+        marketOpen:false,vix:null,news:{connected:false,freshCount:0},
+        global:{connected:false,freshInputs:0},events:{connected:false,eventSafe:false},
+        options:{connected:false},oi:{connected:false},backtest:historical
+      });
+      const last=m5Rows.at(-1)||null;
+      prediction.vwapVerified=false;
+      prediction.vwapSource=null;
+      prediction.volumeBenchmark={ratio10d:null,source:null,benchmarkDays:0,candles:m5Rows.length,
+        lastCandleTime:last?.t||null,lastVolume:last?.v??null,
+        reason:'NSE is closed; live futures-volume data was not requested.'};
+      prediction.optionPlan={available:false,reason:'NSE is closed; live option selection is disabled until the next session.'};
+      return res.json({ok:true,phase:10,symbol,prediction,
+        health:{market:m5Rows.length>0,marketOpen:false,options:false,news:false,global:false,eventBlocked:false,eventDayBlock:false,vix:null},
+        greeks:null,greekRisk:{status:'WAIT',message:'Market is closed; live Greeks are not verified.'},
+        backtest:historical,optionBacktest:prediction.optionBacktest,checkedAt:nowISO(),mode:'OFF_SESSION_FAST_PATH'});
+    }
+    if(!angelStatus().connected){ const prediction=buildPrediction({marketOpen:false}); return res.json({ok:true,phase:10,locked:true,prediction,optionBacktest:prediction.optionBacktest,message:'Connect Angel One before running live prediction.'}); }
+
     // Start all independent live-feed work together so futures volume and the
     // option chain do not add their network latency after the candle/news scan.
+    const boundedFeed=(promise,fallback,label,ms=2800)=>{
+      let timer;
+      const timeout=new Promise(resolve=>{timer=setTimeout(()=>{
+        console.warn('[PREDICTION_TIMEOUT]',label,ms+'ms');
+        resolve(fallback);
+      },ms);});
+      return Promise.race([
+        Promise.resolve(promise).catch(e=>{
+          console.warn('[PREDICTION_FEED]',label,e?.message||e);
+          return fallback;
+        }),
+        timeout
+      ]).finally(()=>clearTimeout(timer));
+    };
     const settled=await Promise.allSettled([
-      loadTfSummary(symbol,'ONE_HOUR',45),
-      loadTfSummary(symbol,'FIFTEEN_MINUTE',30),
-      loadTfSummary(symbol,'FIVE_MINUTE',15),
-      news(symbol),globalData(),events(),market(symbol),
-      options(symbol),loadFuturesVolume(symbol)
+      boundedFeed(loadTfSummary(symbol,'ONE_HOUR',45),{rows:[],summary:{trend:'WAIT'}},'candles-1h'),
+      boundedFeed(loadTfSummary(symbol,'FIFTEEN_MINUTE',30),{rows:[],summary:{trend:'WAIT'}},'candles-15m'),
+      boundedFeed(loadTfSummary(symbol,'FIVE_MINUTE',15),{rows:[],summary:{trend:'WAIT'}},'candles-5m'),
+      boundedFeed(news(symbol),[],'news'),
+      boundedFeed(globalData(),{},'global'),
+      boundedFeed(events(),[],'events'),
+      boundedFeed(market(symbol),{},'market'),
+      boundedFeed(options(symbol),{connected:false,error:'Option feed timed out'},'options'),
+      boundedFeed(loadFuturesVolume(symbol),{ratio10d:null,source:null,benchmarkDays:0,reason:'Futures volume feed timed out'},'futures-volume')
     ]);
     const val=(i,f)=>settled[i]?.status==='fulfilled'?settled[i].value:f;
     const h1=val(0,{rows:[],summary:{trend:'WAIT'}}), m15=val(1,{rows:[],summary:{trend:'WAIT'}}), m5=val(2,{rows:[],summary:{trend:'WAIT'}});
@@ -1643,14 +1701,14 @@ app.get('/api/phase10/prediction',async(req,res)=>{
     let opt=val(7,{connected:false}), greeks=[];
     const futuresVol=val(8,{ratio10d:null,source:null,benchmarkDays:0});
     try{
-      if(opt.expiry) greeks=await liveOptionGreeks(symbol,opt.expiry);
+      if(opt.expiry) greeks=await boundedFeed(liveOptionGreeks(symbol,opt.expiry),[],'option-greeks',1500);
       const pickStrike=Number(opt.atm);
       const pickType=Number(opt.pcr)>=1?'CE':'PE';
       const candidates=greeks.filter(x=>x.strike===pickStrike);
       const g=candidates.find(x=>x.optionType===pickType)||candidates[0];
       if(g){opt.greeks=g;opt.theta=g.theta;opt.delta=g.delta;opt.iv=g.iv;opt.greekRisk=greekRiskWarning(g);}
     }catch{}
-    const historical=cachedBacktestFiveMinute(symbol,m5.rows||[]);
+    const historical=backtestFiveMinute(m5.rows||[]);
     const vixRaw=md?.VIX?.ltp;
     const vix=vixRaw==null||vixRaw===''?NaN:Number(vixRaw);
     if(futuresVol?.ratio10d!=null && Number.isFinite(Number(futuresVol.ratio10d)) && futuresVol.source){
@@ -1696,13 +1754,46 @@ app.get('/api/phase10/prediction',async(req,res)=>{
     let optionPlan={available:false,reason:'Wait until model confidence reaches 78% for live CE/PE contract selection.'};
     if(prediction.opportunityEligible && prediction.finalPlan?.available){
       const optionAction=prediction.prediction==='BULLISH'?'CALL':prediction.prediction==='BEARISH'?'PUT':'';
-      optionPlan=await findBuyableOptionPlan(symbol,optionAction,prediction.finalPlan.entry,prediction.finalPlan.sl,prediction.finalPlan.target1,prediction.finalPlan.target2);
+      optionPlan=await boundedFeed(findBuyableOptionPlan(symbol,optionAction,prediction.finalPlan.entry,prediction.finalPlan.sl,prediction.finalPlan.target1,prediction.finalPlan.target2),{available:false,reason:'Option contract scan exceeded its response deadline; no trade.'},'option-plan',1500);
       if(!optionPlan.available) optionPlan={...optionPlan,threshold:78,reason:optionPlan.reason||'No suitable live contract passed the premium/Greek/liquidity filters.'};
     }
     prediction.optionPlan=optionPlan;
+    const freshExchangeTick=getLatestTicks().find(x=>isFreshExchangeTick(x?.data));
+    prediction.exchangeTickVerified=Boolean(freshExchangeTick);
+    prediction.exchangeTickAgeSec=freshExchangeTick?Number((Math.max(0,exchangeTickAgeMs(freshExchangeTick.data))/1000).toFixed(1)):null;
+    if(!freshExchangeTick){
+      prediction.action='NO TRADE';
+      prediction.watchAction='NO TRADE';
+      prediction.signalState='NO TRADE';
+      prediction.opportunityEligible=false;
+      prediction.feedComplete=false;
+      prediction.noTradeReasons=[...new Set([...(prediction.noTradeReasons||[]),'No Trade: fresh exchange-timestamped WebSocket tick is unavailable.'])];
+      prediction.reasoning='No Trade: fresh exchange-timestamped market data is missing; live entry is locked.';
+      prediction.optionPlan={available:false,reason:'No Trade: fresh exchange-timestamped market data is required.'};
+    }
     const candleConnected=Array.isArray(m5.rows)&&m5.rows.length>0;
-    res.json({ok:true,phase:10,symbol,prediction,health:{market:candleConnected,options:opt.connected,news:ns.connected,global:gs.connected,eventBlocked:es.hardBlock,eventDayBlock:es.eventDayBlock,vix:Number.isFinite(vix)?vix:null},greeks:opt.greeks||null,greekRisk:opt.greekRisk||{status:'WAIT',message:'Live option Greeks not verified.'},backtest:historical,checkedAt:nowISO()});
-  }catch(e){res.status(502).json({ok:false,phase:10,error:e?.message||'Phase 10 prediction unavailable'});}
+    res.json({ok:true,phase:10,symbol,prediction,health:{market:candleConnected,options:opt.connected,news:ns.connected,global:gs.connected,eventBlocked:es.hardBlock,eventDayBlock:es.eventDayBlock,vix:Number.isFinite(vix)?vix:null},greeks:opt.greeks||null,greekRisk:opt.greekRisk||{status:'WAIT',message:'Live option Greeks not verified.'},backtest:historical,optionBacktest:prediction.optionBacktest,checkedAt:nowISO()});
+  }catch(e){
+    console.warn('[PREDICTION_ROUTE]',e?.message||e);
+    if(res.headersSent) return;
+    const prediction=buildPrediction({
+      marketOpen:marketSession(),options:{connected:false},news:{connected:false,freshCount:0},
+      global:{connected:false,freshInputs:0},events:{connected:false,eventSafe:false},vix:null
+    });
+    prediction.action='NO TRADE';
+    prediction.watchAction='NO TRADE';
+    prediction.signalState='NO TRADE';
+    prediction.opportunityEligible=false;
+    prediction.feedComplete=false;
+    prediction.noTradeReasons=[...(prediction.noTradeReasons||[]),'No Trade: prediction request did not complete all required feed checks.'];
+    prediction.reasoning='Prediction is in safe fallback mode because required data could not be completed. No live order signal is available.';
+    return res.json({ok:true,phase:10,symbol,prediction,degraded:true,
+      health:{market:false,options:false,news:false,global:false,eventBlocked:false,eventDayBlock:false,vix:null},
+      greeks:null,greekRisk:{status:'WAIT',message:'Required live data is not verified.'},
+      backtest:{available:false,kind:'UNDERLYING_PRICE_ONLY',instrument:'NIFTY INDEX',verified:false,reason:'Prediction request fell back before a verified analysis completed.'},
+      optionBacktest:prediction.optionBacktest,
+      message:'Degraded safe response; inspect server logs. No Trade.',checkedAt:nowISO()});
+  }
 });
 
 app.get("/api/analyze",async(req,res)=>{
@@ -1750,12 +1841,15 @@ app.get("/api/analyze",async(req,res)=>{
   let newsItems=[], global={}, eventItems=[], md=null;
   try{ [newsItems,global,eventItems,md]=await Promise.all([news(symbol),globalData(),events(),market(symbol)]); packs.md=md||{}; }catch(e){ packs.fusionError=e.message; }
   const newsStrat=analyzeNews(newsItems),globalStrat=analyzeGlobal(global),eventStrat=analyzeEvents(eventItems);
+  const exchangeTickVerified=!!getLatestTicks().find(x=>isFreshExchangeTick(x?.data));
+  h.exchangeTick=exchangeTickVerified;
   const vixRaw=md?.VIX?.ltp;
     const vix=vixRaw==null||vixRaw===''?NaN:Number(vixRaw);
   const hasVerifiedVolume=!!s5?.volumeSource&&s5?.volumeRatio10d!=null&&Number.isFinite(Number(s5.volumeRatio10d));
   const volumeRatio10d=hasVerifiedVolume?Number(s5.volumeRatio10d):NaN;
   h.volume=hasVerifiedVolume;
   const noTradeReasons=[];
+  if(marketSession() && !exchangeTickVerified) noTradeReasons.push('No Trade: fresh exchange-timestamped WebSocket tick is unavailable.');
   if(!Number.isFinite(vix)) noTradeReasons.push('No Trade: India VIX is not verified live.'); else if(vix<12||vix>22) noTradeReasons.push('No Trade: Market is too slow or too volatile.');
   if(!greeksVerified) noTradeReasons.push('No Trade: live option Theta/Delta is not verified.');
   else if(greekRisk.status!=='PASS') noTradeReasons.push('No Trade: selected option Theta/Delta did not pass the safety filter.');
@@ -1774,7 +1868,7 @@ app.get("/api/analyze",async(req,res)=>{
   const fused=fuse({technicalScore:techSigned,newsScore:newsStrat.score,globalScore:globalStrat.score,eventRisk:eventStrat.hardBlock,marketOpen:marketSession(),feeds:{market:h.market,options:h.options,news:newsStrat.connected,global:globalStrat.connected,eventSafe:eventStrat.eventSafe}});
   score=Math.round(Math.abs(fused.score)); confidence=h.market?(score>=67?'SETUP':score>=45?'WATCH':'WAIT'):'LOCKED';
   if(h.market) reason=`Technical confluence ${Math.round(Math.abs(techSigned))} • News ${newsStrat.bias} • Global ${globalStrat.bias}. ${eventStrat.reason}`;
-  const complete=marketSession()&&h.market&&h.options&&hasVerifiedVolume&&greeksVerified&&greekRisk.status==='PASS'&&newsStrat.connected&&globalStrat.connected&&eventStrat.eventSafe===true&&!eventStrat.unverifiedHighImpact&&!eventStrat.hardBlock&&!eventStrat.eventDayBlock;
+  const complete=marketSession()&&exchangeTickVerified&&h.market&&h.options&&hasVerifiedVolume&&greeksVerified&&greekRisk.status==='PASS'&&newsStrat.connected&&globalStrat.connected&&eventStrat.eventSafe===true&&!eventStrat.unverifiedHighImpact&&!eventStrat.hardBlock&&!eventStrat.eventDayBlock;
   if(complete && score>=67 && noTradeReasons.length===0){action=fused.direction==='BULLISH'?'CALL':fused.direction==='BEARISH'?'PUT':'NO TRADE';}
   else {action='NO TRADE'; if(noTradeReasons.length) reason=noTradeReasons.join(' • '); else if(!marketSession()) reason='Exchange session is closed. No live trade is permitted.'; else if(!eventStrat.eventSafe) reason=eventStrat.reason; else if(!greeksVerified||greekRisk.status!=='PASS') reason=greekRisk.message; else if(!newsStrat.connected||!globalStrat.connected) reason='News/global feeds are not verified fresh. Final decision stays locked.'; else if(!h.options) reason='Option positioning feed is not verified. Final options decision stays locked.';}
   const last=s5?.last||s15?.last||s1?.last; const atr=s5?.atr; const levels={r2:s15?.last&&s15?.atr?(s15.last+s15.atr*2).toFixed(2):'—',r1:s15?.last&&s15?.atr?(s15.last+s15.atr).toFixed(2):'—',vwap:s15?.vwap?.toFixed?.(2)||'—',s1:s15?.last&&s15?.atr?(s15.last-s15.atr).toFixed(2):'—',s2:s15?.last&&s15?.atr?(s15.last-s15.atr*2).toFixed(2):'—'};
@@ -1785,7 +1879,8 @@ app.get("/api/analyze",async(req,res)=>{
 app.post("/api/order",(req,res)=>res.status(423).json({ok:false,error:"USE_PHASE5_PREVIEW",message:"Phase 5 uses /api/order/preview then explicit /api/order/execute confirmation."}));
 
 app.get("*",(req,res)=>res.sendFile(path.join(__dirname,"public","index.html")));
-const server=app.listen(PORT,()=>console.log(`PARTHAVI TRADE DESK PRO on http://localhost:${PORT}`));
+const HOST = String(process.env.HOST || "0.0.0.0");
+const server=app.listen(PORT,HOST,()=>console.log(`PARTHAVI TRADE DESK PRO on http://${HOST}:${PORT}`));
 server.requestTimeout=30000;
 server.headersTimeout=35000;
 server.keepAliveTimeout=5000;

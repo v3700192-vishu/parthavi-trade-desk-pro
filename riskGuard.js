@@ -5,6 +5,7 @@
 */
 
 function num(v,d=0){const x=Number(v);return Number.isFinite(x)?x:d}
+function finiteOrNull(v){if(v==null||(typeof v==='string'&&v.trim()===''))return null;const x=Number(v);return Number.isFinite(x)?x:null}
 function bool(v,d=false){if(v==null)return d;return ['1','true','yes','on'].includes(String(v).trim().toLowerCase())}
 function clamp(x,a,b){return Math.max(a,Math.min(b,x))}
 function istDate(){
@@ -51,6 +52,7 @@ function status(){
 }
 function evaluate({maxLoss=0,rr=0,modelConfidence=null,confirmationPct=null,spreadPct=null,openPositions=0,side='BUY',signalAction='',isOption=false,hasStopLoss=true,vix=null,adx=null,volumeRatio10d=null,volumeMode='BREAKOUT',eventDayBlock=false,theta=null,delta=null}={}){
   rollDay(); const errors=[]; const now=Date.now();
+  const thetaValue=finiteOrNull(theta), deltaValue=finiteOrNull(delta);
   if(!cfg.enabled) return {ok:true,errors:[],status:status()};
   if(state.dailyLoss>=cfg.maxDailyLoss) errors.push('DAILY_LOSS_CAP_REACHED');
   if(state.consecutiveLosses>=cfg.maxConsecutiveLosses) errors.push('CONSECUTIVE_LOSS_LOCK');
@@ -62,9 +64,10 @@ function evaluate({maxLoss=0,rr=0,modelConfidence=null,confirmationPct=null,spre
   if(Number.isFinite(Number(volumeRatio10d)) && Number(volumeRatio10d)<1.5 && String(volumeMode).toUpperCase()!=='CONTINUATION') errors.push('BREAKOUT_VOLUME_BELOW_1_5X_10D');
   if(String(volumeMode).toUpperCase()==='CONTINUATION' && Number.isFinite(Number(volumeRatio10d)) && Number(volumeRatio10d)<0.90) errors.push('CONTINUATION_VOLUME_BELOW_0_90X_10D');
   if(eventDayBlock) errors.push('HIGH_IMPACT_EVENT_DAY');
-  if(isOption && (!Number.isFinite(Number(theta)) || !Number.isFinite(Number(delta)))) errors.push('OPTION_GREEKS_UNVERIFIED');
-  if(isOption && Number.isFinite(Number(theta)) && Math.abs(Number(theta))>=10) errors.push('THETA_DECAY_TOO_HIGH');
-  if(isOption && Number.isFinite(Number(delta)) && Math.abs(Number(delta))<0.20) errors.push('DELTA_TOO_LOW_FOR_OPTION_BUYING');
+  // Missing values must remain unknown; Number(null) incorrectly turns missing Greeks into zero.
+  if(isOption && (thetaValue===null || deltaValue===null)) errors.push('OPTION_GREEKS_UNVERIFIED');
+  if(isOption && thetaValue!==null && Math.abs(thetaValue)>=10) errors.push('THETA_DECAY_TOO_HIGH');
+  if(isOption && deltaValue!==null && Math.abs(deltaValue)<0.20) errors.push('DELTA_TOO_LOW_FOR_OPTION_BUYING');
   if(cfg.requireStopLoss&&!hasStopLoss) errors.push('STOP_LOSS_REQUIRED');
   if(maxLoss>0 && maxLoss>Math.max(0,cfg.maxDailyLoss-state.dailyLoss)) errors.push('TRADE_RISK_EXCEEDS_DAILY_PROTECTION_BUDGET');
   if(rr>0 && rr<cfg.minRR) errors.push(`MIN_RR_${cfg.minRR}_REQUIRED`);

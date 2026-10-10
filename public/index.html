@@ -864,7 +864,7 @@ body.chart-fullscreen-open>.app>.bottom{
         <div class="prediction-stat"><small>Suggested action</small><b id="p10Action" class="neutral">NO TRADE</b></div>
         <div class="prediction-stat"><small>Model confidence • directional</small><b id="p10Confidence">—</b></div>
         <div class="prediction-stat"><small>Confirmation</small><b id="p10Confirmation">—</b></div>
-        <div class="prediction-stat"><small>Backtest target-hit</small><b id="p10HitRate">—</b></div>
+        <div class="prediction-stat"><small>Option-premium backtest</small><b id="p10HitRate">NOT VERIFIED</b></div>
       </div>
       <div class="prediction-meter"><i id="p10Meter"></i></div>
       <div class="finder-note" id="p10TradeFinder">🎯 <b>TWO-TRADE FINDER ACTIVE</b> • Confirmed opportunities today: <b id="p10OpportunityCount">0 / 2</b> • Scanner keeps searching during the NSE session and never manufactures a weak second trade.</div>
@@ -887,12 +887,12 @@ body.chart-fullscreen-open>.app>.bottom{
     </div>
   </div>
   <div class="backtest">
-    <div class="bt"><small>Backtest signals</small><b id="p10Signals">—</b></div>
-    <div class="bt"><small>Resolved</small><b id="p10Resolved">—</b></div>
-    <div class="bt"><small>Wins / Losses</small><b id="p10WinsLosses">—</b></div>
-    <div class="bt"><small>Expected R*</small><b id="p10ExpectedR">—</b></div>
+    <div class="bt"><small>Option test signals</small><b id="p10Signals">N/A</b></div>
+    <div class="bt"><small>Verified outcomes</small><b id="p10Resolved">N/A</b></div>
+    <div class="bt"><small>Option wins / losses</small><b id="p10WinsLosses">N/A</b></div>
+    <div class="bt"><small>Option expected R</small><b id="p10ExpectedR">N/A</b></div>
   </div>
-  <div class="finder-note"><b>*Backtest note:</b> 1.0R stop vs 2.0R target, up to 20 five-minute bars forward, using a rolling 5M EMA20/EMA50 + RSI price-only trigger. It does not model futures-volume filters, news/events, option premiums/Greeks, brokerage, taxes or slippage. This underlying-index historical statistic is not a promise that a future trade will be profitable.</div>
+  <div class="finder-note" id="p10BacktestNote"><b>OPTION BACKTEST NOT VERIFIED:</b> The earlier test uses NIFTY index candles only; it is not a CE/PE win-rate or option-return test. Historical contract-specific option premiums must be mapped to each signal's expiry, strike and option type, then spread, fees and slippage included. Until this dataset is verified, option metrics stay N/A and cannot increase model confidence.</div>
   <div class="exec" style="margin-top:8px"><button class="btn primary" onclick="loadPrediction(true)">⚡ Run Advanced Prediction</button><button class="btn" onclick="scrollToPhase10Backtest()">▣ View Confirmation</button></div>
 </section>
 
@@ -997,8 +997,7 @@ body.chart-fullscreen-open>.app>.bottom{
       <div class="a1-footer angel-footer">
         <button class="range-btn" onclick="fitChart()">Date Range⌄</button>
         <span id="angelChartClock">—</span>
-        <span class="angel-divider"></span>
-        <span id="chartRangeLabel">15m • LIVE</span>
+        <span class="angel-divider"></span>        <span id="chartRangeLabel">15m • LIVE</span>
         <button onclick="toggleScaleMode()">%</button>
         <button onclick="toggleScaleMode()" id="logLabel">log</button>
         <button onclick="toggleAutoScale()">auto</button>
@@ -1944,11 +1943,18 @@ function stccRender(x){
     setP10Tone(state,'BULLISH');
     reason.textContent='Confirmed setup. Review the exact entry, SL and targets below. Nothing is auto-placed; lock the plan when you decide to take it.';
   }else{
-    decision.textContent='WAIT FOR CONFIRMED SETUP';
+    const marketClosed=p?.marketOpen===false;
+    const signalState=String(p?.signalState||'').toUpperCase();
+    const blockers=Array.isArray(p?.noTradeReasons)?p.noTradeReasons.filter(Boolean):[];
+    decision.textContent=marketClosed?'NO TRADE • MARKET CLOSED':signalState==='NO TRADE'?'NO TRADE • GATES BLOCKED':signalState==='WATCH'?'WATCH • WAIT FOR CONFIRMATION':'WAIT FOR CONFIRMED SETUP';
     setP10Tone(decision,'NEUTRAL');
-    state.textContent='SCANNING';
+    state.textContent=marketClosed?'MARKET CLOSED':signalState==='NO TRADE'?'GATES BLOCKED':signalState==='WATCH'?'WATCH ONLY':'SCANNING';
     setP10Tone(state,'NEUTRAL');
-    reason.textContent='No live confirmed option plan right now. The scanner keeps searching and will not manufacture a trade.';
+    reason.textContent=marketClosed
+      ? 'NSE is closed; live entries stay disabled until the next market session.'
+      : blockers.length
+        ? 'No confirmed trade: '+blockers.slice(0,3).join(' • ')+(blockers.length>3?' • +'+(blockers.length-3)+' more checks pending':'')
+        : (p?.reasoning||'No live confirmed option plan right now. The scanner keeps searching and will not manufacture a trade.');
   }
   $('stccContract').textContent=plan?.contract||'—';
   $('stccContractMeta').textContent=plan?((plan.optionType||'OPTION')+' • Strike '+(plan.strike??'—')+' • Lot '+(plan.lotSize??'—')):'Live contract only';
@@ -1990,8 +1996,7 @@ async function stccMonitorTick(){
       if(ltp>=x.t1){x.status='T1 HIT • HOLDING T2';}
       else if(x.status==='T1 HIT • HOLDING T2')x.status='HOLD';
     }
-    x.lastCheck=Date.now();stccSave(x);stccRender(x);
-  }catch{
+    x.lastCheck=Date.now();stccSave(x);stccRender(x);  }catch{
     x.lastCheck=Date.now();stccSave(x);stccRender(x);
   }
 }
@@ -2018,7 +2023,13 @@ function recordP10Opportunity(p){
 }
 function renderPredictionPanel(resp){
   const p=resp?.prediction||resp||{};
-  const bt=resp?.backtest||p?.historical||{};
+  // Keep the Command Center connected to each fresh prediction result. Without this
+  // handoff, stccCurrentPlan() reads an empty global and can never surface a signal.
+  window.__lastPrediction={...p,marketOpen:resp?.health?.marketOpen??p?.marketOpen??null};
+  stccEvaluate(window.__lastPrediction);
+  stccRender(stccLoad());
+  const bt=resp?.optionBacktest||p?.optionBacktest||resp?.backtest||p?.historical||{};
+  const optionBacktestVerified=bt?.kind==='OPTION_PREMIUM'&&bt?.available===true&&bt?.verified===true&&bt?.feesIncluded===true&&bt?.slippageIncluded===true;
   const pred=String(p?.prediction||'NO TRADE').toUpperCase();
   const action=String(p?.action||'NO TRADE').toUpperCase();
   const state=String(p?.signalState||'LOCKED').toUpperCase();
@@ -2035,11 +2046,11 @@ function renderPredictionPanel(resp){
   const reason=$('p10Reason'); if(reason)reason.textContent=p?.reasoning||p?.reason||'Waiting for verified live inputs and confirmation.';
   const pc=$('p10Confidence'); if(pc)pc.textContent=Number.isFinite(Number(conf))?Number(conf).toFixed(0)+'%':'—';
   const pm=$('p10Confirmation'); if(pm)pm.textContent=Number.isFinite(Number(pct))?Number(pct).toFixed(0)+'% ('+(confirmed??'—')+'/'+total+')':'—';
-  const hr=$('p10HitRate'); if(hr)hr.textContent=Number.isFinite(Number(bt?.targetHitRate))?Number(bt.targetHitRate).toFixed(1)+'%':'—';
+  const hr=$('p10HitRate'); if(hr)hr.textContent=optionBacktestVerified&&Number.isFinite(Number(bt?.targetHitRate))?Number(bt.targetHitRate).toFixed(1)+'%':'NOT VERIFIED';
   const meter=$('p10Meter'); if(meter)meter.style.width=Math.max(0,Math.min(100,Number(pct)||0))+'%';
   const st=$('p10State'); if(st){st.textContent=state;st.className='badge '+(state==='CONFIRMED'?'ok':state==='WATCH'?'warn':'danger');}
   const tm=$('p10Time'); if(tm)tm.textContent='Updated • '+p10Clock(resp?.checkedAt||Date.now());
-  const note=$('p10Note'); if(note)note.textContent=p?.note||'Confidence is a rule-based confluence estimate. Historical target-hit rate is not a guarantee of future profit.';
+  const note=$('p10Note'); if(note)note.textContent=(p?.note||'Confidence is a rule-based confluence estimate.')+' Option-premium backtest is NOT VERIFIED and adds no confidence bonus.';
 
   const checks=p?.confirmations||{};
   const labels=[
@@ -2056,10 +2067,10 @@ function renderPredictionPanel(resp){
       return '<div class="confirm-item"><span>'+escapeHtml(label)+'</span><b class="'+(ok?'yes':'no')+'">'+val+'</b></div>';
     }).join('');
   }
-  const sig=$('p10Signals'); if(sig)sig.textContent=bt?.signals??'—';
-  const resolved=$('p10Resolved'); if(resolved)resolved.textContent=bt?.resolved??'—';
-  const wl=$('p10WinsLosses'); if(wl)wl.textContent=(bt?.wins??'—')+' / '+(bt?.losses??'—');
-  const er=$('p10ExpectedR'); if(er)er.textContent=bt?.expectedR!=null?String(bt.expectedR)+'R':'—';
+  const sig=$('p10Signals'); if(sig)sig.textContent=optionBacktestVerified?(bt?.signals??'—'):'N/A';
+  const resolved=$('p10Resolved'); if(resolved)resolved.textContent=optionBacktestVerified?(bt?.resolved??'—'):'N/A';
+  const wl=$('p10WinsLosses'); if(wl)wl.textContent=optionBacktestVerified?((bt?.wins??'—')+' / '+(bt?.losses??'—')):'N/A';
+  const er=$('p10ExpectedR'); if(er)er.textContent=optionBacktestVerified&&bt?.expectedR!=null?String(bt.expectedR)+'R':'N/A';
   const finder=$('p10TradeFinder');
   if(finder){
     const contractLine=optionPlan?.available
@@ -2547,7 +2558,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 });
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&ptdAutoRefreshEnabled)manualLiveRefresh()});
 setInterval(()=>{if(!document.hidden)loadPhase11Shield()},30000);
-setInterval(()=>{if(!document.hidden)loadBrokerAccount()},60000);
+setInterval(()=>{if(!document.hidden)loadBrokerAccount()},300000);
 setInterval(()=>{if(!document.hidden)loadExecutionStatus()},30000);
 setInterval(()=>{if(!document.hidden)loadPhase12Readiness()},30000);
 setInterval(()=>{if(!document.hidden)phase6Monitor()},15000);
