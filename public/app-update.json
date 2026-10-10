@@ -1,7 +1,7 @@
 {
-  "versionCode": 7,
-  "versionName": "1.5.1",
+  "versionCode": 8,
+  "versionName": "1.5.2",
   "apkUrl": "https://github.com/v3700192-vishu/parthavi-trade-desk-pro/releases/latest/download/app-debug.apk",
-  "releaseUrl": "https://github.com/v3700192-vishu/parthavi-trade-desk-pro/releases/tag/android-v1.5.1-build-33",
-  "notes": "Perfect full-width phone layout, one-column vertical scrolling, full-width Angel-style chart, no page horizontal drag, and native alerts/haptics."
+  "releaseUrl": "https://github.com/v3700192-vishu/parthavi-trade-desk-pro/releases/tag/android-v1.5.2-build-34",
+  "notes": "Native Android app opens the private server PC over Tailscale HTTPS. Tailscale must be connected and the server PC online. Existing chart layout, prediction engine and NO TRADE safety gates are unchanged."
 }
