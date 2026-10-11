@@ -2689,6 +2689,30 @@ document.addEventListener('DOMContentLoaded',()=>{
     const target=document.getElementById(id);
     if(!target)return false;
     setActive(id);
+    // "home" is the sticky header itself. Its viewport rect stays near the top
+    // while scrolled, so using rect.top + scrollY only moves a few pixels upward.
+    // Home must always reset the document's real scroll position to zero.
+    if(id==='home'){
+      const html=document.documentElement,body=document.body,root=document.scrollingElement||html;
+      const app=document.querySelector('.app');
+      const previous={html:html.style.scrollBehavior,body:body?.style.scrollBehavior,app:app?.style.scrollBehavior};
+      html.style.scrollBehavior='auto';
+      if(body)body.style.scrollBehavior='auto';
+      if(app)app.style.scrollBehavior='auto';
+      root.scrollTop=0;
+      html.scrollTop=0;
+      if(body)body.scrollTop=0;
+      try{window.scrollTo(0,0);}catch(_){}
+      try{history.replaceState(null,'','#home');}catch(_){}
+      requestAnimationFrame(()=>{
+        root.scrollTop=0;html.scrollTop=0;if(body)body.scrollTop=0;
+        try{window.scrollTo(0,0);}catch(_){}
+        html.style.scrollBehavior=previous.html||'';
+        if(body)body.style.scrollBehavior=previous.body||'';
+        if(app)app.style.scrollBehavior=previous.app||'';
+      });
+      return true;
+    }
     try{
       target.style.scrollMarginTop='92px';
       target.style.scrollMarginBottom='calc(100px + env(safe-area-inset-bottom))';
@@ -2713,8 +2737,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       const targetTop=target.getBoundingClientRect().top+(root.scrollTop||window.scrollY||0);
       const top=Math.max(0,targetTop-92);
       root.scrollTop=top;
-      html.scrollTop=top;
-      if(body)body.scrollTop=top;
+      html.scrollTop=top;      if(body)body.scrollTop=top;
       try{window.scrollTo(0,top);}catch(_){}
       // Restore the page's normal scrolling style immediately; no stale timers
       // remain to pull the user back to a previously selected section.
@@ -2737,7 +2760,8 @@ document.addEventListener('DOMContentLoaded',()=>{
         const id=String(button.dataset.target||'');
         if(!go(id)){
           const toast=document.getElementById('toast');
-          if(toast){toast.textContent='Section unavailable: '+id;toast.classList.add('show');}        }
+          if(toast){toast.textContent='Section unavailable: '+id;toast.classList.add('show');}
+        }
       },false);
       button.addEventListener('keydown',function(event){
         if(event.key==='Enter'||event.key===' '){

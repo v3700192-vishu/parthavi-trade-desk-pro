@@ -30,6 +30,19 @@ test("mobile navigation attaches direct handlers and scrolls reliably in a WebVi
   assert.match(html, /button\.addEventListener\('keydown'/);
 });
 
+test("Home button resets the document to the real top instead of measuring the sticky header", () => {
+  const block = html.match(/const go=id=>\s*\{[\s\S]*?\n  \};/)?.[0] || "";
+  assert.ok(block, "navigation go handler is present");
+  const home = block.match(/if\(id==='home'\)\s*\{[\s\S]*?\n    \}/)?.[0] || "";
+  assert.ok(home, "Home requires a dedicated scroll reset");
+  assert.match(home, /root\.scrollTop=0/);
+  assert.match(home, /html\.scrollTop=0/);
+  assert.match(home, /body\.scrollTop=0/);
+  assert.match(home, /window\.scrollTo\(0,0\)/);
+  assert.match(home, /history\.replaceState\(null,'','#home'\)/);
+  assert.doesNotMatch(home, /getBoundingClientRect\(\)\.top/);
+});
+
 test("mobile navigation targets are sized for touch and visibly labelled", () => {
   assert.match(html, /#bottomNav \.bottom-button\{[^}]*min-height:64px/);
   assert.match(html, /#bottomNav \.bottom-icon\{[^}]*font-size:22px/);
@@ -58,9 +71,9 @@ test("Phase 10 has a dedicated refresh button that runs a fresh prediction reque
 });
 
 test("service-worker cache version is bumped and never caches live API responses", () => {
-  assert.match(serviceWorker, /const CACHE='ptd-shell-v6'/);
+  assert.match(serviceWorker, /const CACHE='ptd-shell-v7'/);
   assert.match(serviceWorker, /if\(u\.pathname\.startsWith\('\/api\/'\)\) return/);
-  assert.doesNotMatch(serviceWorker, /const CACHE='ptd-shell-v[345]'/);
+  assert.doesNotMatch(serviceWorker, /const CACHE='ptd-shell-v[3456]'/);
 });
 
 test("Data Health distinguishes feed connectivity from live readiness gates", () => {
