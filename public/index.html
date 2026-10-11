@@ -555,7 +555,15 @@ body.chart-fullscreen-open>.app>.bottom{
 #p10RefreshBtn.is-refreshing .refresh-icon{animation:ptd-spin .8s linear infinite}
 @keyframes ptd-spin{to{transform:rotate(360deg)}}
 @media(max-width:760px){
-  .app{padding-bottom:calc(118px + env(safe-area-inset-bottom))}
+  /* Preserve the document as the scroll container; overflow-x:hidden on .app
+     was turning it into a nested scrollport and breaking sticky headers. */
+  html,body{overflow-x:clip!important;overflow-y:visible!important}
+  .app{padding-bottom:calc(118px + env(safe-area-inset-bottom));overflow-x:clip!important;overflow-y:visible!important}
+  #home.top{position:sticky!important;top:4px!important;z-index:85!important}
+  #stickyPrediction.sticky-prediction{position:sticky!important;top:var(--ptd-sticky-prediction-top,140px)!important;z-index:84!important;margin-top:7px!important;background:rgba(7,13,24,.97)!important}
+  .brand{flex:1 1 auto;min-width:0}
+  .brand h1{font-size:clamp(18px,4.5vw,20px)!important;line-height:1.12!important;letter-spacing:.35px!important;white-space:normal!important;overflow-wrap:anywhere;max-width:100%}
+  .brand p{font-size:9px!important;line-height:1.25!important;letter-spacing:.35px!important}
   #phase10Prediction .card-head{align-items:flex-start;gap:10px;flex-wrap:wrap}
   #phase10Prediction .card-head>div:first-child{min-width:0;flex:1 1 100%}
   #phase10Prediction .card-head>div:first-child h3{font-size:17px;line-height:1.3}
@@ -737,15 +745,15 @@ body.chart-fullscreen-open>.app>.bottom{
   <div class="finder-note" id="angelTestNote">Phase 2: login → instrument master → live quote → option contract lookup. WebSocket streaming can be enabled after the REST quote test passes.</div>
 </section>
 
-<section class="card" id="phase12Ready">
-  <div class="card-head"><h3>Phase 12 • Go-Live Readiness</h3><span id="p12Mode" class="neutral">LOCKED</span></div>
+<section class="card" id="phase12Ready">  <div class="card-head"><h3>Phase 12 • Go-Live Readiness</h3><span id="p12Mode" class="neutral">LOCKED</span></div>
   <div class="grid2">
     <div class="strategy-box"><small>Angel One</small><b id="p12Angel" class="neutral">WAIT</b><span>Session</span></div>
     <div class="strategy-box"><small>Static IP</small><b id="p12Static" class="neutral">WAIT</b><span>Order-source gate</span></div>
     <div class="strategy-box"><small>Market</small><b id="p12Market" class="neutral">WAIT</b><span>Exchange session</span></div>
     <div class="strategy-box"><small>Execution</small><b id="p12Exec" class="neutral">LOCKED</b><span>Server + kill switch</span></div>
   </div>
-  <div id="p12Checks" class="finder-note">Readiness is checked server-side. No credentials are displayed here.</div>  <div class="exec"><button class="btn" onclick="loadPhase12Readiness()">✓ Check Go-Live Readiness</button></div>
+  <div id="p12Checks" class="finder-note">Readiness is checked server-side. No credentials are displayed here.</div>
+  <div class="exec"><button class="btn" onclick="loadPhase12Readiness()">✓ Check Go-Live Readiness</button></div>
 </section>
 
 <section class="card">
@@ -986,15 +994,15 @@ body.chart-fullscreen-open>.app>.bottom{
           <button onclick="toggleIndicator('ema')">EMA 20/50/200</button>
           <button onclick="toggleIndicator('vwap')">VWAP</button>
           <button onclick="toggleIndicator('volume')">Volume</button>
-          <button onclick="toggleIndicator('rsi')">RSI</button>
-          <button onclick="toggleIndicator('macd')">MACD</button>
+          <button onclick="toggleIndicator('rsi')">RSI</button>          <button onclick="toggleIndicator('macd')">MACD</button>
           <button onclick="toggleIndicator('adx')">ADX</button>
         </div>
         <div class="a1-menu" id="drawMenu">
           <button onclick="setDrawMode('trend')">╱ Trendline</button>
           <button onclick="setDrawMode('hline')">— Horizontal</button>
           <button onclick="setDrawMode('vline')">│ Vertical</button>
-          <button onclick="clearDrawings()">Clear drawings</button>        </div>
+          <button onclick="clearDrawings()">Clear drawings</button>
+        </div>
         <span class="a1-status" id="chartStatus">15M • CANDLES • REGULAR • AUTO</span>
       </div>
 
@@ -1235,15 +1243,15 @@ body.chart-fullscreen-open>.app>.bottom{
       API keys, OTPs and access tokens stay server-side.
     </div>
   </div>
-</aside>
-</div>
+</aside></div>
 
 <div class="card" id="journal" style="margin-top:12px">
   <div class="card-head"><h3>Trade Journal & Audit Trail</h3><span>Auto-saved on this device • live broker fills remain gated</span></div>
   <div class="tablewrap"><table class="j" id="journalTable">
     <tr><th>Time</th><th>Symbol</th><th>Side</th><th>Decision</th><th>Entry</th><th>SL</th><th>T1</th><th>T2</th><th>Status</th></tr>
     <tbody id="journalBody"><tr><td colspan="9">No trades recorded yet.</td></tr></tbody>  </table></div>
-  <div class="note" id="journalSummary">Journal: 0 trades • Wins 0 • Losses 0 • Net P&L ₹0</div></div>
+  <div class="note" id="journalSummary">Journal: 0 trades • Wins 0 • Losses 0 • Net P&L ₹0</div>
+</div>
 
 <footer class="footer"><span>PARTHAVI TRADE DESK PRO • PB SIGNATURE</span><span>LIVE DATA + BROKER BACKEND REQUIRED • PHASE 10 ACTIVE • TWO-TRADE FINDER • NO GUARANTEED PROFIT</span></footer>
 </div>
@@ -1484,15 +1492,15 @@ function signalTone(value){
  if(/BULLISH|BULL|UP|POSITIVE|BUY|SUPPORT|CALL/.test(t)) return 'bullish';
  return 'neutral';
 }
-function paintSignal(id,value){const el=$(id);if(!el)return;el.textContent=value??'WAIT';el.classList.remove('bullish','bearish','neutral');el.classList.add(signalTone(value));}
-function renderDecision(d){
+function paintSignal(id,value){const el=$(id);if(!el)return;el.textContent=value??'WAIT';el.classList.remove('bullish','bearish','neutral');el.classList.add(signalTone(value));}function renderDecision(d){
  const action=d.action||'NO TRADE';
  $('decision').textContent=action; $('action').textContent=action; $('score').textContent=(d.score??'—')+' / 100';
  $('confidence').textContent=d.confidence||'—'; $('rr').textContent=d.rr||'—';
  const diag=[
    d.vix!=null?`VIX ${Number(d.vix).toFixed(2)}`:'',
    d.adx!=null?`ADX ${Number(d.adx).toFixed(1)}`:'',
-   d.volumeRatio10d!=null?`Vol ${Number(d.volumeRatio10d).toFixed(2)}x 10D`:'',   d.oi?.resistance!=null?`R OI ${d.oi.resistance}`:'',
+   d.volumeRatio10d!=null?`Vol ${Number(d.volumeRatio10d).toFixed(2)}x 10D`:'',
+   d.oi?.resistance!=null?`R OI ${d.oi.resistance}`:'',
    d.oi?.support!=null?`S OI ${d.oi.support}`:''
  ].filter(Boolean).join(' • ');
  $('decisionReason').textContent=(d.reason||'Waiting for verified data.')+(diag?' | '+diag:'');
@@ -1733,15 +1741,15 @@ function processAlerts(a){
       const confirmed=candleBull&&volumeConfirmed&&adx>=20&&oiBull&&trendConfirmed;
       if(confirmed) addAlert('🚀 CONFIRMED BULLISH BREAKOUT',`${symbol} • 5M close > R1 • volume ${volRatio.toFixed(1)}x • ADX ${adx.toFixed(1)} • option positioning confirmed.`,'bullish',`cbo-${cur?.t||Math.floor(Date.now()/60000)}`);
       else addAlert('👀 Breakout WATCH',`${symbol} crossed R1, but confirmation is incomplete: 5M close/volume/ADX/OI/trend must align. No trade alert.`,'neutral',`bo-watch-${Math.floor(Date.now()/60000)}`);
-    }
-    if($('alertBreakdown').checked&&crossedDown(alertState.lastPrice,last,s1)){
+    }    if($('alertBreakdown').checked&&crossedDown(alertState.lastPrice,last,s1)){
       const confirmed=candleBear&&volumeConfirmed&&adx>=20&&oiBear&&trendConfirmed;
       if(confirmed) addAlert('🔻 CONFIRMED BEARISH BREAKDOWN',`${symbol} • 5M close < S1 • volume ${volRatio.toFixed(1)}x • ADX ${adx.toFixed(1)} • option positioning confirmed.`,'bearish',`cbd-${cur?.t||Math.floor(Date.now()/60000)}`);
       else addAlert('👀 Breakdown WATCH',`${symbol} crossed S1, but confirmation is incomplete: 5M close/volume/ADX/OI/trend must align. No trade alert.`,'neutral',`bd-watch-${Math.floor(Date.now()/60000)}`);
     }
     if(Number.isFinite(alertState.lastVwap)&&Number.isFinite(vwap)){
       if(crossedUp(alertState.lastPrice,last,vwap)) addAlert('VWAP Bullish Cross',`${symbol} moved above VWAP ${vwap.toFixed(2)}. Await 5M close + volume confirmation.`,'bullish',`vwu-${Math.floor(Date.now()/60000)}`);
-      if(crossedDown(alertState.lastPrice,last,vwap)) addAlert('VWAP Bearish Cross',`${symbol} moved below VWAP ${vwap.toFixed(2)}. Await 5M close + volume confirmation.`,'bearish',`vwd-${Math.floor(Date.now()/60000)}`);    }
+      if(crossedDown(alertState.lastPrice,last,vwap)) addAlert('VWAP Bearish Cross',`${symbol} moved below VWAP ${vwap.toFixed(2)}. Await 5M close + volume confirmation.`,'bearish',`vwd-${Math.floor(Date.now()/60000)}`);
+    }
   }
   if($('alertRisk').checked){
     if(rsi>=70&&alertState.lastRsi<70) addAlert('RSI Overbought',`${symbol} RSI crossed 70. Momentum is stretched; wait for confirmation.`,'neutral',`rsi70-${Math.floor(Date.now()/60000)}`);
@@ -1982,15 +1990,15 @@ function stccRender(x){
     state.textContent='CONFIRMED • READY';
     setP10Tone(state,'BULLISH');
     reason.textContent='Confirmed setup. Review the exact entry, SL and targets below. Nothing is auto-placed; lock the plan when you decide to take it.';
-  }else{
-    const marketClosed=p?.marketOpen===false;
+  }else{    const marketClosed=p?.marketOpen===false;
     const signalState=String(p?.signalState||'').toUpperCase();
     const blockers=Array.isArray(p?.noTradeReasons)?p.noTradeReasons.filter(Boolean):[];
     decision.textContent=marketClosed?'NO TRADE • MARKET CLOSED':signalState==='NO TRADE'?'NO TRADE • GATES BLOCKED':signalState==='WATCH'?'WATCH • WAIT FOR CONFIRMATION':'WAIT FOR CONFIRMED SETUP';
     setP10Tone(decision,'NEUTRAL');
     state.textContent=marketClosed?'MARKET CLOSED':signalState==='NO TRADE'?'GATES BLOCKED':signalState==='WATCH'?'WATCH ONLY':'SCANNING';
     setP10Tone(state,'NEUTRAL');
-    reason.textContent=marketClosed      ? 'NSE is closed; live entries stay disabled until the next market session.'
+    reason.textContent=marketClosed
+      ? 'NSE is closed; live entries stay disabled until the next market session.'
       : blockers.length
         ? 'No confirmed trade: '+blockers.slice(0,3).join(' • ')+(blockers.length>3?' • +'+(blockers.length-3)+' more checks pending':'')
         : (p?.reasoning||'No live confirmed option plan right now. The scanner keeps searching and will not manufacture a trade.');
@@ -2231,15 +2239,15 @@ async function requestPhase11Signal(){
   addAlert('✅ Confirmed Signal Lock',`${symbol} • ${d.snapshot.action} • ${d.snapshot.modelConfidence}% model confidence • ${d.snapshot.confirmationPct}% confirmation.`,'bullish','p11-'+d.snapshot.createdAt);
   toast('Phase 11 confirmed signal lock loaded');
  }catch(e){window.phase11SignalToken='';window.phase11Snapshot=null;$('p11SignalStatus').textContent='Not available • confirmation gate not met or live feed unavailable.';toast(e.message||'Confirmed signal unavailable')}
-}
-let ptdLoadAllPromise=null;
+}let ptdLoadAllPromise=null;
 async function loadAll(){
   if(ptdLoadAllPromise) return ptdLoadAllPromise;
   ptdLoadAllPromise=(async()=>{
  try{
    const reqs=await Promise.allSettled([
     getJSON('/api/status?symbol='+encodeURIComponent(symbol)),
-    getJSON('/api/market?symbol='+encodeURIComponent(symbol)),    getJSON('/api/news?symbol='+encodeURIComponent(symbol)),
+    getJSON('/api/market?symbol='+encodeURIComponent(symbol)),
+    getJSON('/api/news?symbol='+encodeURIComponent(symbol)),
     getJSON('/api/global'),
     getJSON('/api/options?symbol='+encodeURIComponent(symbol)),
     getJSON('/api/events'),
@@ -2480,15 +2488,15 @@ async function requestOrder(side){
    toast('Select a live contract from Contract Finder first'); return;
  }
  const body={side:'BUY',transactiontype:side,exchange:exch,tradingsymbol:symbol,symboltoken:token,ordertype:$('orderType').value,producttype:'INTRADAY',price:Number(entry),stopLoss:Number(sl),target1:Number($('t1').value||0),quantity:Number(qty),capital:Number($('capital').value||0),riskPct:Number($('riskPct').value||0),signalToken:window.phase11SignalToken||''};
- try{
-   const r=await fetch(API_BASE+'/api/order/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); const d=await r.json();
+ try{   const r=await fetch(API_BASE+'/api/order/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); const d=await r.json();
    if(!r.ok||!d.ok) throw new Error([d.error,...(d.errors||[])].filter(Boolean).join(' • '));
    pendingOrderPreview={previewId:d.previewId,order:d.order,meta:{side,entry:Number(entry),sl:Number(sl),t1:Number($('t1').value||0),t2:Number($('t2').value||0)}}; $('orderPreviewText').textContent=`${d.order.transactiontype} ${d.order.tradingsymbol} • Qty ${d.order.quantity} • Price ${d.order.price} • Max risk ₹${d.maxLoss} • expires in 60s.`; $('orderConfirm').value=''; $('orderModal').classList.add('show');
  }catch(e){toast(e.message||'Order preview failed')}
 }
 function closeOrderModal(){ $('orderModal').classList.remove('show'); pendingOrderPreview=null; }
 function loadTradeJournal(){
-  try{return JSON.parse(localStorage.getItem('PTD_TRADE_JOURNAL')||'[]')}catch{return[]}}
+  try{return JSON.parse(localStorage.getItem('PTD_TRADE_JOURNAL')||'[]')}catch{return[]}
+}
 function renderTradeJournal(){
   const rows=loadTradeJournal(), body=$('journalBody'); if(!body)return;
   if(!rows.length){body.innerHTML='<tr><td colspan="9">No trades recorded yet.</td></tr>';$('journalSummary').textContent='Journal: 0 trades • Wins 0 • Losses 0 • Net P&L ₹0';return}
@@ -2657,7 +2665,19 @@ document.addEventListener('DOMContentLoaded',()=>{
   'use strict';
   const nav=document.getElementById('bottomNav');
   const buttons=nav?[...nav.querySelectorAll('[data-target]')]:[];
-  const reduceMotion=()=>window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const pageHeader=document.getElementById('home');
+  const stickyPrediction=document.getElementById('stickyPrediction');
+  const syncStickyPredictionOffset=()=>{
+    if(!pageHeader||!stickyPrediction||!window.matchMedia('(max-width:760px)').matches)return;
+    const headerHeight=Math.ceil(pageHeader.getBoundingClientRect().height);
+    document.documentElement.style.setProperty('--ptd-sticky-prediction-top',(headerHeight+12)+'px');
+  };
+  syncStickyPredictionOffset();
+  window.addEventListener('resize',syncStickyPredictionOffset,{passive:true});
+  if(typeof ResizeObserver==='function'&&pageHeader){
+    try{new ResizeObserver(syncStickyPredictionOffset).observe(pageHeader);}catch(_){}
+  }
+  window.addEventListener('load',syncStickyPredictionOffset,{once:true});
   const setActive=id=>{
     buttons.forEach(b=>{
       const active=b.dataset.target===id;
@@ -2669,25 +2689,63 @@ document.addEventListener('DOMContentLoaded',()=>{
     const target=document.getElementById(id);
     if(!target)return false;
     setActive(id);
-    try{target.style.scrollMarginTop='90px';target.style.scrollMarginBottom='calc(100px + env(safe-area-inset-bottom))';}catch(_){}
-    const top=Math.max(0,target.getBoundingClientRect().top+window.scrollY-78);
-    try{window.scrollTo({top,behavior:reduceMotion()?'auto':'smooth'});}catch(_){target.scrollIntoView();}
+    try{
+      target.style.scrollMarginTop='92px';
+      target.style.scrollMarginBottom='calc(100px + env(safe-area-inset-bottom))';
+      const html=document.documentElement,body=document.body,root=document.scrollingElement||html;
+      const app=document.querySelector('.app');
+      const previous={html:html.style.scrollBehavior,body:body?.style.scrollBehavior,app:app?.style.scrollBehavior};
+      // Direct scrolling is intentional: CSS smooth-scroll animations were racing
+      // in mobile WebViews and leaving Chart/Trade only partially visible.
+      html.style.scrollBehavior='auto';
+      if(body)body.style.scrollBehavior='auto';
+      if(app)app.style.scrollBehavior='auto';
+      // Scroll any genuinely scrollable embedded ancestors from inside out.
+      let ancestor=target.parentElement;
+      while(ancestor&&ancestor!==body&&ancestor!==html){
+        const style=getComputedStyle(ancestor);
+        if(ancestor.scrollHeight>ancestor.clientHeight+2&&/(auto|scroll)/.test(style.overflowY)){
+          const ar=ancestor.getBoundingClientRect(),tr=target.getBoundingClientRect();
+          ancestor.scrollTop=Math.max(0,ancestor.scrollTop+tr.top-ar.top-92);
+        }
+        ancestor=ancestor.parentElement;
+      }
+      const targetTop=target.getBoundingClientRect().top+(root.scrollTop||window.scrollY||0);
+      const top=Math.max(0,targetTop-92);
+      root.scrollTop=top;
+      html.scrollTop=top;
+      if(body)body.scrollTop=top;
+      try{window.scrollTo(0,top);}catch(_){}
+      // Restore the page's normal scrolling style immediately; no stale timers
+      // remain to pull the user back to a previously selected section.
+      html.style.scrollBehavior=previous.html||'';
+      if(body)body.style.scrollBehavior=previous.body||'';
+      if(app)app.style.scrollBehavior=previous.app||'';
+    }catch(_){
+      try{target.scrollIntoView(true);}catch(__){}
+    }
     try{history.replaceState(null,'','#'+id);}catch(_){}
     return true;
   };
   if(nav){
-    nav.addEventListener('click',function(event){
-      const button=event.target&&event.target.closest?event.target.closest('button[data-target]'):null;
-      if(!button||!nav.contains(button))return;
-      const id=String(button.dataset.target||'');
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      event.stopPropagation();
-      if(!go(id)) {
-        const toast=document.getElementById('toast');
-        if(toast){toast.textContent='Section unavailable: '+id;toast.classList.add('show');}
-      }
-    },true);
+    // Attach directly to real button elements. Do not rely on anchor selectors or
+    // capture-phase propagation that can prevent target handlers in WebViews.
+    buttons.forEach(button=>{
+      button.type='button';
+      button.addEventListener('click',function(event){
+        event.preventDefault();
+        const id=String(button.dataset.target||'');
+        if(!go(id)){
+          const toast=document.getElementById('toast');
+          if(toast){toast.textContent='Section unavailable: '+id;toast.classList.add('show');}        }
+      },false);
+      button.addEventListener('keydown',function(event){
+        if(event.key==='Enter'||event.key===' '){
+          event.preventDefault();
+          button.click();
+        }
+      });
+    });
     const initial=(location.hash||'#home').slice(1);
     setActive(document.getElementById(initial)?initial:'home');
     if('IntersectionObserver' in window){
