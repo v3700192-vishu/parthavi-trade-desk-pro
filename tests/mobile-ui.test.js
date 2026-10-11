@@ -20,11 +20,14 @@ test("mobile navigation renders five real, accessible buttons for existing secti
   assert.ok(buttons.every(button => /aria-label="Go to /.test(button)));
 });
 
-test("mobile navigation has a standalone, capture-phase click handler", () => {
+test("mobile navigation attaches direct handlers and scrolls reliably in a WebView", () => {
   assert.ok(html.includes('id="MOBILE_NAV_REFRESH_RELIABILITY_V2"'));
-  assert.match(html, /nav\.addEventListener\('click',[\s\S]*?\},true\)/);
-  assert.match(html, /event\.stopImmediatePropagation\(\)/);
-  assert.match(html, /window\.scrollTo\(\{top,behavior:/);
+  assert.match(html, /buttons\.forEach\(button=>\s*\{[\s\S]*?button\.addEventListener\('click'/);
+  assert.match(html, /const targetTop=target\.getBoundingClientRect\(\)\.top\+\(root\.scrollTop\|\|window\.scrollY\|\|0\)/);
+  assert.match(html, /root\.scrollTop=top/);
+  assert.match(html, /html\.scrollTop=top/);
+  assert.match(html, /target\.scrollIntoView\(true\)/);
+  assert.match(html, /button\.addEventListener\('keydown'/);
 });
 
 test("mobile navigation targets are sized for touch and visibly labelled", () => {
@@ -32,6 +35,17 @@ test("mobile navigation targets are sized for touch and visibly labelled", () =>
   assert.match(html, /#bottomNav \.bottom-icon\{[^}]*font-size:22px/);
   assert.match(html, /#bottomNav \.bottom-label\{[^}]*font-size:12px/);
   assert.match(html, /#bottomNav\.bottom\{[^}]*z-index:60/);
+});
+
+test("mobile brand header and live prediction remain sticky during page scrolling", () => {
+  assert.match(html, /\.app\{[^}]*overflow-x:clip!important;overflow-y:visible!important/);
+  assert.match(html, /#home\.top\{position:sticky!important;top:4px!important;z-index:85!important\}/);
+  assert.match(html, /#stickyPrediction\.sticky-prediction\{position:sticky!important;top:var\(--ptd-sticky-prediction-top,140px\)!important;z-index:84!important/);
+  assert.match(html, /syncStickyPredictionOffset=\(\)=>\s*\{/);
+  assert.match(html, /headerHeight\+12/);
+  assert.match(html, /new ResizeObserver\(syncStickyPredictionOffset\)/);
+  assert.match(html, /\.brand h1\{font-size:clamp\(18px,4\.5vw,20px\)!important/);
+  assert.match(html, /white-space:normal!important;overflow-wrap:anywhere/);
 });
 
 test("Phase 10 has a dedicated refresh button that runs a fresh prediction request", () => {
@@ -44,9 +58,9 @@ test("Phase 10 has a dedicated refresh button that runs a fresh prediction reque
 });
 
 test("service-worker cache version is bumped and never caches live API responses", () => {
-  assert.match(serviceWorker, /const CACHE='ptd-shell-v4'/);
+  assert.match(serviceWorker, /const CACHE='ptd-shell-v6'/);
   assert.match(serviceWorker, /if\(u\.pathname\.startsWith\('\/api\/'\)\) return/);
-  assert.doesNotMatch(serviceWorker, /const CACHE='ptd-shell-v3'/);
+  assert.doesNotMatch(serviceWorker, /const CACHE='ptd-shell-v[345]'/);
 });
 
 test("Data Health distinguishes feed connectivity from live readiness gates", () => {
