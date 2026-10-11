@@ -71,9 +71,33 @@ test("Phase 10 has a dedicated refresh button that runs a fresh prediction reque
 });
 
 test("service-worker cache version is bumped and never caches live API responses", () => {
-  assert.match(serviceWorker, /const CACHE='ptd-shell-v7'/);
+  assert.match(serviceWorker, /const CACHE='ptd-shell-v8'/);
   assert.match(serviceWorker, /if\(u\.pathname\.startsWith\('\/api\/'\)\) return/);
-  assert.doesNotMatch(serviceWorker, /const CACHE='ptd-shell-v[3456]'/);
+  assert.doesNotMatch(serviceWorker, /const CACHE='ptd-shell-v[34567]'/);
+});
+
+test("Contract Finder opens a separate analysis panel with verified quote, liquidity and Greek metrics", () => {
+  assert.match(html, /id="cfAnalysisPanel" class="contract-analysis-panel" hidden/);
+  assert.match(html, /function renderContractAnalysis\(selected,analysisResponse,predictionResponse/);
+  for (const label of ["LTP", "Bid / Ask", "Spread", "Open interest", "Traded volume", "Implied volatility", "Delta", "Theta", "Gamma", "Vega"]) {
+    assert.ok(html.includes("label:'" + label + "'"), `missing analysis metric ${label}`);
+  }
+  assert.match(html, /UNVERIFIED values are not substituted with zero/);
+  assert.match(html, /Why this decision\?/);
+  assert.match(html, /multi-timeframe engine has not issued a CONFIRMED CALL\/PUT signal/);
+  assert.match(html, /id="caRefreshBtn"/);
+  assert.match(html, /id="caCloseBtn"/);
+});
+
+test("Analyse binds a selected contract by row index and requests exact exchange, segment, expiry, type and strike", () => {
+  assert.match(html, /window\.contractFinderRows=rows/);
+  assert.match(html, /data-contract-index=/);
+  assert.match(html, /addEventListener\('click',\(\)=>\s*\{/);
+  assert.match(html, /const q=new URLSearchParams\(\{exchange,segment,underlying,expiry:/);
+  assert.match(html, /getJSON\('\/api\/contract\/analyze\?'/);
+  assert.match(html, /getJSON\(predictionQuery\)/);
+  assert.doesNotMatch(html, /onclick="analyseContract\('\+JSON\.stringify\(x\)/);
+  assert.match(html, /tradeDecision=payload\.connected===true&&payload\.contractDataReady===true&&engineConfirmed/);
 });
 
 test("Data Health distinguishes feed connectivity from live readiness gates", () => {

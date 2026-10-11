@@ -8,6 +8,7 @@ import { normalizeNews, analyzeNews, normalizeGlobal, analyzeGlobal, analyzeEven
 import { buildPrediction, backtestFiveMinute } from "./prediction.js";
 import { productionReadiness } from "./phase12.js";
 import { isFreshExchangeTick, exchangeTickAgeMs } from "./marketFreshness.js";
+import { summarizeContractMetrics } from "./contractAnalysis.js";
 import { status as phase11ProtectionStatus, evaluate as phase11Evaluate, onOrderSubmitted as phase11OnOrderSubmitted, recordOutcome as phase11RecordOutcome, resetProtection as phase11ResetProtection } from "./riskGuard.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -997,7 +998,8 @@ app.get('/api/phase11/signal-token',async(req,res)=>{
       reason:futuresVol?.reason??null,fetchErrors:futuresVol?.fetchErrors??[]
     };
     if(prediction.signalState!=='CONFIRMED') return res.status(409).json({ok:false,error:'SIGNAL_NOT_CONFIRMED',prediction});
-    const optionPlan=await findBuyableOptionPlan(symbol,prediction.action,prediction.finalPlan?.entry,prediction.finalPlan?.sl,prediction.finalPlan?.target1,prediction.finalPlan?.target2);    prediction.optionPlan=optionPlan;
+    const optionPlan=await findBuyableOptionPlan(symbol,prediction.action,prediction.finalPlan?.entry,prediction.finalPlan?.sl,prediction.finalPlan?.target1,prediction.finalPlan?.target2);
+    prediction.optionPlan=optionPlan;
     if(!optionPlan.available) return res.status(409).json({ok:false,error:'BUYABLE_OPTION_NOT_FOUND',prediction});
     const payload={version:2,symbol,prediction:prediction.prediction,action:prediction.action,modelConfidence:prediction.modelConfidence,confirmationPct:prediction.confirmationPct,vix:prediction.vix,adx:prediction.adx,volumeRatio10d:prediction.volumeRatio10d,volumeMode:prediction.tradeFinder?.volumeMode||'BREAKOUT',eventDayBlock:prediction.eventBlocked||prediction.noTradeReasons?.some(x=>String(x).includes('event')),theta:optionPlan.theta,delta:optionPlan.delta,optionPlan,rrGate:'1:2+',createdAt:Date.now(),expiresAt:Date.now()+60000};
     res.json({ok:true,phase:11,token:signedPayload(payload),snapshot:payload,prediction});
@@ -1292,20 +1294,63 @@ app.get("/api/contracts", async (req,res)=>{
 });
 app.get("/api/contract/analyze", async (req,res)=>{
   try{
-    if(!angelStatus().connected) return res.json({connected:false,decision:{action:"NO TRADE",reason:"Connect Angel One before analysing a live contract."}});
-    const q=new URLSearchParams({exchange:req.query.exchange||"NSE",segment:req.query.segment||"OPTIDX",underlying:req.query.underlying||"",expiry:req.query.expiry||"",optionType:req.query.optionType||"",strike:req.query.strike||""});
-    const cr=await fetch(`http://127.0.0.1:${PORT}/api/angel/contracts?${q}`); const cd=await cr.json();
-    const contract=(cd.contracts||[])[0]||null;
-    if(!contract) return res.status(404).json({connected:true,decision:{action:"NO TRADE",reason:"Contract not found in the connected instrument master."}});
-    let greeks=null;
-    if(String(contract.exchange||'').toUpperCase()==='NSE' && contract.expiry && contract.underlying){
-      try{
-        const gr=await optionGreeks({name:contract.underlying,expirydate:contract.expiry});
-        greeks=(Array.isArray(gr)?gr:[]).find(x=>String(x.optionType||'').toUpperCase()===String(contract.optionType||'').toUpperCase() && Math.abs(Number(x.strikePrice)-Number(contract.strike||0))<0.01)||null;
-      }catch{}
+    const exchange=String(req.query.exchange||"NSE").trim().toUpperCase();
+    const segment=String(req.query.segment||"OPTIDX").trim().toUpperCase();
+    const underlying=String(req.query.underlying||"").trim().toUpperCase();
+    const expiry=String(req.query.expiry||"").trim().toUpperCase();
+    const optionType=String(req.query.optionType||"").trim().toUpperCase();
+    const strikeRaw=req.query.strike;
+    const strike=strikeRaw==null||String(strikeRaw).trim()===""?NaN:Number(strikeRaw);
+    if(!underlying||!expiry||!["CE","PE"].includes(optionType)||!Number.isFinite(strike)||strike<=0){
+      return res.status(400).json({connected:false,error:"INVALID_CONTRACT_REQUEST",message:"Underlying, expiry, CE/PE type and positive strike are required.",decision:{action:"NO TRADE",reasons:["Selected contract inputs are incomplete or invalid."]}});
     }
-    res.json({connected:true,contract,greeks,decision:{action:"NO TRADE",reason:"Live contract loaded. Direction/entry/SL/targets remain locked until the multi-timeframe fusion engine validates fresh candles, options positioning, news, global risk and event risk."}});
-  }catch(e){res.status(502).json({connected:false,error:e?.message||"Contract analysis failed"});}
+    if(!angelStatus().connected){
+      return res.json({connected:false,generatedAt:new Date().toISOString(),contract:null,greeks:null,analysis:summarizeContractMetrics({},null),decision:{action:"NO TRADE",reasons:["Connect Angel One before analysing a live option contract."]}});
+    }
+    const q=new URLSearchParams({exchange,segment,underlying,expiry,optionType,strike:String(strike)});
+    const cr=await fetch(`http://127.0.0.1:${PORT}/api/angel/contracts?${q}`);
+    const cd=await cr.json().catch(()=>({}));
+    if(!cr.ok||cd?.connected!==true){
+      return res.status(502).json({connected:false,generatedAt:new Date().toISOString(),contract:null,greeks:null,analysis:summarizeContractMetrics({},null),decision:{action:"NO TRADE",reasons:[cd?.message||"Live contract lookup is not connected."]}});
+    }
+    const rows=Array.isArray(cd.contracts)?cd.contracts:[];
+    const contract=rows.find(x=>
+      String(x.optionType||"").trim().toUpperCase()===optionType &&
+      String(x.expiry||"").trim().toUpperCase()===expiry &&
+      Number.isFinite(Number(x.strike)) && Math.abs(Number(x.strike)-strike)<0.01 &&
+      (!x.underlying || String(x.underlying).trim().toUpperCase()===underlying || String(x.underlying).trim().toUpperCase().startsWith(underlying))
+    )||null;
+    if(!contract){
+      return res.status(404).json({connected:true,generatedAt:new Date().toISOString(),contract:null,greeks:null,analysis:summarizeContractMetrics({},null),decision:{action:"NO TRADE",reasons:["The exact selected underlying, expiry, CE/PE type and strike did not match a verified instrument-master contract."]}});
+    }
+    let greeks=null;
+    try{
+      const greekRows=await liveOptionGreeks(underlying,expiry);
+      greeks=(Array.isArray(greekRows)?greekRows:[]).find(x=>
+        String(x.optionType||"").trim().toUpperCase()===optionType &&
+        Number.isFinite(Number(x.strike)) && Math.abs(Number(x.strike)-strike)<0.01
+      )||null;
+    }catch{}
+    const analysis=summarizeContractMetrics(contract,greeks);
+    const greekRisk=greekRiskWarning(greeks);
+    const reasons=[...analysis.reasons];
+    if(greekRisk?.status==="NO TRADE" && !reasons.includes(greekRisk.message)) reasons.push(greekRisk.message);
+    const contractDataReady=analysis.ready && greekRisk?.status==="PASS";
+    res.json({
+      connected:true,generatedAt:new Date().toISOString(),
+      requested:{exchange,segment,underlying,expiry,optionType,strike},
+      contract,greeks,analysis,greekRisk,
+      contractDataReady,
+      decision:{
+        action:"NO TRADE",
+        status:contractDataReady?"AWAITING_FUSION_CONFIRMATION":"DATA_BLOCKED",
+        reasons:reasons.length?reasons:["Contract quote checks passed, but the multi-timeframe prediction engine must still confirm a valid setup before any trade action."]
+      },
+      note:"Contract data verification is not trade approval. Entry remains NO TRADE unless the separately verified multi-timeframe engine confirms all safety gates."
+    });
+  }catch(e){
+    res.status(502).json({connected:false,error:e?.message||"Contract analysis failed",decision:{action:"NO TRADE",reasons:["Contract analysis endpoint failed."]}});
+  }
 });
 
 function sma(vals, n){ if(vals.length<n) return null; const a=vals.slice(-n); return a.reduce((x,y)=>x+y,0)/n; }
@@ -1452,8 +1497,7 @@ function istMinuteKey(ts){
 }
 function istDayKey(ts){
   const d=new Date(ts);
-  if(Number.isNaN(d.getTime())) return null;
-  return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);
+  if(Number.isNaN(d.getTime())) return null;  return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);
 }
 function formatAngelDate(ts){
   const d=new Date(ts);
