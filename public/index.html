@@ -247,7 +247,8 @@ body{-webkit-overflow-scrolling:touch}
 /* Live UX: sticky prediction, top notification, and mobile-safe scrolling. */
 .sticky-prediction{
   position:sticky;top:86px;z-index:34;display:grid;grid-template-columns:auto 1fr auto;align-items:center;
-  gap:9px;margin:8px 0;padding:8px 10px;border:1px solid #33445f;border-radius:14px;  background:rgba(7,13,24,.94);backdrop-filter:blur(16px);box-shadow:0 12px 32px rgba(0,0,0,.32)
+  gap:9px;margin:8px 0;padding:8px 10px;border:1px solid #33445f;border-radius:14px;
+  background:rgba(7,13,24,.94);backdrop-filter:blur(16px);box-shadow:0 12px 32px rgba(0,0,0,.32)
 }
 .sticky-prediction .sp-label{display:block;color:var(--muted);font-size:7px;font-weight:900;letter-spacing:.7px;text-transform:uppercase}
 .sticky-prediction .sp-value{display:block;font-size:17px;font-weight:950;line-height:1.1;margin-top:2px}
@@ -496,7 +497,8 @@ body.chart-fullscreen-open .selector{display:none!important}
   height:100dvh!important;min-height:0!important;max-height:none!important;
   margin:0!important;border:0!important;border-radius:0!important;
   display:flex!important;flex-direction:column!important;overflow:hidden!important;
-}.chart-app-fullscreen .angel-chart .a1-head,
+}
+.chart-app-fullscreen .angel-chart .a1-head,
 .chart-app-fullscreen .angel-chart .a1-toolbar,
 .chart-app-fullscreen .angel-chart .a1-menu-row,
 .chart-app-fullscreen .angel-chart .a1-timeframes,
@@ -578,6 +580,46 @@ body.chart-fullscreen-open>.app>.bottom{
   #bottomNav .bottom-button:active{transform:scale(.96)}
 }
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto!important}#bottomNav .bottom-button:active{transform:none}#p10RefreshBtn .refresh-icon{animation:none!important}}
+</style>
+<style id="contract-analysis-panel-style">
+.contract-analysis-panel{margin-top:14px;padding:14px;border:1px solid #32435f;border-radius:16px;background:linear-gradient(155deg,rgba(17,31,51,.98),rgba(7,12,23,.98));color:#f4f7ff;min-width:0}
+.contract-analysis-panel[hidden]{display:none!important}
+.ca-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
+.ca-eyebrow{color:#9eafc8;font-size:10px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
+.ca-title{font-size:17px;font-weight:900;line-height:1.3;overflow-wrap:anywhere;margin-top:4px}
+.ca-subtitle{color:#98a8c0;font-size:11px;line-height:1.4;margin-top:4px}
+.ca-badge{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;border:1px solid #33445f;border-radius:999px;padding:7px 10px;font-size:10px;font-weight:900;color:#c1d0e7;background:#0a1322}
+.ca-badge.good{color:#80edc1;border-color:#205b48}
+.ca-badge.warn{color:#ffd16a;border-color:#725c30}
+.ca-badge.bad{color:#ff93a5;border-color:#713849}
+.ca-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.ca-metric{border:1px solid #24324a;border-radius:11px;background:#080f1d;padding:10px;min-width:0}
+.ca-metric-label{font-size:9px;color:#94a4bc;font-weight:800;letter-spacing:.45px;text-transform:uppercase}
+.ca-metric-value{font-size:14px;line-height:1.35;color:#f6f8fd;font-weight:900;margin-top:5px;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.ca-metric-state{font-size:9px;line-height:1.35;color:#9caec8;margin-top:4px}
+.ca-section-title{font-size:12px;letter-spacing:.4px;font-weight:900;margin:14px 0 8px;color:#d9e5f8;text-transform:uppercase}
+.ca-decision{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.ca-decision-box{border:1px solid #2a3a55;border-radius:12px;background:#091321;padding:11px;min-width:0}
+.ca-decision-label{font-size:9px;color:#9aaac1;font-weight:800;text-transform:uppercase;letter-spacing:.4px}
+.ca-decision-value{font-size:18px;font-weight:950;margin-top:5px;overflow-wrap:anywhere}
+.ca-reasons{display:grid;gap:7px;padding:0;margin:0;list-style:none}
+.ca-reasons li{font-size:11px;line-height:1.5;color:#c4d0e3;background:#0a1220;border:1px solid #24314a;border-radius:9px;padding:8px 10px}
+.ca-reasons li::before{content:"•";color:#f0c66b;font-weight:900;margin-right:7px}
+.ca-meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.ca-chip{border:1px solid #283852;border-radius:8px;padding:6px 8px;font-size:10px;color:#b2c0d5;background:#091321}
+.ca-foot{font-size:10px;line-height:1.5;color:#8e9db5;margin-top:12px}
+.ca-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px}
+.ca-actions .btn{min-height:40px}
+@media(max-width:760px){
+  .contract-analysis-panel{padding:11px;margin-top:11px}
+  .ca-head{gap:7px}
+  .ca-title{font-size:15px}
+  .ca-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+  .ca-metric{padding:9px}
+  .ca-metric-value{font-size:13px}
+  .ca-decision{grid-template-columns:1fr 1fr}
+  .ca-decision-value{font-size:16px}
+}
 </style></head>
 <body>
 <script id="ANDROID_LAYOUT_GUARD">
@@ -724,7 +766,8 @@ body.chart-fullscreen-open>.app>.bottom{
     <button class="btn primary" onclick="findContracts()">Search Contract</button>
   </div>
   <div class="finder-note">Example: <b>NIFTY 23500 CE</b>, <b>NIFTY 23500 PE</b>, <b>NIFTY 22250 CE/PE</b>. Stock options use the strike ladder supported for that underlying; not every listed stock has an option contract. NSE/BSE contract rules are applied from the connected instrument master.</div>
-  <div id="cfResult" class="contract-result"><div class="news-item"><b>LIVE CONTRACT FEED REQUIRED</b><span>Once connected, this panel will show LTP, change, bid/ask, volume, OI, ΔOI, IV and an Analyse button.</span></div></div>
+  <div id="cfResult" class="contract-result"><div class="news-item"><b>LIVE CONTRACT FEED REQUIRED</b><span>Connect Angel One, then search a contract to load verified quote data.</span></div></div>
+  <section id="cfAnalysisPanel" class="contract-analysis-panel" hidden aria-live="polite" aria-busy="false"></section>
 </section>
 
 <section class="card" id="angelConnection">
@@ -745,7 +788,8 @@ body.chart-fullscreen-open>.app>.bottom{
   <div class="finder-note" id="angelTestNote">Phase 2: login → instrument master → live quote → option contract lookup. WebSocket streaming can be enabled after the REST quote test passes.</div>
 </section>
 
-<section class="card" id="phase12Ready">  <div class="card-head"><h3>Phase 12 • Go-Live Readiness</h3><span id="p12Mode" class="neutral">LOCKED</span></div>
+<section class="card" id="phase12Ready">
+  <div class="card-head"><h3>Phase 12 • Go-Live Readiness</h3><span id="p12Mode" class="neutral">LOCKED</span></div>
   <div class="grid2">
     <div class="strategy-box"><small>Angel One</small><b id="p12Angel" class="neutral">WAIT</b><span>Session</span></div>
     <div class="strategy-box"><small>Static IP</small><b id="p12Static" class="neutral">WAIT</b><span>Order-source gate</span></div>
@@ -994,7 +1038,8 @@ body.chart-fullscreen-open>.app>.bottom{
           <button onclick="toggleIndicator('ema')">EMA 20/50/200</button>
           <button onclick="toggleIndicator('vwap')">VWAP</button>
           <button onclick="toggleIndicator('volume')">Volume</button>
-          <button onclick="toggleIndicator('rsi')">RSI</button>          <button onclick="toggleIndicator('macd')">MACD</button>
+          <button onclick="toggleIndicator('rsi')">RSI</button>
+          <button onclick="toggleIndicator('macd')">MACD</button>
           <button onclick="toggleIndicator('adx')">ADX</button>
         </div>
         <div class="a1-menu" id="drawMenu">
@@ -1243,7 +1288,8 @@ body.chart-fullscreen-open>.app>.bottom{
       API keys, OTPs and access tokens stay server-side.
     </div>
   </div>
-</aside></div>
+</aside>
+</div>
 
 <div class="card" id="journal" style="margin-top:12px">
   <div class="card-head"><h3>Trade Journal & Audit Trail</h3><span>Auto-saved on this device • live broker fills remain gated</span></div>
@@ -1451,8 +1497,7 @@ async function angelStatus(){
     return d;
   }catch(e){ setGate('cxLogin',false,'OFF'); setGate('cxWs',false,'OFF'); return {connected:false}; }
 }
-async function angelReconnect(){
-  try{
+async function angelReconnect(){  try{
     const r=await fetch(API_BASE+'/api/angel/reconnect',{method:'POST'});
     const d=await r.json().catch(()=>({}));
     if(!r.ok) throw new Error(d.error||('Reconnect failed (HTTP '+r.status+')'));
@@ -1492,7 +1537,8 @@ function signalTone(value){
  if(/BULLISH|BULL|UP|POSITIVE|BUY|SUPPORT|CALL/.test(t)) return 'bullish';
  return 'neutral';
 }
-function paintSignal(id,value){const el=$(id);if(!el)return;el.textContent=value??'WAIT';el.classList.remove('bullish','bearish','neutral');el.classList.add(signalTone(value));}function renderDecision(d){
+function paintSignal(id,value){const el=$(id);if(!el)return;el.textContent=value??'WAIT';el.classList.remove('bullish','bearish','neutral');el.classList.add(signalTone(value));}
+function renderDecision(d){
  const action=d.action||'NO TRADE';
  $('decision').textContent=action; $('action').textContent=action; $('score').textContent=(d.score??'—')+' / 100';
  $('confidence').textContent=d.confidence||'—'; $('rr').textContent=d.rr||'—';
@@ -1601,6 +1647,8 @@ async function getJSON(path){
 async function findContracts(){
   const exchange=$('cfExchange').value,segment=$('cfSegment').value,underlying=$('cfUnderlying').value.trim().toUpperCase(),expiry=$('cfExpiry').value,optionType=$('cfType').value,strike=$('cfStrike').value.trim();
   if(!underlying){toast('Enter an underlying symbol');return}
+  const analysisPanel=$('cfAnalysisPanel');
+  if(analysisPanel){analysisPanel.hidden=true;analysisPanel.setAttribute('aria-busy','false');analysisPanel.innerHTML='';}
   const q=new URLSearchParams({exchange,segment,underlying,expiry,optionType,strike});
   try{
     const r=await getJSON('/api/contracts?'+q.toString());
@@ -1609,14 +1657,144 @@ async function findContracts(){
   }catch(e){$('cfResult').innerHTML='<div class="news-item"><b>CONTRACT SEARCH ERROR</b><span>Backend unavailable.</span></div>'}
 }
 function renderContracts(rows){
-  if(!rows.length){$('cfResult').innerHTML='<div class="news-item"><b>NO MATCHING CONTRACT</b><span>Try another expiry, strike or option type.</span></div>';return}
-  $('cfResult').innerHTML='<table class="contract-table"><thead><tr><th>Contract</th><th>LTP</th><th>Chg</th><th>Bid/Ask</th><th>OI</th><th>ΔOI</th><th>Vol</th><th>IV</th><th></th></tr></thead><tbody>'+rows.map(x=>'<tr><td>'+escapeHtml(x.contract)+'</td><td>'+escapeHtml(x.ltp??'—')+'</td><td>'+escapeHtml(x.change??'—')+'</td><td>'+escapeHtml((x.bid??'—')+' / '+(x.ask??'—'))+'</td><td>'+escapeHtml(x.oi??'—')+'</td><td>'+escapeHtml(x.doi??'—')+'</td><td>'+escapeHtml(x.volume??'—')+'</td><td>'+escapeHtml(x.iv??'—')+'</td><td><button class="btn" onclick="analyseContract('+JSON.stringify(x).replace(/</g,'\u003c')+')">Analyse</button></td></tr>').join('')+'</tbody></table>'
+  const panel=$('cfAnalysisPanel');
+  if(panel){panel.hidden=true;panel.setAttribute('aria-busy','false');panel.innerHTML='';}
+  if(!rows.length){window.contractFinderRows=[];$('cfResult').innerHTML='<div class="news-item"><b>NO MATCHING CONTRACT</b><span>Try another expiry, strike or option type.</span></div>';return}
+  window.contractFinderRows=rows;
+  $('cfResult').innerHTML='<table class="contract-table"><thead><tr><th>Contract</th><th>LTP</th><th>Chg</th><th>Bid/Ask</th><th>OI</th><th>ΔOI</th><th>Vol</th><th>IV</th><th></th></tr></thead><tbody>'+rows.map((x,i)=>'<tr><td>'+escapeHtml(x.contract||'—')+'</td><td>'+escapeHtml(x.ltp??'—')+'</td><td>'+escapeHtml(x.change??'—')+'</td><td>'+escapeHtml((x.bid??'—')+' / '+(x.ask??'—'))+'</td><td>'+escapeHtml(x.oi??'—')+'</td><td>'+escapeHtml(x.doi??'—')+'</td><td>'+escapeHtml(x.volume??'—')+'</td><td>'+escapeHtml(x.iv??'—')+'</td><td><button class="btn" type="button" data-contract-index="'+i+'" aria-label="Analyse '+escapeHtml(x.contract||'selected contract')+'">Analyse</button></td></tr>').join('')+'</tbody></table>';
+  $('cfResult').querySelectorAll('button[data-contract-index]').forEach(button=>{
+    button.addEventListener('click',()=>{
+      const index=Number(button.dataset.contractIndex);
+      const selected=window.contractFinderRows?.[index];
+      if(selected) analyseContract(selected,button);
+    });
+  });
 }
-async function analyseContract(x){
-  window.selectedContract=x||null;
-  $('cfUnderlying').value=x.underlying||$('cfUnderlying').value;$('cfExpiry').value=x.expiry||$('cfExpiry').value;$('cfType').value=x.optionType||'CE';$('cfStrike').value=x.strike||'';
-  try{const q=new URLSearchParams({exchange:x.exchange||$('cfExchange').value,underlying:x.underlying||'',expiry:x.expiry||'',optionType:x.optionType||'CE',strike:x.strike||''});const r=await getJSON('/api/contract/analyze?'+q.toString());toast(r.connected?'Contract loaded':'NO TRADE • live contract feed required');if(r.connected&&typeof window.loadPrediction==='function')await window.loadPrediction(false).catch(()=>{});}catch(e){toast('Contract analysis unavailable')}}
-$('cfUnderlying')?.addEventListener('change',()=>{ $('cfExpiry').innerHTML='<option value="">Load expiries</option>'; refreshExpiries(); });
+function caNumber(value){
+  if(value===null||value===undefined||(typeof value==='string'&&value.trim()===''))return null;
+  const n=Number(value);return Number.isFinite(n)?n:null;
+}
+function caFormat(value,places=2){
+  const n=caNumber(value);
+  return n===null?'UNVERIFIED':n.toLocaleString('en-IN',{maximumFractionDigits:places,minimumFractionDigits:0});
+}
+function caMoney(value){
+  const n=caNumber(value);
+  return n===null?'UNVERIFIED':'₹'+n.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function caBadgeClass(status){
+  const s=String(status||'').toUpperCase();
+  return ['PASS','VERIFIED','CONFIRMED','CALL','PUT'].includes(s)?'good':s.includes('NO TRADE')||s==='DATA_BLOCKED'||s==='WIDE'?'bad':'warn';
+}
+function renderContractAnalysis(selected,analysisResponse,predictionResponse,analysisError='',predictionError=''){
+  const panel=$('cfAnalysisPanel');if(!panel)return;
+  panel.hidden=false;panel.setAttribute('aria-busy','false');
+  const payload=analysisResponse||{};
+  const contract=payload.contract||selected||{};
+  const m=payload.analysis||{
+    ltp:caNumber(contract.ltp),change:caNumber(contract.change),bid:caNumber(contract.bid),ask:caNumber(contract.ask),
+    oi:caNumber(contract.oi),volume:caNumber(contract.volume),iv:caNumber(contract.iv),
+    delta:null,theta:null,gamma:null,vega:null,spreadPoints:null,spreadPct:null,spreadStatus:'UNVERIFIED',
+    greekRiskStatus:'UNVERIFIED',checks:{ltp:false,spread:false,oi:false,volume:false,greeks:false,iv:false},ready:false,
+    reasons:['The analysis endpoint did not return verified contract metrics.']
+  };
+  const p=predictionResponse?.prediction||null;
+  const greekRisk=payload.greekRisk||{status:'UNVERIFIED',message:'Live option Greeks are not verified.'};
+  const engineConfirmed=!!p&&p.signalState==='CONFIRMED'&&['CALL','PUT'].includes(String(p.action||'').toUpperCase())&&p.feedComplete===true;
+  const tradeDecision=payload.connected===true&&payload.contractDataReady===true&&engineConfirmed&&greekRisk.status==='PASS'
+    ?String(p.action).toUpperCase():'NO TRADE';
+  const bias=p&&['BULLISH','BEARISH','NEUTRAL'].includes(String(p.prediction||'').toUpperCase())?String(p.prediction).toUpperCase():'UNVERIFIED';
+  const checks=m.checks||{};
+  const bidAsk=m.bid!==null&&m.bid!==undefined&&m.ask!==null&&m.ask!==undefined;
+  const spreadValue=m.spreadPoints===null||m.spreadPoints===undefined?'UNVERIFIED':caMoney(m.spreadPoints)+(m.spreadPct===null||m.spreadPct===undefined?'':' ('+caFormat(m.spreadPct,3)+'%)');
+  const ivValue=m.iv===null||m.iv===undefined?'UNVERIFIED':caFormat(m.iv,2)+'%';
+  const metricRows=[
+    {label:'LTP',value:caMoney(m.ltp),state:checks.ltp?'LIVE QUOTE':'UNVERIFIED'},
+    {label:'Provider change',value:m.change===null||m.change===undefined?'UNVERIFIED':caFormat(m.change,2),state:m.change===null||m.change===undefined?'UNVERIFIED':'QUOTE FIELD'},
+    {label:'Bid / Ask',value:bidAsk?caMoney(m.bid)+' / '+caMoney(m.ask):'UNVERIFIED',state:checks.spread?'VERIFIED':'UNVERIFIED'},
+    {label:'Spread',value:spreadValue,state:m.spreadStatus||'UNVERIFIED'},
+    {label:'Open interest',value:caFormat(m.oi,0),state:checks.oi?'LIQUIDITY INPUT':'UNVERIFIED'},
+    {label:'Traded volume',value:caFormat(m.volume,0),state:checks.volume?'LIQUIDITY INPUT':'UNVERIFIED'},
+    {label:'Implied volatility',value:ivValue,state:checks.iv?'LIVE GREEKS':'UNVERIFIED'},
+    {label:'Delta',value:caFormat(m.delta,4),state:m.delta===null||m.delta===undefined?'UNVERIFIED':greekRisk.status},
+    {label:'Theta',value:caFormat(m.theta,4),state:m.theta===null||m.theta===undefined?'UNVERIFIED':greekRisk.status},
+    {label:'Gamma',value:caFormat(m.gamma,5),state:m.gamma===null||m.gamma===undefined?'UNVERIFIED':'LIVE GREEKS'},
+    {label:'Vega',value:caFormat(m.vega,4),state:m.vega===null||m.vega===undefined?'UNVERIFIED':'LIVE GREEKS'}
+  ];
+  const rawReasons=[];
+  if(!analysisResponse)rawReasons.push(analysisError||'Contract analysis API did not respond.');
+  else if(!payload.connected)rawReasons.push(...(payload.decision?.reasons||['Angel One live contract connection is not verified.']));
+  if(m.reasons?.length)rawReasons.push(...m.reasons);
+  if(payload.decision?.reasons?.length)rawReasons.push(...payload.decision.reasons);
+  if(!predictionResponse)rawReasons.push(predictionError||'Multi-timeframe prediction data is unavailable.');
+  else if(!p)rawReasons.push('Prediction response did not contain a prediction object.');
+  else if(!engineConfirmed){
+    if(Array.isArray(p.noTradeReasons))rawReasons.push(...p.noTradeReasons);
+    rawReasons.push('The multi-timeframe engine has not issued a CONFIRMED CALL/PUT signal; final decision remains NO TRADE.');
+  }
+  if(payload.connected===true&&!payload.contractDataReady&&!m.reasons?.length)rawReasons.push('Contract quote/Greeks verification is incomplete; no actionable option signal is allowed.');
+  if(['CAUTION','NO TRADE','UNVERIFIED','WAIT'].includes(String(greekRisk.status||'').toUpperCase()))rawReasons.push(greekRisk.message||'Live Delta/Theta check is not passed.');
+  const uniqueReasons=[...new Set(rawReasons.map(x=>String(x||'').trim()).filter(Boolean))].slice(0,12);
+  if(!uniqueReasons.length)uniqueReasons.push('Contract data and multi-timeframe safety checks passed. This analysis does not place an order.');
+  const dataState=payload.contractDataReady?'CONTRACT DATA VERIFIED':payload.connected?'DATA PARTIAL / UNVERIFIED':'CONNECTION UNVERIFIED';
+  const created=payload.generatedAt?new Date(payload.generatedAt):null;
+  const updated=created&&Number.isFinite(created.getTime())?created.toLocaleString('en-IN'):'Request time not verified';
+  const signalState=p?.signalState||'UNVERIFIED';
+  const confidence=caNumber(p?.modelConfidence),confirmation=caNumber(p?.confirmationPct);
+  const title=contract.contract||contract.symbol||((contract.underlying||selected?.underlying||'OPTION')+' '+(contract.strike??selected?.strike??'')+' '+(contract.optionType||selected?.optionType||''));
+  const finalClass=tradeDecision==='CALL'||tradeDecision==='PUT'?'good':'bad';
+  panel.innerHTML=
+    '<div class="ca-head"><div><div class="ca-eyebrow">Contract Analysis • '+escapeHtml(dataState)+'</div><div class="ca-title">'+escapeHtml(title)+'</div><div class="ca-subtitle">'+escapeHtml((contract.expiry||selected?.expiry||'Expiry unverified')+' • '+(contract.optionType||selected?.optionType||'Type unverified')+' • Strike '+(contract.strike??selected?.strike??'UNVERIFIED'))+'</div></div><span class="ca-badge '+caBadgeClass(dataState)+'">'+escapeHtml(dataState)+'</span></div>'+
+    '<div class="ca-metrics">'+metricRows.map(row=>'<div class="ca-metric"><div class="ca-metric-label">'+escapeHtml(row.label)+'</div><div class="ca-metric-value">'+escapeHtml(row.value)+'</div><div class="ca-metric-state">'+escapeHtml(row.state)+'</div></div>').join('')+'</div>'+
+    '<div class="ca-section-title">Decision & market context</div>'+
+    '<div class="ca-decision"><div class="ca-decision-box"><div class="ca-decision-label">Final decision</div><div class="ca-decision-value"><span class="ca-badge '+finalClass+'">'+escapeHtml(tradeDecision)+'</span></div><div class="ca-subtitle">Analyse does not submit an order.</div></div><div class="ca-decision-box"><div class="ca-decision-label">Market bias</div><div class="ca-decision-value">'+escapeHtml(bias)+'</div><div class="ca-subtitle">'+escapeHtml(signalState)+' • Confidence '+(confidence===null?'UNVERIFIED':escapeHtml(caFormat(confidence,0)+'%'))+'</div></div></div>'+
+    '<div class="ca-meta">'+[
+      '1H '+(p?.trend1h||'UNVERIFIED'),'15M '+(p?.setup15m||'UNVERIFIED'),'5M '+(p?.trigger5m||'UNVERIFIED'),
+      'Confirm '+(confirmation===null?'UNVERIFIED':caFormat(confirmation,0)+'%'),'ADX '+caFormat(p?.adx,1),
+      'RSI '+caFormat(p?.rsi,1),'VIX '+caFormat(p?.vix,2),'Greeks '+(greekRisk.status||'UNVERIFIED')
+    ].map(s=>'<span class="ca-chip">'+escapeHtml(s)+'</span>').join('')+'</div>'+
+    '<div class="ca-section-title">Why this decision?</div><ul class="ca-reasons">'+uniqueReasons.map(reason=>'<li>'+escapeHtml(reason)+'</li>').join('')+'</ul>'+
+    '<div class="ca-foot">Provider quotes and Greeks are shown only when returned by the backend. UNVERIFIED values are not substituted with zero. Model confidence is a confluence score, not a win probability. Entry is allowed only when exact-contract checks and every prediction safety gate pass.</div>'+
+    '<div class="ca-actions"><button class="btn primary" type="button" id="caRefreshBtn">Refresh Analysis</button><button class="btn" type="button" id="caCloseBtn">Close Analysis</button></div>'+
+    '<div class="ca-foot">Quote request: '+escapeHtml(updated)+'</div>';
+  $('caRefreshBtn')?.addEventListener('click',()=>analyseContract(window.selectedContract||selected));
+  $('caCloseBtn')?.addEventListener('click',()=>{panel.hidden=true;panel.setAttribute('aria-busy','false');});
+  panel.scrollIntoView({behavior:'auto',block:'nearest'});
+}
+async function analyseContract(x,button=null){
+  if(!x||typeof x!=='object'){toast('Select a contract row first');return}
+  window.selectedContract=x;
+  $('cfUnderlying').value=x.underlying||$('cfUnderlying').value;
+  $('cfExpiry').value=x.expiry||$('cfExpiry').value;
+  $('cfType').value=x.optionType||'CE';
+  $('cfStrike').value=x.strike??'';
+  const panel=$('cfAnalysisPanel');
+  if(!panel){toast('Analysis panel is unavailable in this app version');return}
+  panel.hidden=false;panel.setAttribute('aria-busy','true');
+  panel.innerHTML='<div class="ca-head"><div><div class="ca-eyebrow">Contract Analysis</div><div class="ca-title">'+escapeHtml(x.contract||'Selected contract')+'</div><div class="ca-subtitle">Verifying exact expiry, strike, quote, IV and Delta/Theta…</div></div><span class="ca-badge warn">ANALYSING</span></div>';
+  if(button){button.disabled=true;button.textContent='Analysing…';}
+  const exchange=$('cfExchange').value||'NSE',segment=$('cfSegment').value||'OPTIDX';
+  const underlying=String(x.underlying||$('cfUnderlying').value||'').trim().toUpperCase();
+  const q=new URLSearchParams({exchange,segment,underlying,expiry:String(x.expiry||$('cfExpiry').value||''),optionType:String(x.optionType||$('cfType').value||'CE').toUpperCase(),strike:String(x.strike??$('cfStrike').value??'')});
+  const predictionQuery='/api/phase10/prediction?symbol='+encodeURIComponent(underlying)+'&refresh='+Date.now();
+  let analysisResponse=null,predictionResponse=null,analysisError='',predictionError='';
+  try{
+    const results=await Promise.allSettled([getJSON('/api/contract/analyze?'+q.toString()),getJSON(predictionQuery)]);
+    if(results[0].status==='fulfilled')analysisResponse=results[0].value;
+    else analysisError=results[0].reason?.message||'Contract analysis request failed.';
+    if(results[1].status==='fulfilled')predictionResponse=results[1].value;
+    else predictionError=results[1].reason?.message||'Prediction request failed.';
+    renderContractAnalysis(x,analysisResponse,predictionResponse,analysisError,predictionError);
+    toast(analysisResponse?.connected&&analysisResponse?.contractDataReady&&predictionResponse?.prediction?.signalState==='CONFIRMED'?'Contract checks passed; review analysis':'Analysis loaded • trade decision remains safety-gated');
+  }catch(error){
+    renderContractAnalysis(x,analysisResponse,predictionResponse,error?.message||'Analysis request failed.',predictionError);
+    toast('Analysis incomplete • see panel reasons');
+  }finally{
+    panel.setAttribute('aria-busy','false');
+    if(button){button.disabled=false;button.textContent='Analyse';}
+  }
+}
+window.analyseContract=analyseContract;$('cfUnderlying')?.addEventListener('change',()=>{ $('cfExpiry').innerHTML='<option value="">Load expiries</option>'; refreshExpiries(); });
 
 
 async function refreshExpiries(){
@@ -1741,7 +1919,8 @@ function processAlerts(a){
       const confirmed=candleBull&&volumeConfirmed&&adx>=20&&oiBull&&trendConfirmed;
       if(confirmed) addAlert('🚀 CONFIRMED BULLISH BREAKOUT',`${symbol} • 5M close > R1 • volume ${volRatio.toFixed(1)}x • ADX ${adx.toFixed(1)} • option positioning confirmed.`,'bullish',`cbo-${cur?.t||Math.floor(Date.now()/60000)}`);
       else addAlert('👀 Breakout WATCH',`${symbol} crossed R1, but confirmation is incomplete: 5M close/volume/ADX/OI/trend must align. No trade alert.`,'neutral',`bo-watch-${Math.floor(Date.now()/60000)}`);
-    }    if($('alertBreakdown').checked&&crossedDown(alertState.lastPrice,last,s1)){
+    }
+    if($('alertBreakdown').checked&&crossedDown(alertState.lastPrice,last,s1)){
       const confirmed=candleBear&&volumeConfirmed&&adx>=20&&oiBear&&trendConfirmed;
       if(confirmed) addAlert('🔻 CONFIRMED BEARISH BREAKDOWN',`${symbol} • 5M close < S1 • volume ${volRatio.toFixed(1)}x • ADX ${adx.toFixed(1)} • option positioning confirmed.`,'bearish',`cbd-${cur?.t||Math.floor(Date.now()/60000)}`);
       else addAlert('👀 Breakdown WATCH',`${symbol} crossed S1, but confirmation is incomplete: 5M close/volume/ADX/OI/trend must align. No trade alert.`,'neutral',`bd-watch-${Math.floor(Date.now()/60000)}`);
@@ -1990,7 +2169,8 @@ function stccRender(x){
     state.textContent='CONFIRMED • READY';
     setP10Tone(state,'BULLISH');
     reason.textContent='Confirmed setup. Review the exact entry, SL and targets below. Nothing is auto-placed; lock the plan when you decide to take it.';
-  }else{    const marketClosed=p?.marketOpen===false;
+  }else{
+    const marketClosed=p?.marketOpen===false;
     const signalState=String(p?.signalState||'').toUpperCase();
     const blockers=Array.isArray(p?.noTradeReasons)?p.noTradeReasons.filter(Boolean):[];
     decision.textContent=marketClosed?'NO TRADE • MARKET CLOSED':signalState==='NO TRADE'?'NO TRADE • GATES BLOCKED':signalState==='WATCH'?'WATCH • WAIT FOR CONFIRMATION':'WAIT FOR CONFIRMED SETUP';
@@ -2239,7 +2419,8 @@ async function requestPhase11Signal(){
   addAlert('✅ Confirmed Signal Lock',`${symbol} • ${d.snapshot.action} • ${d.snapshot.modelConfidence}% model confidence • ${d.snapshot.confirmationPct}% confirmation.`,'bullish','p11-'+d.snapshot.createdAt);
   toast('Phase 11 confirmed signal lock loaded');
  }catch(e){window.phase11SignalToken='';window.phase11Snapshot=null;$('p11SignalStatus').textContent='Not available • confirmation gate not met or live feed unavailable.';toast(e.message||'Confirmed signal unavailable')}
-}let ptdLoadAllPromise=null;
+}
+let ptdLoadAllPromise=null;
 async function loadAll(){
   if(ptdLoadAllPromise) return ptdLoadAllPromise;
   ptdLoadAllPromise=(async()=>{
@@ -2488,7 +2669,8 @@ async function requestOrder(side){
    toast('Select a live contract from Contract Finder first'); return;
  }
  const body={side:'BUY',transactiontype:side,exchange:exch,tradingsymbol:symbol,symboltoken:token,ordertype:$('orderType').value,producttype:'INTRADAY',price:Number(entry),stopLoss:Number(sl),target1:Number($('t1').value||0),quantity:Number(qty),capital:Number($('capital').value||0),riskPct:Number($('riskPct').value||0),signalToken:window.phase11SignalToken||''};
- try{   const r=await fetch(API_BASE+'/api/order/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); const d=await r.json();
+ try{
+   const r=await fetch(API_BASE+'/api/order/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); const d=await r.json();
    if(!r.ok||!d.ok) throw new Error([d.error,...(d.errors||[])].filter(Boolean).join(' • '));
    pendingOrderPreview={previewId:d.previewId,order:d.order,meta:{side,entry:Number(entry),sl:Number(sl),t1:Number($('t1').value||0),t2:Number($('t2').value||0)}}; $('orderPreviewText').textContent=`${d.order.transactiontype} ${d.order.tradingsymbol} • Qty ${d.order.quantity} • Price ${d.order.price} • Max risk ₹${d.maxLoss} • expires in 60s.`; $('orderConfirm').value=''; $('orderModal').classList.add('show');
  }catch(e){toast(e.message||'Order preview failed')}
@@ -2737,7 +2919,8 @@ document.addEventListener('DOMContentLoaded',()=>{
       const targetTop=target.getBoundingClientRect().top+(root.scrollTop||window.scrollY||0);
       const top=Math.max(0,targetTop-92);
       root.scrollTop=top;
-      html.scrollTop=top;      if(body)body.scrollTop=top;
+      html.scrollTop=top;
+      if(body)body.scrollTop=top;
       try{window.scrollTo(0,top);}catch(_){}
       // Restore the page's normal scrolling style immediately; no stale timers
       // remain to pull the user back to a previously selected section.
