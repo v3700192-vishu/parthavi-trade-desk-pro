@@ -98,6 +98,16 @@ export async function fetchUpstoxHistoricalCandles({
   }
 }
 
+// Use independent futures history whenever the primary feed cannot support verified volume/VWAP checks.
+export function shouldUseUpstoxFuturesFallback({
+  rateRejected = false, rowCount = 0, benchmarkRatio10d = null, sessionVwap = null
+} = {}) {
+  const count = Number(rowCount);
+  const ratioAvailable = benchmarkRatio10d !== null && benchmarkRatio10d !== undefined && Number.isFinite(Number(benchmarkRatio10d));
+  const vwapAvailable = sessionVwap !== null && sessionVwap !== undefined && Number.isFinite(Number(sessionVwap));
+  return Boolean(rateRejected || !Number.isFinite(count) || count < 100 || !ratioAvailable || !vwapAvailable);
+}
+
 export function upstoxConfigStatus({ symbol = "NIFTY", role = "index", env = process.env } = {}) {
   const tokenConfigured = Boolean(String(env.UPSTOX_ACCESS_TOKEN || "").trim());
   const instrumentKeyConfigured = Boolean(resolveUpstoxInstrumentKey(symbol, role, env));
