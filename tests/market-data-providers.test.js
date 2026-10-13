@@ -4,6 +4,7 @@ import {
   fetchUpstoxHistoricalCandles,
   normalizeUpstoxCandles,
   resolveUpstoxInstrumentKey,
+  shouldUseUpstoxFuturesFallback,
   upstoxConfigStatus
 } from "../marketDataProviders.js";
 
@@ -22,6 +23,30 @@ test("Upstox provider defaults only to documented index keys and requires a serv
   assert.deepEqual(upstoxConfigStatus({
     symbol: "NIFTY", role: "futures", env: { UPSTOX_ACCESS_TOKEN: "secret", UPSTOX_NIFTY_FUTURES_KEY: "NSE_FO|NIFTY-FUT" }
   }), { configured: true, tokenConfigured: true, instrumentKeyConfigured: true, role: "futures", symbol: "NIFTY" });
+});
+
+test("futures fallback activates after a primary-provider rate rejection", () => {
+  assert.equal(shouldUseUpstoxFuturesFallback({
+    rateRejected: true, rowCount: 700, benchmarkRatio10d: 1.8, sessionVwap: 22500
+  }), true);
+});
+
+test("futures fallback activates when a large partial history cannot verify the 10-day benchmark", () => {
+  assert.equal(shouldUseUpstoxFuturesFallback({
+    rateRejected: false, rowCount: 140, benchmarkRatio10d: null, sessionVwap: 22500
+  }), true);
+});
+
+test("futures fallback activates when a session VWAP cannot be verified", () => {
+  assert.equal(shouldUseUpstoxFuturesFallback({
+    rateRejected: false, rowCount: 700, benchmarkRatio10d: 1.6, sessionVwap: null
+  }), true);
+});
+
+test("a sufficient verified primary futures history does not trigger the fallback", () => {
+  assert.equal(shouldUseUpstoxFuturesFallback({
+    rateRejected: false, rowCount: 700, benchmarkRatio10d: 1.6, sessionVwap: 22500
+  }), false);
 });
 
 test("Upstox candle normalization sorts, de-duplicates, and preserves missing volume as unknown", () => {
