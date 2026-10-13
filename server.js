@@ -2,12 +2,15 @@ import "dotenv/config";
 import express from "express";
 import path from "path";
 import crypto from "crypto";
+import { createPredictionReportStore } from "./predictionReport.js";
 import { fileURLToPath } from "url";
-import { angelStatus, loginAngel, logoutAngel, ltp as angelLtp, quote as angelQuote, candles as angelCandles, searchScrip as angelSearchScrip, loadMaster, findContracts, findLightContracts, findLightFutures, findInstrumentByToken, subscribe as angelSubscribe, reconnectWebSocket as angelReconnectWebSocket, quoteInstruments, optionGreeks, getLatestTicks, rms as angelRms, orderBook as angelOrderBook, placeOrder as angelPlaceOrder, cancelOrder as angelCancelOrder, holdings as angelHoldings, allHoldings as angelAllHoldings, positions as angelPositions, tradeBook as angelTradeBook, modifyOrder as angelModifyOrder } from "./angelone.js";
+import { angelStatus, loginAngel, logoutAngel, ltp as angelLtp, quote as angelQuote, candles as angelCandles, searchScrip as angelSearchScrip, loadMaster, findContracts, findLightContracts, findLightFutures, findInstrumentByToken, subscribe as angelSubscribe, reconnectWebSocket as angelReconnectWebSocket, quoteInstruments, optionGreeks, getLatestTicks, getTickDiagnostics, rms as angelRms, orderBook as angelOrderBook, placeOrder as angelPlaceOrder, cancelOrder as angelCancelOrder, holdings as angelHoldings, allHoldings as angelAllHoldings, positions as angelPositions, tradeBook as angelTradeBook, modifyOrder as angelModifyOrder } from "./angelone.js";
+import { getLiveIndexCandles } from "./liveIndexCandles.js";
 import { normalizeNews, analyzeNews, normalizeGlobal, analyzeGlobal, analyzeEvents, fuse } from "./fusion.js";
 import { buildPrediction, backtestFiveMinute } from "./prediction.js";
 import { productionReadiness } from "./phase12.js";
 import { isFreshExchangeTick, exchangeTickAgeMs } from "./marketFreshness.js";
+import { fetchUpstoxHistoricalCandles, upstoxConfigStatus } from "./marketDataProviders.js";
 import { summarizeContractMetrics } from "./contractAnalysis.js";
 import { status as phase11ProtectionStatus, evaluate as phase11Evaluate, onOrderSubmitted as phase11OnOrderSubmitted, recordOutcome as phase11RecordOutcome, resetProtection as phase11ResetProtection } from "./riskGuard.js";
 
@@ -58,7 +61,7 @@ app.use((req,res,next)=>{
 });
 app.use(express.static(path.join(__dirname, "public"), {
   setHeaders(res, filePath){
-    if(filePath.endsWith("index.html") || filePath.endsWith("app-update.json")){
+    if(filePath.endsWith("index.html") || filePath.endsWith("prediction-report.html") || filePath.endsWith("app-update.json")){
       res.setHeader("Cache-Control","no-store, no-cache, must-revalidate, proxy-revalidate");
     }
   }
@@ -66,6 +69,7 @@ app.use(express.static(path.join(__dirname, "public"), {
 
 const PORT = Number(process.env.PORT || 8787);
 const DEMO = String(process.env.DEMO_MODE || "false").toLowerCase() === "true";
+const predictionReportStore = createPredictionReportStore(path.join(__dirname, "logs", "prediction-report.json"));
 
 /*
   LIVE ADAPTER CONTRACT
@@ -152,11 +156,29 @@ function boolEnv(name, fallback=false){
   return ['1','true','yes','on'].includes(v);
 }
 function numEnv(name, fallback){ const x=Number(process.env[name]); return Number.isFinite(x)?x:fallback; }
+const INDEX_FEED_META={
+  NIFTY:{exchange:'NSE',token:'99926000',exchangeType:'1'},
+  BANKNIFTY:{exchange:'NSE',token:'99926009',exchangeType:'1'},
+  FINNIFTY:{exchange:'NSE',token:'99926037',exchangeType:'1'},
+  MIDCPNIFTY:{exchange:'NSE',token:'99926074',exchangeType:'1'},
+  SENSEX:{exchange:'BSE',token:'99919000',exchangeType:'3'},
+  VIX:{exchange:'NSE',token:'99926017',exchangeType:'1'}
+};
+function indexFeedMeta(symbol){return INDEX_FEED_META[String(symbol||'NIFTY').toUpperCase()]||INDEX_FEED_META.NIFTY;}
+function freshExchangeTickFor(exchange='NSE',symbolToken=null){
+  const ex=String(exchange||'NSE').toUpperCase();
+  const exchangeType=({NSE:'1',NFO:'2',BSE:'3',BFO:'4',MCX:'5'})[ex]||'1';
+  return getLatestTicks().find(x=>{
+    const data=x?.data||{};
+    const token=String(data.token||'').replace(/["']/g,'');
+    return String(data.exchange_type||'')===exchangeType&&(!symbolToken||token===String(symbolToken))&&isFreshExchangeTick(data);
+  });
+}
+function freshIndexTick(symbol){const m=indexFeedMeta(symbol);return freshExchangeTickFor(m.exchange,m.token);}
 function executionStatus(exchange='NSE'){
   const session=angelStatus();
   const marketOpen=exchangeSessionOpen(exchange);
-  const ticks=getLatestTicks();
-  const freshTick=ticks.find(x=>isFreshExchangeTick(x?.data));
+  const freshTick=freshExchangeTickFor(exchange);
   const tickAgeMs=freshTick?exchangeTickAgeMs(freshTick.data):null;
   const marketDataVerified=Boolean(marketOpen && freshTick);
   return {
@@ -260,25 +282,37 @@ async function fetchProviderJson(url, token, params={}){
 async function market(symbol){
   if(DEMO) return { [symbol]:{ltp:null,change:null}, NIFTY:{ltp:null}, BANKNIFTY:{ltp:null}, FINNIFTY:{ltp:null}, MIDCPNIFTY:{ltp:null}, VIX:{ltp:null}, GLOBAL_RISK:{label:"DEMO OFF"} };
   if(!angelStatus().connected) return null;
-  const tokens={NIFTY:['NSE','Nifty 50','99926000'],BANKNIFTY:['NSE','Nifty Bank','99926009'],FINNIFTY:['NSE','Nifty Fin Service','99926037'],MIDCPNIFTY:['NSE','NIFTY MID SELECT','99926074'],VIX:['NSE','India VIX','99926017']};
+  const tokens={NIFTY:['NSE','Nifty 50','99926000'],BANKNIFTY:['NSE','Nifty Bank','99926009'],FINNIFTY:['NSE','Nifty Fin Service','99926037'],MIDCPNIFTY:['NSE','NIFTY MID SELECT','99926074'],SENSEX:['BSE','SENSEX','99919000'],VIX:['NSE','India VIX','99926017']};
+  const exchangeTokens={
+    NSE:['99926000','99926009','99926037','99926074','99926017'],
+    BSE:['99919000']
+  };
   const out={};
+  let rows=[];
+  try{
+    const response=await angelQuote({mode:'FULL',exchangeTokens});
+    rows=response?.data?.fetched||response?.fetched||[];
+    if(!Array.isArray(rows)) rows=[];
+    if(!rows.length) throw new Error(response?.message||'Grouped market quote returned no rows');
+  }catch(e){
+    console.warn('[MARKET_QUOTE] grouped FULL quote unavailable:',e?.message||e);
+  }
+  const byToken=new Map(rows.map(x=>[String(x.symbolToken??x.symboltoken??x.token??''),x]));
   for(const [key,info] of Object.entries(tokens)){
-    try{
-      const r=await angelLtp({exchange:info[0],tradingsymbol:info[1],symboltoken:info[2]});
-      const d=r?.data||r;
-      const ltpRaw=d?.ltp, closeRaw=d?.close;
-      const ltp=ltpRaw==null||ltpRaw===''?NaN:Number(ltpRaw);
-      const close=closeRaw==null||closeRaw===''?NaN:Number(closeRaw);
-      const providerChange=d?.percentChange??d?.percentageChange;
-      const providerChangeNum=providerChange==null||providerChange===''?NaN:Number(providerChange);
-      const computedChange=Number.isFinite(ltp)&&ltp>0&&Number.isFinite(close)&&close>0?((ltp-close)/close)*100:null;
-      out[key]={
-        ltp:Number.isFinite(ltp)&&ltp>0?ltp:null,
-        change:Number.isFinite(providerChangeNum)?providerChangeNum:computedChange,
-        open:d?.open??null,high:d?.high??null,low:d?.low??null,
-        close:Number.isFinite(close)&&close>0?close:null
-      };
-    }catch{ out[key]={ltp:null,change:null}; }
+    const d=byToken.get(String(info[2]))||null;
+    const ltpRaw=d?.ltp, closeRaw=d?.close;
+    const ltp=ltpRaw==null||ltpRaw===''?NaN:Number(ltpRaw);
+    const close=closeRaw==null||closeRaw===''?NaN:Number(closeRaw);
+    const providerChange=d?.percentChange??d?.percentageChange??d?.netChange;
+    const providerChangeNum=providerChange==null||providerChange===''?NaN:Number(providerChange);
+    const computedChange=Number.isFinite(ltp)&&ltp>0&&Number.isFinite(close)&&close>0?((ltp-close)/close)*100:null;
+    out[key]={
+      ltp:Number.isFinite(ltp)&&ltp>0?ltp:null,
+      change:Number.isFinite(providerChangeNum)?providerChangeNum:computedChange,
+      open:d?.open??null,high:d?.high??null,low:d?.low??null,
+      close:Number.isFinite(close)&&close>0?close:null,
+      exchangeTimestamp:d?.exchFeedTime??d?.exchangeTimeStamp??null
+    };
   }
   out[symbol]=out[symbol]||{ltp:null,change:null};
   out.GLOBAL_RISK={label:"WAIT"};
@@ -289,19 +323,21 @@ async function fetchOptionsInternal(symbol){
   if(!angelStatus().connected) return null;
   try{
     const ins=await resolveIndexToken(symbol);
-    const l=await angelLtp({exchange:'NSE',tradingsymbol:ins.symbol,symboltoken:ins.token});
+    const optionExchange=String(ins.exchange||'NSE').toUpperCase()==='BSE'?'BSE':'NSE';
+    const l=await angelLtp({exchange:ins.exchange||'NSE',tradingsymbol:ins.symbol,symboltoken:ins.token});
     const spotRaw=(l?.data||l)?.ltp;
      const spot=spotRaw==null||spotRaw===''?NaN:Number(spotRaw);
      if(!Number.isFinite(spot)||spot<=0) return null;
-    const items=await findLightContracts({underlying:symbol}); const now=Date.now();
+    const items=await findLightContracts({underlying:symbol,exchange:optionExchange}); const now=Date.now();
+    const allowedSegments=optionExchange==='BSE'?['bfo','bse_fo']:['nse_fo','nfo'];
     const parseExpiry=(x)=>{const m=String(x||'').match(/^(\d{2})([A-Z]{3})(\d{4})$/i); if(!m)return 0; const mo={JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11}[m[2].toUpperCase()]; return mo==null?0:new Date(Number(m[3]),mo,Number(m[1]),23,59,59).getTime();};
-    const strikes=items.filter(x=>['nse_fo','nfo'].includes(String(x.exch_seg||'').toLowerCase())&&String(x.name||'').toUpperCase()===String(symbol).toUpperCase()&&/^(CE|PE)$/i.test(String(x.symbol||'').slice(-2))&&parseExpiry(x.expiry)>=now).map(x=>Number(x.strike)/100).filter(Number.isFinite);
-    const expiries=[...new Set(items.filter(x=>['nse_fo','nfo'].includes(String(x.exch_seg||'').toLowerCase())&&String(x.name||'').toUpperCase()===String(symbol).toUpperCase()&&/^(CE|PE)$/i.test(String(x.symbol||'').slice(-2))&&parseExpiry(x.expiry)>=now).map(x=>String(x.expiry||'').toUpperCase()).filter(Boolean))].sort((a,b)=>parseExpiry(a)-parseExpiry(b));
+    const strikes=items.filter(x=>allowedSegments.includes(String(x.exch_seg||'').toLowerCase())&&String(x.name||'').toUpperCase()===String(symbol).toUpperCase()&&/^(CE|PE)$/i.test(String(x.symbol||'').slice(-2))&&parseExpiry(x.expiry)>=now).map(x=>Number(x.strike)/100).filter(Number.isFinite);
+    const expiries=[...new Set(items.filter(x=>allowedSegments.includes(String(x.exch_seg||'').toLowerCase())&&String(x.name||'').toUpperCase()===String(symbol).toUpperCase()&&/^(CE|PE)$/i.test(String(x.symbol||'').slice(-2))&&parseExpiry(x.expiry)>=now).map(x=>String(x.expiry||'').toUpperCase()).filter(Boolean))].sort((a,b)=>parseExpiry(a)-parseExpiry(b));
     const liveExpiry=expiries[0]||null;
     if(!strikes.length) return {atm:null,ceoi:null,cedoi:null,peoi:null,pedoi:null,iv:null,pcr:null,connected:false,error:'No active option contracts matched the instrument-master filters.'};
     const atm=strikes.reduce((best,s)=>Math.abs(s-spot)<Math.abs(best-spot)?s:best,strikes[0]);
-    const base=await findLightContracts({underlying:symbol,expiry:liveExpiry||'',optionType:'CE'});
-    const pe=await findLightContracts({underlying:symbol,expiry:liveExpiry||'',optionType:'PE'});
+    const base=await findLightContracts({underlying:symbol,expiry:liveExpiry||'',optionType:'CE',exchange:optionExchange});
+    const pe=await findLightContracts({underlying:symbol,expiry:liveExpiry||'',optionType:'PE',exchange:optionExchange});
     const near=(arr)=>arr.map(x=>({...x,_strike:Number(x.strike)/100})).filter(x=>Number.isFinite(x._strike)).sort((a,b)=>Math.abs(a._strike-atm)-Math.abs(b._strike-atm)).slice(0,25);
     const nearCe=near(base), nearPe=near(pe);
     const q=await quoteInstruments([...nearCe,...nearPe]);
@@ -332,28 +368,57 @@ async function options(symbol){
   optionChainInflight.set(key,job);
   try{
     const data=await job;
-    if(data?.connected) optionChainCache.set(key,{at:Date.now(),data});
+    if(data?.connected){
+      optionChainCache.set(key,{at:Date.now(),data});
+      // Warm Greeks as soon as the chain establishes the active expiry. The
+      // shared in-flight/cache path below prevents duplicate broker calls when
+      // Phase 10 immediately requests the same snapshot.
+      if(data.expiry) liveOptionGreeks(key,data.expiry).catch(e=>console.warn('[GREEKS_PREFETCH]',e?.message||e));
+    }
     return data;
   }finally{
     optionChainInflight.delete(key);
   }
 }
 const greekCache=new Map();
+const greekInflight=new Map();
+const greekFailureCache=new Map();
 async function liveOptionGreeks(symbol,expiry){
-  const key=String(symbol)+'|'+String(expiry||'');
+  const normalizedSymbol=String(symbol||'').trim().toUpperCase();
+  const normalizedExpiry=String(expiry||'').trim().toUpperCase();
+  if(!normalizedSymbol||!normalizedExpiry) return [];
+  const key=normalizedSymbol+'|'+normalizedExpiry;
+  const now=Date.now();
   const cached=greekCache.get(key);
-  if(cached && Date.now()-cached.at<5000) return cached.data;
-  const raw=await optionGreeks({name:String(symbol).toUpperCase(),expirydate:expiry});
-  const rows=Array.isArray(raw)?raw:[];
-  const finiteOrNull=v=>v==null||v===''?null:(Number.isFinite(Number(v))?Number(v):null);
-  const data=rows.map(x=>({
-    name:x.name,expiry:x.expiry,strike:finiteOrNull(x.strikePrice),
-    optionType:String(x.optionType||'').toUpperCase(),
-    delta:finiteOrNull(x.delta),gamma:finiteOrNull(x.gamma),theta:finiteOrNull(x.theta),
-    vega:finiteOrNull(x.vega),iv:finiteOrNull(x.impliedVolatility),tradeVolume:finiteOrNull(x.tradeVolume)
-  })).filter(x=>x.strike!=null&&x.delta!=null&&x.theta!=null);
-  greekCache.set(key,{at:Date.now(),data});
-  return data;
+  // Keep broker Greeks briefly to avoid duplicate SmartAPI requests on the same
+  // prediction cycle, while never using stale values for a live option decision.
+  if(cached && now-cached.at<15000 && cached.data.length) return cached.data;
+  const failed=greekFailureCache.get(key);
+  if(failed && now-failed.at<2500) return [];
+  const inflight=greekInflight.get(key);
+  if(inflight) return await inflight;
+  const job=(async()=>{
+    try{
+      const raw=await optionGreeks({name:normalizedSymbol,expirydate:normalizedExpiry});
+      const rows=Array.isArray(raw)?raw:[];
+      const finiteOrNull=v=>v==null||v===''?null:(Number.isFinite(Number(v))?Number(v):null);
+      const data=rows.map(x=>({
+        name:x.name,expiry:x.expiry,strike:finiteOrNull(x.strikePrice),
+        optionType:String(x.optionType||'').toUpperCase(),
+        delta:finiteOrNull(x.delta),gamma:finiteOrNull(x.gamma),theta:finiteOrNull(x.theta),
+        vega:finiteOrNull(x.vega),iv:finiteOrNull(x.impliedVolatility),tradeVolume:finiteOrNull(x.tradeVolume)
+      })).filter(x=>x.strike!=null&&x.delta!=null&&x.theta!=null);
+      if(data.length){greekCache.set(key,{at:Date.now(),data});greekFailureCache.delete(key);}
+      else greekFailureCache.set(key,{at:Date.now()});
+      return data;
+    }catch(e){
+      greekFailureCache.set(key,{at:Date.now()});
+      throw e;
+    }
+  })();
+  greekInflight.set(key,job);
+  try{return await job;}
+  finally{if(greekInflight.get(key)===job) greekInflight.delete(key);}
 }
 function greekRiskWarning(g){
   if(!g) return {status:'WAIT',message:'Live option Greeks not verified.'};
@@ -384,7 +449,8 @@ async function findBuyableOptionPlan(symbol, direction, underlyingEntry, underly
     if(od?.connected!==true||!expiry||!Number.isFinite(atm)||atm<=0)
       return {available:false,reason:'Live option chain, positive ATM and expiry are not verified.'};
 
-    let contracts=await findLightContracts({underlying:symbol,expiry,optionType});
+    const contractExchange=String(symbol||'').toUpperCase()==='SENSEX'?'BSE':'NSE';
+    let contracts=await findLightContracts({underlying:symbol,expiry,optionType,exchange:contractExchange});
     contracts=contracts.map(x=>({...x,_strike:Number(x.strike)/100}))
       .filter(x=>Number.isFinite(x._strike))
       .sort((a,b)=>Math.abs(a._strike-atm)-Math.abs(b._strike-atm))
@@ -677,6 +743,42 @@ async function events(){
 
 // Angel One SmartAPI connection layer. Credentials/tokens never enter public/index.html.
 app.get("/api/angel/status", (req,res)=>res.json(angelStatus()));
+// Sanitized provider health: identifies stale/fallback data and optional backup readiness without exposing secrets.
+app.get("/api/data-health",(req,res)=>{
+  const symbol=String(req.query.symbol||'NIFTY').toUpperCase();
+  const session=angelStatus();
+  const cache=candleCache.get(symbol)||null;
+  const rows=Array.isArray(cache?.rows)?cache.rows:[];
+  const last=rows.at(-1)||null;
+  const lastAt=last?.t&&Number.isFinite(Date.parse(last.t))?Date.parse(last.t):null;
+  const ageSeconds=lastAt==null?null:Number(((Date.now()-lastAt)/1000).toFixed(1));
+  const baseSource=String(cache?.baseSource||cache?.source||'UNAVAILABLE').toUpperCase();
+  const fresh=ageSeconds!=null&&ageSeconds>=-15&&ageSeconds<=600;
+  const trusted=(baseSource.startsWith('ANGEL')&&!baseSource.includes('YAHOO')&&!baseSource.includes('STALE CACHE'))||baseSource==='UPSTOX_HISTORICAL';
+  const indexBackup=upstoxConfigStatus({symbol,role:'index'});
+  const futuresBackup=upstoxConfigStatus({symbol,role:'futures'});
+  const diag=candleProviderDiagnostics.get(symbol)||null;
+  const indexTick=freshIndexTick(symbol);
+  const indexTickAgeMs=indexTick?exchangeTickAgeMs(indexTick.data):null;
+  const tickAgeSeconds=indexTickAgeMs==null?null:Number((Math.max(0,indexTickAgeMs)/1000).toFixed(1));
+  const indexTickFresh=Boolean(indexTick&&isFreshExchangeTick(indexTick.data));
+  const volumeEntry=futuresVolumeCache.get(symbol)||null;
+  const volume=volumeEntry?.data||null;
+  const volumeCandleTime=volume?.vwapLastCandleTime||volume?.lastCandleTime||null;
+  const volumeCandleAgeSeconds=volumeCandleTime&&Number.isFinite(Date.parse(volumeCandleTime))?Number(((Date.now()-Date.parse(volumeCandleTime))/1000).toFixed(1)):null;
+  const futuresVolumeVerified=Boolean(volume?.source&&Number.isFinite(Number(volume?.ratio10d))&&volumeCandleAgeSeconds!=null&&volumeCandleAgeSeconds>=-15&&volumeCandleAgeSeconds<=600);
+  const executionEnabled=['1','true','yes','on'].includes(String(process.env.ORDER_EXECUTION_ENABLED||'false').toLowerCase());
+  const killSwitch=['1','true','yes','on'].includes(String(process.env.TRADING_KILL_SWITCH??'true').toLowerCase());
+  res.json({
+    ok:true,symbol,checkedAt:nowISO(),
+    angelOne:{connected:session.connected,websocket:session.websocket,ticks:session.tickCount,indexTickFresh,lastIndexTickAgeSeconds:tickAgeSeconds,websocketError:session.websocketError||null},
+    historicalCandles:{source:String(cache?.source||'UNAVAILABLE'),baseSource,rowCount:rows.length,lastCandleAt:last?.t||null,ageSeconds,fresh,verified:trusted&&fresh,diagnostic:diag?{at:diag.at,provider:diag.provider,rows:diag.rows,error:diag.error||null,rateRejected:!!diag.rateRejected,fallbackProvider:diag.fallbackProvider||null,fallbackConfigured:!!diag.fallbackConfigured,fallbackError:diag.fallbackError||null}:null},
+    futuresVolume:{verified:futuresVolumeVerified,source:volume?.source||null,ratio10d:volume?.ratio10d??null,benchmarkDays:volume?.benchmarkDays??0,lastCandleAt:volumeCandleTime,ageSeconds:volumeCandleAgeSeconds,reason:volume?.reason||null},
+    alternateProvider:{name:'UPSTOX_V3',index:indexBackup,futures:futuresBackup},
+    tradingSafety:{orderExecutionEnabled:executionEnabled,killSwitchEnabled:killSwitch,action:(!trusted||!fresh||!indexTickFresh||!futuresVolumeVerified)?'NO TRADE':'REMAIN LOCKED UNTIL ALL OTHER GATES PASS'},
+    note:'This endpoint reports provider status only. A connected WebSocket or fallback chart does not prove the complete prediction/trade gates are verified.'
+  });
+});
 app.get("/api/angel/config-status", (req,res)=>{
   const hasApiKey=Boolean(String(process.env.ANGEL_API_KEY||process.env.ANGELONE_API_KEY||"").trim());
   const hasClientCode=Boolean(String(process.env.ANGEL_CLIENT_CODE||process.env.ANGELONE_CLIENT_CODE||"").trim());
@@ -696,7 +798,10 @@ app.post("/api/angel/reconnect", async (req,res)=>{
     res.status(502).json({ok:false,connected:angelStatus().connected,websocket:angelStatus().websocket,error:e?.message||"WebSocket reconnect failed"});
   }
 });
+let angelLoginInFlight = false;
 app.post("/api/angel/login", async (req,res)=>{
+  if(angelLoginInFlight) return res.status(409).json({connected:false,error:"An Angel One login attempt is already in progress. Wait for it to finish before retrying."});
+  angelLoginInFlight = true;
   const started=Date.now();
   try {
     const {clientCode,pin,totp}=req.body||{};
@@ -711,6 +816,8 @@ app.post("/api/angel/login", async (req,res)=>{
   } catch(e) {
     console.error(`[ANGEL_LOGIN] failed ms=${Date.now()-started}: ${e?.message||"Angel One login failed"}`);
     res.status(401).json({connected:false,error:e?.message||"Angel One login failed"});
+  } finally {
+    angelLoginInFlight = false;
   }
 });
 app.post("/api/angel/logout", async (req,res)=>{ try { res.json(await logoutAngel()); } catch(e){ res.status(500).json({error:e?.message||"Logout failed"}); } });
@@ -719,12 +826,12 @@ app.get("/api/angel/diagnostics", async (req,res)=>{
   if(!session.connected) return res.status(401).json({ok:false,connected:false,error:"Angel One session is not connected",session});
   try{
     const symbol=String(req.query.symbol||"NIFTY").toUpperCase();
-    const known={NIFTY:["Nifty 50","99926000"],BANKNIFTY:["Nifty Bank","99926009"],FINNIFTY:["Nifty Fin Service","99926037"],MIDCPNIFTY:["NIFTY MID SELECT","99926074"],VIX:["India VIX","99926017"]};
-    const [tradingsymbol,symboltoken]=known[symbol]||known.NIFTY;
-    const out=await angelLtp({exchange:"NSE",tradingsymbol,symboltoken});
+    const known={NIFTY:["Nifty 50","99926000","NSE"],BANKNIFTY:["Nifty Bank","99926009","NSE"],FINNIFTY:["Nifty Fin Service","99926037","NSE"],MIDCPNIFTY:["NIFTY MID SELECT","99926074","NSE"],SENSEX:["SENSEX","99919000","BSE"],VIX:["India VIX","99926017","NSE"]};
+    const [tradingsymbol,symboltoken,exchange]=known[symbol]||known.NIFTY;
+    const out=await angelLtp({exchange,tradingsymbol,symboltoken});
     const d=out?.data||out;
     const latest=angelStatus();
-    return res.json({ok:true,connected:true,websocket:latest.websocket,websocketError:latest.websocketError||null,symbol:tradingsymbol,token:symboltoken,data:d});
+    return res.json({ok:true,connected:true,websocket:latest.websocket,websocketError:latest.websocketError||null,exchange,symbol:tradingsymbol,token:symboltoken,data:d});
   }catch(e){
     const s=angelStatus();
     return res.status(502).json({ok:false,connected:s.connected,websocket:s.websocket,websocketError:s.websocketError||null,error:e?.message||"Angel One live quote test failed",session:s});
@@ -738,7 +845,7 @@ app.get("/api/angel/ltp", async (req,res)=>{
   }catch(e){res.status(401).json({ok:false,error:e?.message||"LTP failed"});}
 });
 app.post("/api/angel/ltp", async (req,res)=>{ try { res.json({ok:true,data:await angelLtp(req.body||{})}); } catch(e){ res.status(401).json({ok:false,error:e?.message||"LTP failed"}); } });
-app.post("/api/angel/quote", async (req,res)=>{ try { res.json({ok:true,data:await angelQuote(req.body?.mode||"FULL", req.body?.exchangeTokens||{})}); } catch(e){ res.status(401).json({ok:false,error:e?.message||"Quote failed"}); } });
+app.post("/api/angel/quote", async (req,res)=>{ try { res.json({ok:true,data:await angelQuote({mode:req.body?.mode||"FULL",exchangeTokens:req.body?.exchangeTokens||{}})}); } catch(e){ res.status(401).json({ok:false,error:e?.message||"Quote failed"}); } });
 app.post("/api/angel/candles", async (req,res)=>{ try { res.json({ok:true,data:await angelCandles(req.body||{})}); } catch(e){ res.status(401).json({ok:false,error:e?.message||"Candle request failed"}); } });
 app.post("/api/angel/search", async (req,res)=>{ try { res.json({ok:true,data:await angelSearchScrip(req.body||{})}); } catch(e){ res.status(401).json({ok:false,error:e?.message||"Search failed"}); } });
 app.get("/api/angel/master", async (req,res)=>{
@@ -750,9 +857,22 @@ app.get("/api/angel/expiries", async (req,res)=>{
     const exchange=(req.query.exchange||"NSE").toUpperCase();
     const segment=(req.query.segment||"OPTIDX").toUpperCase();
     const underlying=String(req.query.underlying||"").trim().toUpperCase();
-    if(exchange==='NSE' && (segment==='OPTIDX'||segment==='OPTSTK')){
-      const items=await findLightContracts({underlying});
-      const expiries=[...new Set(items.map(x=>String(x.expiry||'').trim().toUpperCase()).filter(Boolean))].sort();
+    const nseLightIndices=new Set(['NIFTY','BANKNIFTY','FINNIFTY','MIDCPNIFTY']);
+    const lightIndexRequest=(exchange==='NSE'&&nseLightIndices.has(underlying))||(exchange==='BSE'&&underlying==='SENSEX');
+    if(lightIndexRequest && (segment==='OPTIDX'||segment==='FUTIDX')){
+      const items=segment==='FUTIDX'
+        ? await findLightFutures({underlying})
+        : await findLightContracts({underlying,exchange});
+      const months={JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11};
+      const expiryTime=value=>{
+        const m=String(value||'').trim().toUpperCase().match(/^(\d{1,2})([A-Z]{3})(\d{4})$/);
+        if(!m||months[m[2]]==null) return Number.NaN;
+        return new Date(Number(m[3]),months[m[2]],Number(m[1]),23,59,59,999).getTime();
+      };
+      const today=new Date(); today.setHours(0,0,0,0);
+      const expiries=[...new Set(items.map(x=>String(x.expiry||'').trim().toUpperCase()).filter(Boolean))]
+        .filter(x=>Number.isFinite(expiryTime(x))&&expiryTime(x)>=today.getTime())
+        .sort((a,b)=>expiryTime(a)-expiryTime(b));
       return res.json({ok:true,connected:angelStatus().connected,exchange,segment,underlying,expiries:expiries.slice(0,24)});
     }
     if(!boolEnv('ALLOW_FULL_MASTER',false)) return res.status(423).json({ok:false,error:'FULL_MASTER_DISABLED_ON_FREE_TIER',message:'This exchange/segment requires the full instrument master, which is disabled on the 512 MB runtime.'});
@@ -783,24 +903,52 @@ app.get("/api/angel/contracts", async (req,res)=>{
     const exchange=String(q.exchange||'NSE').toUpperCase();
     const segment=String(q.segment||'OPTIDX').toUpperCase();
     const underlying=String(q.underlying||q.name||'').toUpperCase();
-    const lightIndices=new Set(['NIFTY','BANKNIFTY','FINNIFTY','MIDCPNIFTY','SENSEX']);
+    const nseLightIndices=new Set(['NIFTY','BANKNIFTY','FINNIFTY','MIDCPNIFTY']);
+    const lightIndexRequest=(exchange==='NSE'&&nseLightIndices.has(underlying))||(exchange==='BSE'&&underlying==='SENSEX');
     let base;
-    if(exchange==='NSE' && lightIndices.has(underlying) && segment==='FUTIDX'){
+    if(lightIndexRequest && segment==='FUTIDX'){
       base=await findLightFutures({underlying,expiry:q.expiry||''});
-    }else if(exchange==='NSE' && lightIndices.has(underlying) && ['OPTIDX','OPTSTK'].includes(segment)){
-      base=await findLightContracts({underlying,expiry:q.expiry||'',optionType:q.optionType||'',strike:q.strike||''});
+    }else if(lightIndexRequest && ['OPTIDX','OPTSTK'].includes(segment)){
+      base=await findLightContracts({underlying,expiry:q.expiry||'',optionType:q.optionType||'',strike:q.strike||'',exchange});
     }else{
       base=await findContracts(q);
     }
+    // When the user has not chosen an exact strike, rank index options around
+    // a verified live spot price. Instrument-master order is not an ATM ranking.
+    // Without this step the Finder can show deep-ITM/OTM strikes at the top.
+    if(lightIndexRequest && segment==='OPTIDX' && !String(q.strike||'').trim()){
+      const ins=await resolveIndexToken(underlying);
+      const live=await angelLtp({exchange:ins.exchange||exchange,tradingsymbol:ins.symbol,symboltoken:ins.token});
+      const spotRaw=(live?.data||live)?.ltp;
+      const spot=spotRaw==null||spotRaw===''?NaN:Number(spotRaw);
+      if(!Number.isFinite(spot)||spot<=0) return res.status(502).json({ok:false,error:'LIVE_UNDERLYING_PRICE_UNAVAILABLE',message:'Cannot rank contracts safely without a verified live underlying price.'});
+      const months={JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11};
+      const expiryTime=value=>{
+        const m=String(value||'').trim().toUpperCase().match(/^(\d{1,2})([A-Z]{3})(\d{4})$/);
+        if(!m||months[m[2]]==null) return Number.MAX_SAFE_INTEGER;
+        return new Date(Number(m[3]),months[m[2]],Number(m[1]),23,59,59,999).getTime();
+      };
+      const strikeValue=x=>{const n=Number(x?.strike);return Number.isFinite(n)&&n>0?(n>=100000?n/100:n):Number.MAX_SAFE_INTEGER;};
+      base.sort((a,b)=>{
+        if(!String(q.expiry||'').trim()){
+          const expiryDiff=expiryTime(a.expiry)-expiryTime(b.expiry);
+          if(expiryDiff) return expiryDiff;
+        }
+        return Math.abs(strikeValue(a)-spot)-Math.abs(strikeValue(b)-spot);
+      });
+    }
+    // Request quotes for exactly the contracts rendered. A larger unquoted list
+    // creates rows with missing prices/OI even though the endpoint returns HTTP 200.
+    const shown=base.slice(0,20);
     let rows=[];
-    try{ rows=await quoteInstruments(base.slice(0,10)); }catch(e){ console.warn('[CONTRACT_QUOTE]',e?.message||e); }
+    try{ rows=await quoteInstruments(shown); }catch(e){ console.warn('[CONTRACT_QUOTE]',e?.message||e); }
     // FULL quote can be partial; explicitly backfill any missing LTPs for the
     // contracts currently being shown. This keeps the visible option price live.
-    const quoted=new Set(rows.map(x=>String(x.symbolToken||'')));
-    const missing=base.slice(0,10).filter(x=>!Number.isFinite(Number(rows.find(q=>String(q.symbolToken||'')===String(x.token))?.ltp)));
+    const missing=shown.filter(x=>!Number.isFinite(Number(rows.find(q=>String(q.symbolToken||'')===String(x.token))?.ltp)));
     if(missing.length){
       const extra=await Promise.allSettled(missing.map(async x=>{
-        const r=await angelLtp({exchange:'NFO',tradingsymbol:String(x.symbol),symboltoken:String(x.token)});
+        const fallbackExchange=String(x.exchange||'').toUpperCase() || (String(x.exch_seg||'').toUpperCase()==='BFO'?'BFO':'NFO');
+        const r=await angelLtp({exchange:fallbackExchange,tradingsymbol:String(x.symbol),symboltoken:String(x.token)});
         const d=r?.data||r;
         if(d?.ltp==null) return null;
         return {symbolToken:String(x.token),ltp:Number(d.ltp),change:d?.percentChange??d?.percentageChange??d?.netChange??null,opnInterest:d?.opnInterest??d?.openInterest??d?.oi??null,tradeVolume:d?.tradeVolume??d?.volume??null,bestFive:d?.depth??d?.bestFive??null};
@@ -809,13 +957,14 @@ app.get("/api/angel/contracts", async (req,res)=>{
     }
     console.log('[CONTRACT_FEED]',req.query.underlying||'',req.query.expiry||'',req.query.optionType||'',req.query.strike||'','base='+base.length,'quotes='+rows.length);
     const qmap=new Map(rows.map(x=>[String(x.symbolToken),x]));
-    const contracts=base.slice(0,50).map(x=>{
+    const contracts=shown.map(x=>{
       const q=qmap.get(String(x.token))||{};
       const buy=q.bestFive?.buy?.[0]||q.bestFive?.Buy?.[0]||{}, sell=q.bestFive?.sell?.[0]||q.bestFive?.Sell?.[0]||{};
       const rawStrike=Number(x.strike);
       const strike=Number.isFinite(rawStrike)&&rawStrike>0?(rawStrike>=100000?rawStrike/100:rawStrike):(x.strike??null);
       const optionType=x.optionType||(/PE$/i.test(String(x.symbol||''))?'PE':/CE$/i.test(String(x.symbol||''))?'CE':'');
-      return {contract:x.symbol, exchange:x.exchange||'NFO', underlying:x.name, expiry:x.expiry, optionType, strike, token:x.token, lotsize:x.lotsize,
+      const contractExchange=String(x.exchange||'').toUpperCase() || (String(x.exch_seg||'').toUpperCase()==='BFO'?'BFO':'NFO');
+      return {contract:x.symbol, exchange:contractExchange, underlying:x.name, expiry:x.expiry, optionType, strike, token:x.token, lotsize:x.lotsize,
         ltp:q.ltp??null, change:q.change??null, bid:buy.price??buy.Price??null, ask:sell.price??sell.Price??null,
         oi:q.opnInterest??q.openInterest??q.oi??null, doi:null, volume:q.tradeVolume??q.volume??null, iv:null};
     });
@@ -830,12 +979,17 @@ app.post("/api/angel/option-greeks", async (req,res)=>{
   }catch(e){res.status(502).json({ok:false,error:e?.message||"Option Greeks unavailable"});}
 });
 app.get("/api/angel/ticks",(req,res)=>res.json({ok:true,connected:angelStatus().connected,ticks:getLatestTicks()}));
+app.get("/api/angel/tick-diagnostics",(req,res)=>{
+  const exchange=String(req.query.exchange||'NSE').toUpperCase();
+  res.set("Cache-Control","no-store").json({...getTickDiagnostics(),exchange,marketOpen:exchangeSessionOpen(exchange)});
+});
 app.get("/api/angel/connection-test",async(req,res)=>{
   try{
     if(!angelStatus().connected) return res.status(401).json({ok:false,connected:false,error:"Angel One is not connected"});
     const target=String(req.query.symbol||"NIFTY").toUpperCase();
     const known={NIFTY:["Nifty 50","99926000"],BANKNIFTY:["Nifty Bank","99926009"],FINNIFTY:["Nifty Fin Service","99926037"],MIDCPNIFTY:["NIFTY MID SELECT","99926074"],VIX:["India VIX","99926017"]};
     let match=known[target]?{symbol:known[target][0],token:known[target][1],exchange:"NSE"}:null;
+    if(target==='SENSEX') match={symbol:'SENSEX',token:'99919000',exchange:'BSE'};
     if(!match){
       const aliases={NIFTY:["NIFTY","NIFTY 50"],BANKNIFTY:["BANKNIFTY","BANK NIFTY"],FINNIFTY:["FINNIFTY","NIFTY FIN SERVICE"],MIDCPNIFTY:["MIDCPNIFTY","NIFTY MID SELECT"],SENSEX:["SENSEX"],VIX:["INDIAVIX","INDIA VIX","VIX"]};
       const aliasesFor=aliases[target]||[target];
@@ -847,14 +1001,15 @@ app.get("/api/angel/connection-test",async(req,res)=>{
       }catch{}
     }
     if(!match) return res.status(404).json({ok:false,connected:true,error:`${target} instrument not found in master`});
-    const q=await angelLtp({exchange:"NSE",tradingsymbol:match.symbol,symboltoken:match.token});
-    res.json({ok:true,connected:true,exchange:"NSE",symbol:match.symbol,token:String(match.token),data:q?.data||q});
+    const q=await angelLtp({exchange:match.exchange||"NSE",tradingsymbol:match.symbol,symboltoken:match.token});
+    res.json({ok:true,connected:true,exchange:match.exchange||"NSE",symbol:match.symbol,token:String(match.token),data:q?.data||q});
   }catch(e){res.status(502).json({ok:false,connected:angelStatus().connected,error:e?.message||"Live feed test failed"});}
 });
 app.post("/api/angel/subscribe", async (req,res)=>{ try { const out=await angelSubscribe(req.body?.tokens||[], req.body?.exchangeType||2, req.body?.mode||1); res.json({ok:true,...out}); } catch(e){ res.status(401).json({ok:false,error:e?.message||"Subscription failed"}); } });
 app.get("/api/angel/stream-test", async (req,res)=>{
   if(!angelStatus().connected) return res.status(401).json({ok:false,connected:false,streamVerified:false,error:"Angel One is not connected"});
   const started=Date.now();
+  const targetSymbol=String(req.query.symbol||'NIFTY').toUpperCase();
   const beforeTick=Number(angelStatus().lastTickAt||0);
   let reconnectError=null;
   try{
@@ -870,16 +1025,16 @@ app.get("/api/angel/stream-test", async (req,res)=>{
     const deadline=Date.now()+7000;
     while(Date.now()<deadline){
       st=angelStatus();
-      if(st.websocket && Number(st.lastTickAt||0)>beforeTick) break;
+      if(st.websocket && freshIndexTick(targetSymbol)) break;
       await new Promise(r=>setTimeout(r,250));
     }
     const final=angelStatus();
     const ticks=getLatestTicks();
-    const freshTick=ticks.find(x=>isFreshExchangeTick(x?.data));
+    const freshTick=freshIndexTick(targetSymbol);
     const tickAgeMs=freshTick?exchangeTickAgeMs(freshTick.data):null;
     const tickVerified=Boolean(freshTick);
     const websocketConnected=!!final.websocket;
-    const marketOpen=marketSession();
+    const marketOpen=exchangeSessionOpen(indexFeedMeta(targetSymbol).exchange);
     const streamVerified=websocketConnected && (!marketOpen || tickVerified);
     res.json({
       ok:streamVerified,
@@ -928,7 +1083,7 @@ app.post('/api/risk/position-size',async(req,res)=>{
     const strike=Number(req.body?.strike), optionType=String(req.body?.optionType||'CE').toUpperCase();
     const riskBudget=Math.max(0,Number(req.body?.riskBudget??numEnv('MAX_RISK_RUPEES',1000))), underlyingStopPoints=Math.abs(Number(req.body?.underlyingStopPoints||0));
     if(!expiry||!Number.isFinite(strike)||!['CE','PE'].includes(optionType)) return res.status(400).json({ok:false,error:'symbol, expiry, strike and optionType are required'});
-    const contracts=await findLightContracts({underlying:symbol,expiry,optionType});
+    const contracts=await findLightContracts({underlying:symbol,expiry,optionType,exchange:String(symbol||'').toUpperCase()==='SENSEX'?'BSE':'NSE'});
     const c0=contracts.map(x=>({...x,_strike:Number(x.strike)/100})).find(x=>Math.abs(x._strike-strike)<0.01);
     if(!c0) return res.status(404).json({ok:false,error:'LIVE_OPTION_CONTRACT_NOT_FOUND'});
     const q=(await quoteInstruments([c0]))[0]||{}, entry=Number(q.ltp);
@@ -1284,7 +1439,14 @@ app.get("/api/instruments", async (req,res)=>{
   res.json({connected:false,exchange,segment,query,instruments:names.map(symbol=>({symbol,exchange,segment,status:"CONNECT FEED"}))});
 });
 app.get("/api/expiries", async (req,res)=>{
-  res.json({connected:false,exchange:(req.query.exchange||"NSE").toUpperCase(),underlying:String(req.query.underlying||"").toUpperCase(),expiries:[],message:"Live expiry list will load from the connected instrument master."});
+  try{
+    const query=new URLSearchParams(req.query);
+    const r=await fetch(`http://127.0.0.1:${PORT}/api/angel/expiries?${query}`,{signal:AbortSignal.timeout(10000)});
+    const data=await r.json();
+    res.status(r.status).json(data);
+  }catch(e){
+    res.status(502).json({ok:false,connected:angelStatus().connected,exchange:(req.query.exchange||"NSE").toUpperCase(),underlying:String(req.query.underlying||"").toUpperCase(),expiries:[],error:e?.message||"Expiry bridge unavailable"});
+  }
 });
 app.get("/api/contracts", async (req,res)=>{
   try{
@@ -1359,16 +1521,20 @@ function rsiSeries(vals,n=14){ if(vals.length<=n) return []; let gains=0,losses=
 function atrSeries(rows,n=14){ if(rows.length<=n) return []; const tr=[]; for(let i=0;i<rows.length;i++){const prev=i?rows[i-1].c:rows[i].c; tr.push(Math.max(rows[i].h-rows[i].l,Math.abs(rows[i].h-prev),Math.abs(rows[i].l-prev)));} let a=tr.slice(0,n).reduce((x,y)=>x+y,0)/n; const out=new Array(n-1).fill(null); out.push(a); for(let i=n;i<tr.length;i++){a=(a*(n-1)+tr[i])/n;out.push(a);} return out; }
 function macd(vals){const e12=emaSeries(vals,12),e26=emaSeries(vals,26); const m=vals.map((_,i)=>e12[i]!=null&&e26[i]!=null?e12[i]-e26[i]:null); const clean=m.filter(x=>x!=null); const sigClean=emaSeries(clean,9); const signal=new Array(m.length-clean.length).fill(null).concat(sigClean); const hist=m.map((x,i)=>x!=null&&signal[i]!=null?x-signal[i]:null); return {macd:m.at(-1),signal:signal.at(-1),hist:hist.at(-1)}; }
 function adx(rows,n=14){ if(rows.length<2*n+1) return null; const tr=[],plus=[],minus=[]; for(let i=1;i<rows.length;i++){const up=rows[i].h-rows[i-1].h,down=rows[i-1].l-rows[i].l;tr.push(Math.max(rows[i].h-rows[i].l,Math.abs(rows[i].h-rows[i-1].c),Math.abs(rows[i].l-rows[i-1].c)));plus.push(up>down&&up>0?up:0);minus.push(down>up&&down>0?down:0);} let atr=tr.slice(0,n).reduce((a,b)=>a+b,0)/n,p=plus.slice(0,n).reduce((a,b)=>a+b,0)/n,m=minus.slice(0,n).reduce((a,b)=>a+b,0)/n; const dx=[]; for(let i=n;i<tr.length;i++){if(i>n){atr=(atr*(n-1)+tr[i])/n;p=(p*(n-1)+plus[i])/n;m=(m*(n-1)+minus[i])/n;} const diP=100*p/(atr||1),diM=100*m/(atr||1);dx.push(100*Math.abs(diP-diM)/(diP+diM||1));} return dx.length>=n?sma(dx.slice(-n),n):sma(dx,dx.length); }
-function vwap(rows){let pv=0,v=0; for(const r of rows){const vol=Number(r.v||0);pv+=((r.h+r.l+r.c)/3)*vol;v+=vol;} return v?pv/v:null; }
+function vwap(rows){
+ if(!Array.isArray(rows)||!rows.length||rows.some(r=>r?.v==null||r.v===''||!Number.isFinite(Number(r.v))||Number(r.v)<0)) return null;
+ let pv=0,v=0; for(const r of rows){const vol=Number(r.v);pv+=((r.h+r.l+r.c)/3)*vol;v+=vol;} return v?pv/v:null;
+}
 function candleSignal(rows){const a=rows.at(-1),b=rows.at(-2); if(!a||!b)return 'WAIT'; const body=Math.abs(a.c-a.o),range=Math.max(a.h-a.l,1e-9),upper=a.h-Math.max(a.o,a.c),lower=Math.min(a.o,a.c)-a.l; if(a.c>b.h&&a.o<b.c) return 'BULLISH ENGULFING'; if(a.c<b.l&&a.o>b.c) return 'BEARISH ENGULFING'; if(lower>body*2&&upper<body) return 'HAMMER'; if(upper>body*2&&lower<body) return 'SHOOTING STAR'; if(body/range<0.12) return 'DOJI'; return a.c>a.o?'BULLISH CANDLE':'BEARISH CANDLE'; }
-function summarize(rows){
- const c=rows.map(x=>x.c), e20=emaSeries(c,20).at(-1),e50=emaSeries(c,50).at(-1),e200=emaSeries(c,200).at(-1),r=rsiSeries(c,14).at(-1),m=macd(c),a=adx(rows,14),at=atrSeries(rows,14).at(-1),vw=vwap(rows),cs=candleSignal(rows),last=rows.at(-1)?.c;
- const trend=last!=null&&e20!=null&&e50!=null?(e20>e50?'BULLISH':'BEARISH'):'WAIT';
- return {last,ema20:e20,ema50:e50,ema200:e200,rsi:r,macd:m,adx:a,atr:at,vwap:vw,candle:cs,trend};
+function summarize(rows,{trendFast=20,trendSlow=50}={}){
+ const c=rows.map(x=>x.c), e20=emaSeries(c,20).at(-1),e50=emaSeries(c,50).at(-1),e200=emaSeries(c,200).at(-1),trendFastEma=emaSeries(c,trendFast).at(-1),trendSlowEma=emaSeries(c,trendSlow).at(-1),r=rsiSeries(c,14).at(-1),m=macd(c),a=adx(rows,14),at=atrSeries(rows,14).at(-1),vw=vwap(rows),cs=candleSignal(rows),last=rows.at(-1)?.c;
+ const trend=last!=null&&trendFastEma!=null&&trendSlowEma!=null?(trendFastEma>trendSlowEma?'BULLISH':'BEARISH'):'WAIT';
+ return {last,ema20:e20,ema50:e50,ema200:e200,trendFastPeriod:trendFast,trendSlowPeriod:trendSlow,trendFastEma,trendSlowEma,rsi:r,macd:m,adx:a,atr:at,vwap:vw,candle:cs,trend};
 }
 async function resolveIndexToken(symbol){
  const s=String(symbol||'NIFTY').toUpperCase();
  const known={NIFTY:['99926000','Nifty 50'],BANKNIFTY:['99926009','Nifty Bank'],FINNIFTY:['99926037','Nifty Fin Service'],MIDCPNIFTY:['99926074','NIFTY MID SELECT'],VIX:['99926017','India VIX']};
+ if(s==='SENSEX') return {token:'99919000',symbol:'SENSEX',exchange:'BSE'};
  if(known[s]) return {token:known[s][0],symbol:known[s][1],exchange:'NSE'};
  try{
    const sr=await angelSearchScrip({exchange:'NSE',searchscrip:s});
@@ -1385,25 +1551,57 @@ async function resolveIndexToken(symbol){
  return {token:String(x.token),symbol:x.symbol,exchange:String(x.exch_seg||'NSE').toUpperCase()};
 }
 const candleCache=new Map();
+const candleProviderDiagnostics=new Map();
 const candleInflight=new Map();
 const candleRetryAfter=new Map();
+const candleAlternateRetryAfter=new Map();
 const candleOfflineRetry=new Set();
-function candleRows(raw){
-  return (raw?.data||[]).map(x=>({t:x[0],o:Number(x[1]),h:Number(x[2]),l:Number(x[3]),c:Number(x[4]),v:Number(x[5]||0)}))
-    .filter(x=>[x.o,x.h,x.l,x.c].every(Number.isFinite));
+function mergeLiveCandlesIntoCache(symbol, cache){
+  const live=getLiveIndexCandles(indexFeedMeta(symbol).token);
+  if(!cache || !live.length) return cache?.rows||[];
+  const merged=new Map();
+  for(const row of cache.rows||[]){const ts=Date.parse(row.t);if(Number.isFinite(ts))merged.set(ts,row);}
+  for(const row of live){const ts=Date.parse(row.t);if(Number.isFinite(ts))merged.set(ts,row);}
+  cache.rows=[...merged.values()].sort((a,b)=>Date.parse(a.t)-Date.parse(b.t));
+  const baseSource=String(cache.baseSource||cache.source||'UNKNOWN');
+  cache.baseSource=baseSource;
+  if(baseSource!=='WS_LIVE_ONLY'&&!baseSource.includes('ANGEL_WS_LIVE')) cache.source=baseSource+' + ANGEL_WS_LIVE';
+  else cache.source=baseSource;
+  return cache.rows;
 }
-function bucketStart(ts, minutes){ return Math.floor(new Date(ts).getTime()/(minutes*60000))*minutes*60000; }
+function candleRows(raw){
+  return (raw?.data||[]).map(x=>{
+    const rawVolume=x[5], volume=rawVolume==null||rawVolume===''?null:Number(rawVolume);
+    return {t:x[0],o:Number(x[1]),h:Number(x[2]),l:Number(x[3]),c:Number(x[4]),v:Number.isFinite(volume)&&volume>=0?volume:null};
+  }).filter(x=>[x.o,x.h,x.l,x.c].every(Number.isFinite));
+}
+// Align intraday candles to the NSE session open (09:15 IST), not UTC hour boundaries.
+// This keeps 5M/15M bars correct and makes the 1H bar run 09:15–10:15, 10:15–11:15, etc.
+function bucketStart(ts, minutes){
+  const stamp=ts instanceof Date?ts.getTime():new Date(ts).getTime();
+  if(!Number.isFinite(stamp)) return NaN;
+  const span=Math.max(1,Number(minutes)||1)*60000;
+  const ist=new Date(stamp+330*60000);
+  const istDayStartUtc=Date.UTC(ist.getUTCFullYear(),ist.getUTCMonth(),ist.getUTCDate())-330*60000;
+  const sessionOpenUtc=istDayStartUtc+555*60000; // 09:15 Asia/Kolkata
+  return stamp>=sessionOpenUtc
+    ? sessionOpenUtc+Math.floor((stamp-sessionOpenUtc)/span)*span
+    : Math.floor(stamp/span)*span;
+}
 function aggregateCandles(rows, minutes){
   if(!Array.isArray(rows)||!rows.length) return [];
   const out=[]; let cur=null, key=null;
   for(const r of rows){
     const k=bucketStart(r.t,minutes);
+    const rawVolume=r.v, vol=rawVolume==null||rawVolume===''?null:Number(rawVolume);
+    const validVolume=Number.isFinite(vol)&&vol>=0?vol:null;
     if(k!==key){
       if(cur) out.push(cur);
       key=k;
-      cur={t:new Date(k).toISOString(),o:r.o,h:r.h,l:r.l,c:r.c,v:r.v||0};
+      cur={t:new Date(k).toISOString(),o:r.o,h:r.h,l:r.l,c:r.c,v:validVolume};
     }else{
-      cur.h=Math.max(cur.h,r.h); cur.l=Math.min(cur.l,r.l); cur.c=r.c; cur.v+=r.v||0;
+      cur.h=Math.max(cur.h,r.h); cur.l=Math.min(cur.l,r.l); cur.c=r.c;
+      cur.v=cur.v==null||validVolume==null?null:cur.v+validVolume;
     }
   }
   if(cur) out.push(cur);
@@ -1425,14 +1623,66 @@ async function loadYahoo5m(symbol){
   if(!r.ok) throw new Error(`Yahoo candle HTTP ${r.status}`);
   const j=await r.json();
   const result=j?.chart?.result?.[0], ts=result?.timestamp||[], q=result?.indicators?.quote?.[0]||{};
-  const rows=ts.map((t,i)=>({t:new Date(Number(t)*1000).toISOString(),o:Number(q.open?.[i]),h:Number(q.high?.[i]),l:Number(q.low?.[i]),c:Number(q.close?.[i]),v:Number(q.volume?.[i]||0)}))
-    .filter(x=>[x.o,x.h,x.l,x.c].every(Number.isFinite));
+  const rows=ts.map((t,i)=>{
+    const rawVolume=q.volume?.[i], volume=rawVolume==null||rawVolume===''?null:Number(rawVolume);
+    return {t:new Date(Number(t)*1000).toISOString(),o:Number(q.open?.[i]),h:Number(q.high?.[i]),l:Number(q.low?.[i]),c:Number(q.close?.[i]),v:Number.isFinite(volume)&&volume>=0?volume:null};
+  }).filter(x=>[x.o,x.h,x.l,x.c].every(Number.isFinite));
   if(!rows.length) throw new Error('Yahoo returned no usable 5M candles');
   return rows;
 }
+async function loadUpstoxIndexFallback(key,start,end){
+  const config=upstoxConfigStatus({symbol:key,role:'index'});
+  const primary=candleProviderDiagnostics.get(key)||null;
+  if(!config.configured){
+    candleProviderDiagnostics.set(key,{at:nowISO(),provider:'ANGEL_ONE',rows:0,error:primary?.error||'Angel One historical request returned no usable candles',rateRejected:!!primary?.rateRejected,connected:!!angelStatus().connected,fallbackProvider:'UPSTOX',fallbackConfigured:false,fallbackError:config.tokenConfigured?'Instrument key not configured':'UPSTOX_ACCESS_TOKEN not configured'});
+    return {ok:false,configured:false,error:config.tokenConfigured?'Instrument key not configured':'UPSTOX_ACCESS_TOKEN not configured'};
+  }
+  const retryAfter=candleAlternateRetryAfter.get(key)||0;
+  if(Date.now()<retryAfter) return {ok:false,configured:true,error:'Upstox fallback cooldown is active'};
+  const alternate=await fetchUpstoxHistoricalCandles({symbol:key,role:'index',fromDate:start,toDate:end,intervalMinutes:5});
+  if(alternate.ok){
+    candleAlternateRetryAfter.delete(key);
+    candleProviderDiagnostics.set(key,{at:nowISO(),provider:'UPSTOX_HISTORICAL',rows:alternate.rows.length,error:null,primaryProvider:'ANGEL_ONE',primaryError:primary?.error||null,connected:!!angelStatus().connected});
+    candleCache.set(key,{at:Date.now(),fetchedAt:Date.now(),rows:alternate.rows,source:'UPSTOX_HISTORICAL',baseSource:'UPSTOX_HISTORICAL'});
+    console.log('[UPSTOX_CANDLES] '+key+' rows='+alternate.rows.length+' after primary history was unavailable');
+    return {ok:true,rows:mergeLiveCandlesIntoCache(key,candleCache.get(key))};
+  }
+  candleAlternateRetryAfter.set(key,Date.now()+60*1000);
+  candleProviderDiagnostics.set(key,{at:nowISO(),provider:'ANGEL_ONE',rows:0,error:primary?.error||'Angel One historical request returned no usable candles',rateRejected:!!primary?.rateRejected,connected:!!angelStatus().connected,fallbackProvider:'UPSTOX',fallbackConfigured:true,fallbackError:alternate.error});
+  console.warn('[UPSTOX_CANDLES] '+key+' fallback unavailable: '+alternate.error);
+  return {ok:false,configured:true,error:alternate.error};
+}
+async function loadCachedOrYahooFallback(key,cached,token){
+  if(cached?.rows?.length){
+    const base=String(cached.baseSource||cached.source||'ANGEL');
+    const staleBaseSource=(base.startsWith('ANGEL')&&!base.includes('STALE CACHE'))
+      ?base.split(/STALE CACHE/i)[0].replace(/[^\\w]+$/,'').trim()+' [STALE CACHE]'
+      :base;
+    candleCache.set(key,{...cached,at:cached.at,fetchedAt:cached.fetchedAt||cached.at,source:staleBaseSource,baseSource:staleBaseSource});
+    return mergeLiveCandlesIntoCache(key,candleCache.get(key));
+  }
+  try{
+    const fallback=await loadYahoo5m(key);
+    candleCache.set(key,{at:Date.now(),fetchedAt:Date.now(),rows:fallback,source:'YAHOO_FALLBACK',baseSource:'YAHOO_FALLBACK'});
+    return mergeLiveCandlesIntoCache(key,candleCache.get(key));
+  }catch(e){
+    console.warn('[YAHOO_FALLBACK] '+key+' '+(e?.message||e));
+    const live=getLiveIndexCandles(token||indexFeedMeta(key).token);
+    if(live.length){candleCache.set(key,{at:Date.now(),fetchedAt:Date.now(),rows:live,source:'WS_LIVE_ONLY',baseSource:'WS_LIVE_ONLY'});return live;}
+    return [];
+  }
+}
 async function loadBase5m(symbol){
   const key=String(symbol||'NIFTY').toUpperCase(), now=Date.now(), cached=candleCache.get(key);
-  if(cached && now-cached.at<15000) return cached.rows;
+  // A chart may have cached Yahoo fallback while Angel One was disconnected.
+  // Once the broker reconnects, bypass that fallback immediately and retry candles.
+  const retryAfterReconnect=angelStatus().connected && candleOfflineRetry.has(key);
+  if(retryAfterReconnect){candleOfflineRetry.delete(key);candleRetryAfter.delete(key);}
+  const cachedBaseSource=String(cached?.baseSource||cached?.source||'').toUpperCase();
+  const cachedIsUntrusted=!!cached&&!((cachedBaseSource.startsWith('ANGEL')&&!cachedBaseSource.includes('YAHOO')&&!cachedBaseSource.includes('STALE CACHE'))||cachedBaseSource==='UPSTOX_HISTORICAL');
+  const upstoxConfigured=upstoxConfigStatus({symbol:key,role:'index'}).configured;
+  const retryAlternate=cachedIsUntrusted&&upstoxConfigured&&now>=(candleAlternateRetryAfter.get(key)||0)&&now<(candleRetryAfter.get(key)||0);
+  if(cached && now-cached.at<5*60*1000 && !retryAfterReconnect && !retryAlternate) return mergeLiveCandlesIntoCache(key,cached);
   if(candleInflight.has(key)) return await candleInflight.get(key);
   // Back off noisy 403/429 periods. An offline-only cooldown is cleared as
   // soon as the broker session comes back, so a fresh login is not blocked.
@@ -1441,45 +1691,49 @@ async function loadBase5m(symbol){
       candleOfflineRetry.delete(key);
       candleRetryAfter.delete(key);
     }else{
-      return cached?.rows||[];
+      // Keep the primary provider in cooldown, but still try the independent provider once.
+      // Share this fallback job across concurrent dashboard panels to avoid a new request burst.
+      const fallbackJob=(async()=>{
+        const end=new Date(), start=new Date(end.getTime()-5*86400000);
+        const alternate=await loadUpstoxIndexFallback(key,start,end);
+        if(alternate.ok) return alternate.rows;
+        return await loadCachedOrYahooFallback(key,cached,indexFeedMeta(key).token);
+      })();
+      candleInflight.set(key,fallbackJob);
+      try{return await fallbackJob;}finally{candleInflight.delete(key);}
     }
   }
   const job=(async()=>{
-    const ins=await resolveIndexToken(key), end=new Date(), start=new Date(end.getTime()-15*86400000);
+    const ins=await resolveIndexToken(key), end=new Date(), start=new Date(end.getTime()-5*86400000);
     const f=x=>{const d=new Date(x),p=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(d),m=Object.fromEntries(p.map(z=>[z.type,z.value]));return m.year+'-'+m.month+'-'+m.day+' '+m.hour+':'+m.minute;};
     let rows=[];
     try{
       // Prefer one broker request for the entire lookback to minimize rate-limit pressure.
-      const raw=await angelCandles({exchange:'NSE',symboltoken:ins.token,interval:'FIVE_MINUTE',fromdate:f(start),todate:f(end)});
+      const raw=await angelCandles({exchange:ins.exchange||'NSE',symboltoken:ins.token,interval:'FIVE_MINUTE',fromdate:f(start),todate:f(end)});
       rows=candleRows(raw);
+      candleProviderDiagnostics.set(key,{at:nowISO(),provider:'ANGEL',rows:rows.length,error:null});
       console.log('[ANGEL_CANDLES] '+key+' rows='+rows.length);
     }catch(e){
       if(!angelStatus().connected) candleOfflineRetry.add(key);
       else candleOfflineRetry.delete(key);
-      candleRetryAfter.set(key,Date.now()+60000);
-      console.warn('[ANGEL_CANDLES] '+key+' '+(e?.message||e)+'; retry delayed 60s');
+      const message=String(e?.message||e);
+      const rateRejected=/HTTP 403|HTTP 429|Access denied|too many requests|rate.?limit|exceeding access rate|HISTORICAL_COOLDOWN_ACTIVE/i.test(message);
+      candleProviderDiagnostics.set(key,{at:nowISO(),provider:'ANGEL',rows:0,error:message.slice(0,240),rateRejected,connected:!!angelStatus().connected});
+      const retryMs=rateRejected?5*60*1000:60000;
+      candleRetryAfter.set(key,Date.now()+retryMs);
+      console.warn('[ANGEL_CANDLES] '+key+' '+message+'; retry delayed '+Math.round(retryMs/1000)+'s');
     }
     rows=[...new Map(rows.map(r=>[r.t,r])).values()].sort((a,b)=>Date.parse(a.t)-Date.parse(b.t));
     if(rows.length){
       candleOfflineRetry.delete(key);
       candleRetryAfter.delete(key);
-      candleCache.set(key,{at:Date.now(),rows,source:'ANGEL'});
-      return rows;
+      candleCache.set(key,{at:Date.now(),fetchedAt:Date.now(),rows,source:'ANGEL',baseSource:'ANGEL'});
+      return mergeLiveCandlesIntoCache(key,candleCache.get(key));
     }
-    // During transient broker/API outages, keep the last verified candle set instead of
-    // replacing the chart with an external rate-limited source.
-    if(cached?.rows?.length){
-      candleCache.set(key,{at:cached.at,rows:cached.rows,source:(cached.source||'ANGEL')+' • STALE CACHE'});
-      return cached.rows;
-    }
-    try{
-      const fallback=await loadYahoo5m(key);
-      candleCache.set(key,{at:Date.now(),rows:fallback,source:'YAHOO_FALLBACK'});
-      return fallback;
-    }catch(e){
-      console.warn('[YAHOO_FALLBACK] '+key+' '+(e?.message||e));
-      return [];
-    }
+    // Primary history failed: try the independent provider, then a clearly labelled last resort.
+    const alternate=await loadUpstoxIndexFallback(key,start,end);
+    if(alternate.ok) return alternate.rows;
+    return await loadCachedOrYahooFallback(key,cached,ins.token);
   })();
   candleInflight.set(key,job);
   try{return await job;}finally{candleInflight.delete(key);}
@@ -1497,7 +1751,8 @@ function istMinuteKey(ts){
 }
 function istDayKey(ts){
   const d=new Date(ts);
-  if(Number.isNaN(d.getTime())) return null;  return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);
+  if(Number.isNaN(d.getTime())) return null;
+  return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);
 }
 function formatAngelDate(ts){
   const d=new Date(ts);
@@ -1567,11 +1822,10 @@ function verifiedFuturesSessionVWAP(rows){
 async function loadFuturesVolume(symbol){
   const key=String(symbol||'NIFTY').toUpperCase();
   const cached=futuresVolumeCache.get(key);
-  if(cached){
-    const rejectedHistory=(cached.data?.fetchErrors||[]).some(e=>/HTTP 403|HTTP 429|Too many requests|Access denied|rate limit/i.test(String(e))) ||
-      /historical.*403|static outbound IP/i.test(String(cached.data?.reason||''));
-    const cacheTtl=rejectedHistory?5*60*1000:30000;
-    if(Date.now()-cached.at<cacheTtl) return cached.data;
+  if(cached && Date.now()-cached.at<5*60*1000){
+    // Volume/VWAP is based on completed 5M candles; poll it at most every five minutes.
+    // This prevents app refresh cycles from repeatedly hitting SmartAPI history endpoints.
+    return cached.data;
   }
   if(futuresVolumeInflight.has(key)) return await futuresVolumeInflight.get(key);
   const job=(async()=>{
@@ -1589,38 +1843,58 @@ async function loadFuturesVolume(symbol){
         .filter(x=>parseExpiry(x.expiry)>=Date.now())
         .sort((a,b)=>parseExpiry(a.expiry)-parseExpiry(b.expiry))[0];
       if(!fut?.token) return {ratio10d:null,source:null,benchmarkDays:0,contractCount:contracts?.length||0,reason:'No unexpired index FUTIDX contract was found.'};
-      const end=new Date(), start=new Date(end.getTime()-15*86400000), chunkMs=5*86400000;
+      const end=new Date(), start=new Date(end.getTime()-15*86400000);
       let rows=[];const fetchErrors=[];
-      for(let cursor=start;cursor<end;cursor=new Date(Math.min(end.getTime(),cursor.getTime()+chunkMs))){
-        const chunkEnd=new Date(Math.min(end.getTime(),cursor.getTime()+chunkMs));
+      const futuresExchange=String(fut.exch_seg||'').toUpperCase()==='BFO'?'BFO':'NFO';
+      // Pull five calendar-day windows sequentially. Large lookbacks can be
+      // rejected by SmartAPI even when a short historical query succeeds.
+      // angelone.js paces the requests; stop immediately on a throttle response.
+      const chunkMs=5*86400000;
+      for(let chunkStart=start.getTime();chunkStart<end.getTime();chunkStart+=chunkMs){
+        const chunkEnd=new Date(Math.min(end.getTime(),chunkStart+chunkMs));
+        const chunkFrom=new Date(chunkStart);
         try{
-          const raw=await angelCandles({exchange:'NFO',symboltoken:String(fut.token),interval:'FIVE_MINUTE',fromdate:formatAngelDate(cursor),todate:formatAngelDate(chunkEnd)});
-          const batch=candleRows(raw);
-          if(batch.length) rows.push(...batch);
-          else fetchErrors.push('No candles returned for '+formatAngelDate(cursor)+' to '+formatAngelDate(chunkEnd));
+          const raw=await angelCandles({exchange:futuresExchange,symboltoken:String(fut.token),interval:'FIVE_MINUTE',fromdate:formatAngelDate(chunkFrom),todate:formatAngelDate(chunkEnd)});
+          const chunkRows=candleRows(raw);
+          if(!chunkRows.length){
+            fetchErrors.push('No futures candles returned for '+formatAngelDate(chunkFrom)+' to '+formatAngelDate(chunkEnd));
+            continue;
+          }
+          rows.push(...chunkRows);
         }catch(e){
           const message=(e?.message||'Candle request failed').slice(0,180);
           fetchErrors.push(message);
-          // 401/403/429 are not fixed by retrying adjacent date windows. Stop early
-          // so a blocked historical endpoint cannot multiply load and delay NO TRADE.
-          if(/HTTP (?:401|403|429)|Too many requests|Access denied|rate limit|not connected/i.test(message)) break;
+          // Do not compound an account-level throttle with more requests.
+          if(/HTTP 403|HTTP 429|Access denied|rate.?limit|exceeding access rate|HISTORICAL_COOLDOWN_ACTIVE/i.test(message)) break;
         }
-        if(chunkEnd.getTime()>=end.getTime()) break;
+      }
+      const primaryErrors=[...fetchErrors];
+      const angelRateRejected=fetchErrors.some(e=>/HTTP 403|HTTP 429|Access denied|rate.?limit|exceeding access rate/i.test(String(e)));
+      const upstoxFuturesConfig=upstoxConfigStatus({symbol:key,role:'futures'});
+      let volumeProvider='ANGEL', upstoxFuturesKey='';
+      // If Angel One history is blocked or yielded too few futures samples, use a separately
+      // authenticated Upstox front-month futures key when configured. Never substitute index volume.
+      if((angelRateRejected||rows.length<100)&&upstoxFuturesConfig.configured){
+        const alternate=await fetchUpstoxHistoricalCandles({symbol:key,role:'futures',fromDate:start,toDate:end,intervalMinutes:5});
+        if(alternate.ok){rows=alternate.rows;fetchErrors.length=0;volumeProvider='UPSTOX';upstoxFuturesKey=alternate.instrumentKey;}
+        else fetchErrors.push('Upstox futures fallback: '+alternate.error);
       }
       rows=[...new Map(rows.map(x=>[x.t,x])).values()].sort((a,b)=>Date.parse(a.t)-Date.parse(b.t));
       const completed=dropIncompleteCandle(rows,5);
       const result=fiveMinuteVolumeBenchmark(completed);
       const session=verifiedFuturesSessionVWAP(completed);
-      result.source=result.ratio10d!=null?'ANGEL NFO FUTURES 5M • '+String(fut.symbol):null;
-      result.contract=String(fut.symbol||'');
-      result.expiry=String(fut.expiry||'');
-      result.token=String(fut.token||'');
+      result.source=result.ratio10d!=null?(volumeProvider==='UPSTOX'?'UPSTOX FUTURES 5M • '+upstoxFuturesKey:'ANGEL NFO FUTURES 5M • '+String(fut.symbol)):null;
+      result.provider=volumeProvider;
+      result.contract=volumeProvider==='UPSTOX'?upstoxFuturesKey:String(fut.symbol||'');
+      result.expiry=volumeProvider==='UPSTOX'?'':String(fut.expiry||'');
+      result.token=volumeProvider==='UPSTOX'?'':String(fut.token||'');
       result.fetchErrors=fetchErrors.slice(0,4);
+      result.primaryFetchErrors=primaryErrors.slice(0,3);
       if(fetchErrors.some(e=>/HTTP 403|HTTP 429|Too many requests|Access denied|rate limit/i.test(String(e)))){
-        result.reason='Angel One historical candle endpoint is rejecting requests (HTTP 403/429). Check the registered server outbound static IP and SmartAPI historical-data access. Until fresh futures candles are returned, volume benchmark and VWAP remain unverified.';
+        result.reason='Angel One historical candles were rejected with HTTP 403/429 (access-rate rejection). Live quotes/WebSocket may still work, but historical futures volume and VWAP cannot be verified until the provider returns fresh candles.';
       }
       result.vwap=session.vwap;
-      result.vwapSource=session.vwap!=null?'ANGEL NFO FUTURES SESSION VWAP • '+String(fut.symbol):null;
+      result.vwapSource=session.vwap!=null?(volumeProvider==='UPSTOX'?'UPSTOX FUTURES SESSION VWAP • '+upstoxFuturesKey:'ANGEL NFO FUTURES SESSION VWAP • '+String(fut.symbol)):null;
       result.vwapBars=session.vwapBars;
       result.futuresLast=session.lastPrice;
       result.vwapLastCandleTime=session.lastCandleTime;
@@ -1645,7 +1919,7 @@ async function loadTfSummary(symbol, interval, days){
   else {
     const end=new Date(), lookbackDays=Math.max(2,Math.min(Number(days)||15,365)), from=new Date(end.getTime()-lookbackDays*86400000);
     const f=x=>{const d=new Date(x),p=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(d),m=Object.fromEntries(p.map(z=>[z.type,z.value]));return m.year+'-'+m.month+'-'+m.day+' '+m.hour+':'+m.minute;};
-    rows=candleRows(await angelCandles({exchange:'NSE',symboltoken:ins.token,interval,fromdate:f(from),todate:f(end)}));
+    rows=candleRows(await angelCandles({exchange:ins.exchange||'NSE',symboltoken:ins.token,interval,fromdate:f(from),todate:f(end)}));
     if(interval!=='ONE_DAY') rows=dropIncompleteCandle(rows,5);
   }
   const wanted=interval==='ONE_HOUR'?Math.max(30,Math.ceil((days||10)*5))
@@ -1653,7 +1927,7 @@ async function loadTfSummary(symbol, interval, days){
     :interval==='ONE_DAY'?Math.max(20,Math.ceil((days||15)*1.2))
     :Math.max(60,Math.ceil((days||10)*75));
   const trimmed=rows.slice(-wanted);
-  return {ins,rows:trimmed,summary:summarize(trimmed),closed:true};
+  return {ins,rows:trimmed,summary:{...summarize(trimmed,interval==='ONE_HOUR'?{trendFast:8,trendSlow:20}:{}),candleSource:candleCache.get(String(symbol||'NIFTY').toUpperCase())?.source||'UNKNOWN'},closed:true};
 }
 
 // Chart data bridge: prefer Angel candles, then use the existing verified fallback adapter.
@@ -1668,7 +1942,10 @@ app.get('/api/chart/candles',async(req,res)=>{
       const base=await loadBase5m(symbol);
       let rows=interval==='FIVE_MINUTE'?base:aggregateCandles(base,tf==='15M'?15:tf==='30M'?30:tf==='1H'?60:tf==='4H'?240:5);
       rows=dropIncompleteCandle(rows,tf==='15M'?15:tf==='30M'?30:tf==='1H'?60:tf==='4H'?240:5);
-      return res.json({ok:true,connected,source:candleCache.get(symbol)?.source||'ANGEL',rows:rows.slice(-500),checkedAt:nowISO()});
+      const payload={ok:true,connected,source:candleCache.get(symbol)?.source||'UNAVAILABLE',rows:rows.slice(-500),checkedAt:nowISO()};
+      const localDebug=req.query.diagnostic==='1' && ['127.0.0.1','::1','::ffff:127.0.0.1'].includes(String(req.socket.remoteAddress||''));
+      if(localDebug) payload.providerDiagnostic=candleProviderDiagnostics.get(symbol)||null;
+      return res.json(payload);
     }
     const summary=await loadTfSummary(symbol,interval,tf==='1D'?30:15);
     return res.json({ok:true,connected,source:'ANGEL',rows:(summary.rows||[]).slice(-2500),checkedAt:nowISO()});
@@ -1681,10 +1958,12 @@ app.get('/api/chart/candles',async(req,res)=>{
 // PHASE 10 — advanced prediction, confirmation and transparent historical target-hit analysis.
 app.get('/api/phase10/prediction',async(req,res)=>{
   const symbol=String(req.query.symbol||'NIFTY').toUpperCase();
+  const marketExchange=indexFeedMeta(symbol).exchange;
+  const marketOpen=exchangeSessionOpen(marketExchange);
   try{
-    // Off-session fast path: do not make broker/provider requests when NSE is closed.
+    // Off-session fast path: do not make broker/provider requests when the selected exchange is closed.
     // Historical candles may be shown for context, but every live-trade gate stays closed.
-    if(!marketSession()){
+    if(!marketOpen){
       const cachedRows=candleCache.get(symbol)?.rows||[];
       const rows5=dropIncompleteCandle(cachedRows,5);
       const rows15=dropIncompleteCandle(aggregateCandles(rows5,15),15);
@@ -1702,8 +1981,8 @@ app.get('/api/phase10/prediction',async(req,res)=>{
       prediction.vwapSource=null;
       prediction.volumeBenchmark={ratio10d:null,source:null,benchmarkDays:0,candles:m5Rows.length,
         lastCandleTime:last?.t||null,lastVolume:last?.v??null,
-        reason:'NSE is closed; live futures-volume data was not requested.'};
-      prediction.optionPlan={available:false,reason:'NSE is closed; live option selection is disabled until the next session.'};
+        reason:`${marketExchange} is closed; live futures-volume data was not requested.`};
+      prediction.optionPlan={available:false,reason:`${marketExchange} is closed; live option selection is disabled until the next session.`};
       return res.json({ok:true,phase:10,symbol,prediction,
         health:{market:m5Rows.length>0,marketOpen:false,options:false,news:false,global:false,eventBlocked:false,eventDayBlock:false,vix:null},
         greeks:null,greekRisk:{status:'WAIT',message:'Market is closed; live Greeks are not verified.'},
@@ -1728,15 +2007,18 @@ app.get('/api/phase10/prediction',async(req,res)=>{
       ]).finally(()=>clearTimeout(timer));
     };
     const settled=await Promise.allSettled([
-      boundedFeed(loadTfSummary(symbol,'ONE_HOUR',45),{rows:[],summary:{trend:'WAIT'}},'candles-1h'),
-      boundedFeed(loadTfSummary(symbol,'FIFTEEN_MINUTE',30),{rows:[],summary:{trend:'WAIT'}},'candles-15m'),
-      boundedFeed(loadTfSummary(symbol,'FIVE_MINUTE',15),{rows:[],summary:{trend:'WAIT'}},'candles-5m'),
+      // Historical candles are fetched immediately on a cold app open. Give the broker
+      // backfill enough time to return instead of timing out at 2.8s and analysing empty rows.
+      // This wait is network latency only; it does not wait for the next 5M/15M candle close.
+      boundedFeed(loadTfSummary(symbol,'ONE_HOUR',45),{rows:[],summary:{trend:'WAIT'}},'candles-1h',12000),
+      boundedFeed(loadTfSummary(symbol,'FIFTEEN_MINUTE',30),{rows:[],summary:{trend:'WAIT'}},'candles-15m',12000),
+      boundedFeed(loadTfSummary(symbol,'FIVE_MINUTE',15),{rows:[],summary:{trend:'WAIT'}},'candles-5m',12000),
       boundedFeed(news(symbol),[],'news'),
       boundedFeed(globalData(),{},'global'),
       boundedFeed(events(),[],'events'),
-      boundedFeed(market(symbol),{},'market'),
-      boundedFeed(options(symbol),{connected:false,error:'Option feed timed out'},'options'),
-      boundedFeed(loadFuturesVolume(symbol),{ratio10d:null,source:null,benchmarkDays:0,reason:'Futures volume feed timed out'},'futures-volume')
+      boundedFeed(market(symbol),{},'market',4500),
+      boundedFeed(options(symbol),{connected:false,error:'Option feed timed out'},'options',5000),
+      boundedFeed(loadFuturesVolume(symbol),{ratio10d:null,source:null,benchmarkDays:0,reason:'Futures volume feed timed out'},'futures-volume',18000)
     ]);
     const val=(i,f)=>settled[i]?.status==='fulfilled'?settled[i].value:f;
     const h1=val(0,{rows:[],summary:{trend:'WAIT'}}), m15=val(1,{rows:[],summary:{trend:'WAIT'}}), m5=val(2,{rows:[],summary:{trend:'WAIT'}});
@@ -1745,7 +2027,7 @@ app.get('/api/phase10/prediction',async(req,res)=>{
     let opt=val(7,{connected:false}), greeks=[];
     const futuresVol=val(8,{ratio10d:null,source:null,benchmarkDays:0});
     try{
-      if(opt.expiry) greeks=await boundedFeed(liveOptionGreeks(symbol,opt.expiry),[],'option-greeks',1500);
+      if(opt.expiry) greeks=await boundedFeed(liveOptionGreeks(symbol,opt.expiry),[],'option-greeks',5000);
       const pickStrike=Number(opt.atm);
       const pickType=Number(opt.pcr)>=1?'CE':'PE';
       const candidates=greeks.filter(x=>x.strike===pickStrike);
@@ -1784,7 +2066,7 @@ app.get('/api/phase10/prediction',async(req,res)=>{
       m5.summary.vwapVerified=false;
       m5.summary.vwapSource=null;
     }
-    const prediction=buildPrediction({h1:h1.summary,m15:m15.summary,m5:m5.summary,rows5:m5.rows,news:ns,global:gs,events:es,options:opt,marketOpen:marketSession(),backtest:historical,vix:Number.isFinite(vix)?vix:null,oi:opt});
+    const prediction=buildPrediction({h1:h1.summary,m15:m15.summary,m5:m5.summary,rows5:m5.rows,news:ns,global:gs,events:es,options:opt,marketOpen,backtest:historical,vix:Number.isFinite(vix)?vix:null,oi:opt});
     prediction.vwapVerified=!!m5.summary.vwapVerified;
     prediction.vwapSource=m5.summary.vwapSource||null;
     prediction.volumeBenchmark={
@@ -1798,11 +2080,11 @@ app.get('/api/phase10/prediction',async(req,res)=>{
     let optionPlan={available:false,reason:'Wait until model confidence reaches 78% for live CE/PE contract selection.'};
     if(prediction.opportunityEligible && prediction.finalPlan?.available){
       const optionAction=prediction.prediction==='BULLISH'?'CALL':prediction.prediction==='BEARISH'?'PUT':'';
-      optionPlan=await boundedFeed(findBuyableOptionPlan(symbol,optionAction,prediction.finalPlan.entry,prediction.finalPlan.sl,prediction.finalPlan.target1,prediction.finalPlan.target2),{available:false,reason:'Option contract scan exceeded its response deadline; no trade.'},'option-plan',1500);
+      optionPlan=await boundedFeed(findBuyableOptionPlan(symbol,optionAction,prediction.finalPlan.entry,prediction.finalPlan.sl,prediction.finalPlan.target1,prediction.finalPlan.target2),{available:false,reason:'Option contract scan exceeded its response deadline; no trade.'},'option-plan',3000);
       if(!optionPlan.available) optionPlan={...optionPlan,threshold:78,reason:optionPlan.reason||'No suitable live contract passed the premium/Greek/liquidity filters.'};
     }
     prediction.optionPlan=optionPlan;
-    const freshExchangeTick=getLatestTicks().find(x=>isFreshExchangeTick(x?.data));
+    const freshExchangeTick=freshIndexTick(symbol);
     prediction.exchangeTickVerified=Boolean(freshExchangeTick);
     prediction.exchangeTickAgeSec=freshExchangeTick?Number((Math.max(0,exchangeTickAgeMs(freshExchangeTick.data))/1000).toFixed(1)):null;
     if(!freshExchangeTick){
@@ -1816,12 +2098,17 @@ app.get('/api/phase10/prediction',async(req,res)=>{
       prediction.optionPlan={available:false,reason:'No Trade: fresh exchange-timestamped market data is required.'};
     }
     const candleConnected=Array.isArray(m5.rows)&&m5.rows.length>0;
-    res.json({ok:true,phase:10,symbol,prediction,health:{market:candleConnected,options:opt.connected,news:ns.connected,global:gs.connected,eventBlocked:es.hardBlock,eventDayBlock:es.eventDayBlock,vix:Number.isFinite(vix)?vix:null},greeks:opt.greeks||null,greekRisk:opt.greekRisk||{status:'WAIT',message:'Live option Greeks not verified.'},backtest:historical,optionBacktest:prediction.optionBacktest,checkedAt:nowISO()});
+    const checkedAt=nowISO();
+    try{
+      await predictionReportStore.record({symbol,prediction,marketOpen,checkedAt,referencePrice:m5.summary.last,health:{market:candleConnected,options:opt.connected,news:ns.connected,global:gs.connected,eventBlocked:es.hardBlock,eventDayBlock:es.eventDayBlock,vix:Number.isFinite(vix)?vix:null},candles:dropIncompleteCandle(Array.isArray(m5.rows)?m5.rows:[],5)});
+    }catch(reportError){console.warn('[PREDICTION_REPORT_SAVE]',reportError?.message||reportError);}
+    res.setHeader('Cache-Control','no-store');
+    res.json({ok:true,phase:10,symbol,prediction,health:{market:candleConnected,options:opt.connected,news:ns.connected,global:gs.connected,eventBlocked:es.hardBlock,eventDayBlock:es.eventDayBlock,vix:Number.isFinite(vix)?vix:null},greeks:opt.greeks||null,greekRisk:opt.greekRisk||{status:'WAIT',message:'Live option Greeks not verified.'},backtest:historical,optionBacktest:prediction.optionBacktest,checkedAt});
   }catch(e){
     console.warn('[PREDICTION_ROUTE]',e?.message||e);
     if(res.headersSent) return;
     const prediction=buildPrediction({
-      marketOpen:marketSession(),options:{connected:false},news:{connected:false,freshCount:0},
+      marketOpen,options:{connected:false},news:{connected:false,freshCount:0},
       global:{connected:false,freshInputs:0},events:{connected:false,eventSafe:false},vix:null
     });
     prediction.action='NO TRADE';
@@ -1837,6 +2124,19 @@ app.get('/api/phase10/prediction',async(req,res)=>{
       backtest:{available:false,kind:'UNDERLYING_PRICE_ONLY',instrument:'NIFTY INDEX',verified:false,reason:'Prediction request fell back before a verified analysis completed.'},
       optionBacktest:prediction.optionBacktest,
       message:'Degraded safe response; inspect server logs. No Trade.',checkedAt:nowISO()});
+  }
+});
+
+app.get("/api/prediction-report",async(req,res)=>{
+  try{
+    const reports=await predictionReportStore.list();
+    const wins=reports.filter(x=>x.status==="WIN").length;
+    const losses=reports.filter(x=>x.status==="LOSS").length;
+    res.setHeader("Cache-Control","no-store");
+    return res.json({ok:true,generatedAt:nowISO(),storage:"local-server",summary:{total:reports.length,confirmed:reports.filter(x=>x.signalState==="CONFIRMED").length,pending:reports.filter(x=>x.status==="PENDING").length,wins,losses,scored:wins+losses,accuracyPct:wins+losses?Number((wins/(wins+losses)*100).toFixed(1)):null},reports:reports.slice(-300).reverse()});
+  }catch(e){
+    console.warn("[PREDICTION_REPORT_READ]",e?.message||e);
+    return res.status(500).json({ok:false,error:"PREDICTION_REPORT_UNAVAILABLE"});
   }
 });
 

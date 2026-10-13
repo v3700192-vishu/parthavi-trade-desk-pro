@@ -168,6 +168,74 @@ test("only a verified option-premium backtest with fees and slippage may affect 
   assert.ok(verifiedOptionBacktest.modelConfidence > base.modelConfidence);
 });
 
+test("fresh fallback candles cannot satisfy the broker-verified entry gate", () => {
+  const prediction = buildPrediction({
+    h1: { trend: "BEARISH", last: 99, ema20: 100, ema50: 101 },
+    m15: { trend: "BEARISH", last: 99, ema20: 100, ema50: 101 },
+    m5: { trend: "BEARISH", candle: "BEARISH CANDLE", last: 99, ema20: 100, ema50: 101,
+      rsi: 40, macd: { hist: -1 }, adx: 30, atr: 2, vwap: 100,
+      candleSource: "YAHOO_FALLBACK", volumeRatio10d: 1.8, volumeSource: "NIFTY FUTURES 5M test fixture" },
+    rows5: [{ t: new Date(Date.now() - 60_000).toISOString(), o: 100, h: 101, l: 98, c: 99, v: 0 }],
+    marketOpen: true, vix: 15,
+    news: { connected: true, freshCount: 5, bias: "BEARISH" },
+    global: { connected: true, freshInputs: 4, bias: "RISK-OFF" },
+    options: { connected: true, pcr: 0.9, ceoi: 200, peoi: 100, theta: 2, delta: 0.5 },
+    events: { connected: true }
+  });
+  assert.equal(prediction.candlesFresh, true);
+  assert.equal(prediction.candlesVerified, false);
+  assert.equal(prediction.feedComplete, false);
+  assert.equal(prediction.action, "NO TRADE");
+  assert.ok(prediction.noTradeReasons.some(x => x.includes("unverified, fallback, or stale source")));
+});
+
+test("Yahoo history augmented by live WebSocket candles remains unverified for trade entry", () => {
+  const prediction = buildPrediction({
+    h1: { trend: "BEARISH", last: 99, ema20: 100, ema50: 101 },
+    m15: { trend: "BEARISH", last: 99, ema20: 100, ema50: 101 },
+    m5: { trend: "BEARISH", candle: "BEARISH CANDLE", last: 99, ema20: 100, ema50: 101,
+      rsi: 40, macd: { hist: -1 }, adx: 30, atr: 2, vwap: 100,
+      candleSource: "YAHOO_FALLBACK + ANGEL_WS_LIVE", volumeRatio10d: 1.8, volumeSource: "NIFTY FUTURES 5M test fixture" },
+    rows5: [{ t: new Date(Date.now() - 60_000).toISOString(), o: 100, h: 101, l: 98, c: 99, v: 0 }],
+    marketOpen: true, vix: 15,
+    news: { connected: true, freshCount: 5, bias: "BEARISH" },
+    global: { connected: true, freshInputs: 4, bias: "RISK-OFF" },
+    options: { connected: true, pcr: 0.9, ceoi: 200, peoi: 100, theta: 2, delta: 0.5 },
+    events: { connected: true }
+  });
+  assert.equal(prediction.candlesFresh, true);
+  assert.equal(prediction.candlesVerified, false);
+  assert.equal(prediction.feedComplete, false);
+  assert.equal(prediction.action, "NO TRADE");
+});
+
+test("authenticated Upstox V3 history is accepted but stale alternate-provider candles are blocked", () => {
+  const input = {
+    h1: { trend: "BEARISH", last: 99, ema20: 100, ema50: 101 },
+    m15: { trend: "BEARISH", last: 99, ema20: 100, ema50: 101 },
+    m5: { trend: "BEARISH", candle: "BEARISH CANDLE", last: 99, ema20: 100, ema50: 101,
+      rsi: 40, macd: { hist: -1 }, adx: 30, atr: 2, vwap: 100,
+      candleSource: "UPSTOX_HISTORICAL", volumeRatio10d: 1.8, volumeSource: "UPSTOX FUTURES 5M verified fixture" },
+    rows5: [{ t: new Date(Date.now() - 60_000).toISOString(), o: 100, h: 101, l: 98, c: 99, v: null }],
+    marketOpen: true, vix: 15,
+    news: { connected: true, freshCount: 5, bias: "BEARISH" },
+    global: { connected: true, freshInputs: 4, bias: "RISK-OFF" },
+    options: { connected: true, pcr: 0.9, ceoi: 200, peoi: 100, theta: 2, delta: 0.5 },
+    events: { connected: true }
+  };
+  const fresh = buildPrediction(input);
+  assert.equal(fresh.candlesFresh, true);
+  assert.equal(fresh.candlesVerified, true);
+
+  const stale = buildPrediction({
+    ...input,
+    m5: { ...input.m5, candleSource: "UPSTOX_HISTORICAL [STALE CACHE]" }
+  });
+  assert.equal(stale.candlesFresh, true);
+  assert.equal(stale.candlesVerified, false);
+  assert.equal(stale.action, "NO TRADE");
+});
+
 test("future-dated 5-minute candles are invalid and cannot become fresh entry signals", () => {
   const prediction = buildPrediction({
     h1: { trend: "BULLISH", last: 101, ema20: 100, ema50: 99 },

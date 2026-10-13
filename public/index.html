@@ -23,11 +23,12 @@ button,input,select{font:inherit} button{cursor:pointer}
 .top{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 12px;
  background:rgba(7,11,22,.82);border:1px solid var(--line);border-radius:24px;box-shadow:var(--shadow);
  position:sticky;top:8px;z-index:30;backdrop-filter:blur(18px)}
-.brand{display:flex;align-items:center;gap:11px;min-width:0}
+.brand{display:flex;align-items:center;gap:11px;min-width:0}.brand-title{min-width:0;flex:1}.refresh-stack{display:flex;flex:0 0 auto;flex-direction:column;align-items:stretch;gap:4px;min-width:104px}.app-clock{display:grid;grid-template-columns:1fr;justify-items:center;gap:1px;min-height:43px;padding:4px 6px;border:1px solid rgba(100,230,255,.34);border-radius:10px;background:linear-gradient(135deg,rgba(100,230,255,.09),rgba(169,139,255,.09));box-shadow:inset 0 0 14px rgba(100,230,255,.04)}.app-clock-label{font-size:7px;color:var(--muted);font-weight:900;letter-spacing:.9px}.app-clock time{font-size:14px;font-weight:950;letter-spacing:1px;font-variant-numeric:tabular-nums;color:var(--cyan);line-height:1.15;text-shadow:0 0 10px rgba(100,230,255,.15)}.app-clock-date{font-size:7px;color:var(--muted);line-height:1.1;white-space:nowrap}.app-refresh-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;flex:0 0 auto;width:100%;min-width:40px;min-height:40px;padding:8px 10px;border-color:rgba(100,230,255,.42);color:#d8f8ff;font-size:16px;white-space:nowrap}.app-refresh-btn:disabled{opacity:.7;cursor:wait}.app-refresh-btn>span:first-child{font-size:21px;line-height:1}
 .logo{width:60px;height:60px;border-radius:17px;overflow:hidden;border:1px solid rgba(255,216,109,.42)}
 .logo svg{display:block;width:100%;height:100%}
 .brand h1{font-size:16px;margin:0;font-weight:950;letter-spacing:.9px;white-space:nowrap}
 .brand p{margin:3px 0 0;color:var(--muted);font-size:9px;letter-spacing:.7px}
+.prediction-report-link{display:inline-flex;align-items:center;gap:5px;width:max-content;max-width:100%;margin-top:5px;padding:5px 8px;border:1px solid rgba(100,230,255,.36);border-radius:8px;background:rgba(100,230,255,.07);color:var(--cyan);text-decoration:none;font-size:9px;font-weight:900;letter-spacing:.25px;line-height:1.2;white-space:nowrap;touch-action:manipulation}.prediction-report-link:active{transform:scale(.98)}
 .top-actions{display:flex;gap:7px;align-items:center}
 .pill{border:1px solid var(--line);background:#08101d;padding:8px 10px;border-radius:999px;color:var(--muted);font-size:9px}
 .pill b{color:var(--txt)} .dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px;background:var(--red)}
@@ -93,7 +94,7 @@ button,input,select{font:inherit} button{cursor:pointer}
 .bottom{display:none}
 @media(max-width:1150px){.hero-grid,.layout{grid-template-columns:1fr}.rightcol{display:grid;grid-template-columns:1fr 1fr}.global{grid-template-columns:1fr 1fr}}
 @media(max-width:760px){
- .app{padding:7px 7px 78px}.top{position:static;border-radius:19px}.brand h1{font-size:13px}.brand p{font-size:7px}.top-actions .pill{display:none}
+ .app{padding:7px 7px 78px}.top{position:static;border-radius:19px}.brand h1{font-size:13px}.brand p{font-size:7px}.app-refresh-label{display:none}.top-actions .pill{display:none}
  .hero h2{font-size:29px}.decision-grid{grid-template-columns:1fr 1fr}.decision-grid .stat:first-child{grid-column:1/-1}
  .rightcol{display:block}.chartbox{height:350px}.levels{grid-template-columns:1fr 1fr}.levels .level:last-child{grid-column:1/-1}
  .grid8{grid-template-columns:1fr 1fr}.fusion{grid-template-columns:1fr}.reason-grid,.blueprint,.riskgrid,.eventlist{grid-template-columns:1fr}
@@ -644,11 +645,13 @@ body.chart-fullscreen-open>.app>.bottom{
     if(e)e.textContent=d?.connected?('CONNECTED • '+(d.clientCode||'')+(d.websocket?' • STREAM LIVE':' • REST ONLY')):'DISCONNECTED';
   }
   async function connect(){
+    if(window.__ptdAngelLoginInFlight){badge('LOGIN ALREADY RUNNING','warn');note('A login request is already running. Wait for the current result before retrying.');return;}
     const pin=document.getElementById('angelPin')?.value||'';
     const totp=document.getElementById('angelTotp')?.value.trim()||'';
     const clientCode=document.getElementById('angelClient')?.value.trim()||'';
     const btn=document.getElementById('angelConnectBtn');
     if(!pin||!totp){badge('LOGIN INPUT MISSING','danger');note('Connection stopped: PIN + TOTP required.');return;}
+    window.__ptdAngelLoginInFlight=true;
     if(btn){btn.disabled=true;btn.textContent='Connecting…';}
     badge('CONNECTING','warn');note('Connecting to Angel One • waiting for secure login response…');
     const c=new AbortController(),timer=setTimeout(()=>c.abort(),20000);
@@ -678,12 +681,13 @@ body.chart-fullscreen-open>.app>.bottom{
       const msg=e?.name==='AbortError'?'Login request timed out after 20 seconds.':(e.message||'Unknown connection error');
       badge('CONNECTION ERROR','danger');note('Angel One connection error: '+msg);
     }finally{
-      clearTimeout(timer);if(btn){btn.disabled=false;btn.textContent='Connect Angel One';}
+      clearTimeout(timer);window.__ptdAngelLoginInFlight=false;if(btn){btn.disabled=false;btn.textContent='Connect Angel One';}
     }
   }
   function boot(){
     const btn=document.getElementById('angelConnectBtn');
-    if(btn)btn.addEventListener('click',function(ev){ev.preventDefault();ev.stopImmediatePropagation();connect();},true);
+    // Legacy login click hook disabled: the unified handler below owns this button.
+    // Keep global error reporting here, without a second submit listener.
     window.addEventListener('error',e=>note('Dashboard script error: '+(e.message||'Unknown JavaScript error')));
     window.addEventListener('unhandledrejection',e=>note('Dashboard promise error: '+(e.reason?.message||String(e.reason||'Unknown error'))));
   }
@@ -712,7 +716,7 @@ body.chart-fullscreen-open>.app>.bottom{
       <text x="260" y="438" text-anchor="middle" font-family="Arial,sans-serif" font-size="28" font-weight="800" fill="#fff" letter-spacing="5">PARTHAVI</text>
       <text x="260" y="474" text-anchor="middle" font-family="Arial,sans-serif" font-size="20" font-weight="700" fill="#ff72dc" letter-spacing="7">BELDAR</text>
     </svg></div>
-    <div><h1>PARTHAVI TRADE DESK PRO</h1><p>LIVE MARKET • OPTIONS FUSION • NEWS • GLOBAL RISK • CONTROLLED EXECUTION</p></div>
+    <div class="brand-title"><h1>PARTHAVI TRADE DESK PRO</h1><p>LIVE MARKET • OPTIONS FUSION • NEWS • GLOBAL RISK • CONTROLLED EXECUTION</p><a class="prediction-report-link" href="/prediction-report.html" aria-label="Open Prediction Report">▤ Prediction Report</a></div><div class="refresh-stack"><div class="app-clock" aria-label="Live India time"><span class="app-clock-label">INDIA TIME · IST</span><time id="appLiveClock" datetime="">--:--:--</time><span id="appLiveDate" class="app-clock-date">--</span></div><button class="btn app-refresh-btn" id="appRefreshBtn" type="button" title="Refresh the entire app" aria-label="Refresh the entire app"><span aria-hidden="true">⟳</span><span class="app-refresh-label">Refresh</span></button></div>
   </div>
   <div class="top-actions"><button class="btn primary" id="installAppBtn" style="display:none">📲 Install App</button><div class="live-refresh-wrap" id="liveRefreshControl" role="switch" aria-label="Live auto refresh" aria-checked="true" tabindex="0" onclick="handleLiveSwitch(event)">
   <span class="live-label">LIVE AUTO</span>
@@ -788,6 +792,18 @@ body.chart-fullscreen-open>.app>.bottom{
   <div class="finder-note" id="angelTestNote">Phase 2: login → instrument master → live quote → option contract lookup. WebSocket streaming can be enabled after the REST quote test passes.</div>
 </section>
 
+<section class="card" id="tickMonitorCard">
+  <div class="card-head"><h3>Live Feed Monitor • Rolling 60 Seconds</h3><span class="badge warn" id="tickMonitorState">CHECKING</span></div>
+  <div class="grid2">
+    <div class="strategy-box"><small>Ticks • Last 60 sec</small><b id="tickMonitorTotal">—</b><span id="tickMonitorMarket">Checking market session…</span></div>
+    <div class="strategy-box"><small>Instruments with ticks</small><b id="tickMonitorInstruments">—</b><span id="tickMonitorSocket">WebSocket status unknown</span></div>
+  </div>
+  <div class="check"><span>Last received tick (server)</span><span id="tickMonitorLast" class="neutral">—</span></div>
+  <div style="overflow-x:auto;margin-top:10px"><table style="width:100%;border-collapse:collapse;min-width:520px"><thead><tr><th style="text-align:left;padding:8px">Instrument</th><th style="text-align:left;padding:8px">Last tick age</th><th style="text-align:right;padding:8px">Ticks / 60s</th><th style="text-align:right;padding:8px">LTP</th><th style="text-align:left;padding:8px">Status</th></tr></thead><tbody id="tickMonitorRows"><tr><td colspan="5" style="padding:10px">Waiting for feed diagnostics…</td></tr></tbody></table></div>
+  <div class="finder-note" id="tickMonitorNote">Tick counts use actual WebSocket price updates, not heartbeat pings. Market-closed periods can correctly show zero new ticks.</div>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px"><button class="btn" type="button" id="tickMonitorRefresh">↻ Refresh feed status</button><span class="finder-note" id="tickMonitorChecked">Not checked yet</span></div>
+</section>
+
 <section class="card" id="phase12Ready">
   <div class="card-head"><h3>Phase 12 • Go-Live Readiness</h3><span id="p12Mode" class="neutral">LOCKED</span></div>
   <div class="grid2">
@@ -859,6 +875,31 @@ body.chart-fullscreen-open>.app>.bottom{
     <span class="shield-status" id="p11SignalStatus">No live signal token loaded.</span>
   </div>
   <div class="finder-note"><b>Performance view:</b> “Model confidence” is a rule-based confluence measure. “Historical target-hit” is a backtest statistic from Phase 10; it is not a forward probability of profit and does not include every real-world execution cost.</div>
+</section>
+
+<section class="card" id="freeSmartAdvisor" aria-live="polite">
+  <div class="card-head">
+    <h3>PB INTELLIGENCE • TRADE ADVISOR</h3>
+    <span id="freeAdvisorState" class="badge warn">WAITING FOR VERIFIED DATA</span>
+  </div>
+  <div class="stcc-hero">
+    <div>
+      <div class="eyebrow">RULE-BASED ENGINE • ₹0 EXTRA API COST</div>
+      <div id="freeAdvisorDecision" class="stcc-decision neutral">NO TRADE</div>
+      <div id="freeAdvisorReason" class="stcc-reason">Connect verified live feeds. This advisor does not call the paid OpenAI API.</div>
+    </div>
+    <div id="freeAdvisorBadge" class="stcc-badge">SCANNING</div>
+  </div>
+  <div class="strategy-grid stcc-grid">
+    <div class="strategy-box"><small>Recommended contract</small><b id="freeAdvisorContract">—</b><span id="freeAdvisorContractMeta">Exact live CE/PE only</span></div>
+    <div class="strategy-box"><small>Option premium entry</small><b id="freeAdvisorEntry">—</b><span>Live quote required</span></div>
+    <div class="strategy-box"><small>Stop Loss</small><b id="freeAdvisorSL">—</b><span>Premium-based plan</span></div>
+    <div class="strategy-box"><small>Target 1</small><b id="freeAdvisorT1">—</b><span>Premium-based plan</span></div>
+    <div class="strategy-box"><small>Target 2</small><b id="freeAdvisorT2">—</b><span>Premium-based plan</span></div>
+    <div class="strategy-box"><small>Confidence / confirmation</small><b id="freeAdvisorConfidence">—</b><span>Confluence score, not win probability</span></div>
+  </div>
+  <div id="freeAdvisorChecks" class="finder-note">Waiting for the current prediction, option contract and final safety gates.</div>
+  <div class="note">₹0 extra API cost • Uses the app’s existing rules and broker data. This is not an OpenAI/LLM model, cannot guarantee profit, and never places an order automatically.</div>
 </section>
 
 <section class="card" id="superTradeCommandCenter">
@@ -1270,9 +1311,12 @@ body.chart-fullscreen-open>.app>.bottom{
 
   <div class="card">
     <div class="card-head"><h3>Data Health</h3><span>Verified readiness • missing critical feeds block entries</span></div>
-    <div class="check"><span>Live price / candles</span><span class="badge danger" id="dhPrice">OFF</span></div>
-    <div class="check"><span>Exchange-timestamped tick</span><span class="badge danger" id="dhTick">OFF</span></div>
-    <div class="check"><span>Futures volume (10D)</span><span class="badge danger" id="dhVolume">OFF</span></div>
+    <div class="check"><span>Live price / candles</span><span class="badge danger" id="dhPrice">WAIT</span></div>
+    <div class="check"><span>Historical candle provider</span><span class="badge warn" id="dhHistorySource">CHECKING</span></div>
+    <div class="note" id="dhHistoryDetail">Checking Angel One and alternate historical providers…</div>
+    <div class="check"><span>Independent history backup</span><span class="badge danger" id="dhAltProvider">NOT CONFIGURED</span></div>
+    <div class="check"><span>Exchange-timestamped tick</span><span class="badge danger" id="dhTick">WAIT</span></div>
+    <div class="check"><span>Futures volume (10D)</span><span class="badge danger" id="dhVolume">WAIT</span></div>
     <div class="check"><span>Options chain / OI</span><span class="badge danger" id="dhOpt">OFF</span></div>
     <div class="check"><span>Live option Greeks</span><span class="badge danger" id="dhGreeks">OFF</span></div>
     <div class="check"><span>News / macro</span><span class="badge danger" id="dhNews">OFF</span></div>
@@ -1409,11 +1453,13 @@ body.chart-fullscreen-open>.app>.bottom{
   }
   async function connect(ev){
     ev?.preventDefault?.(); ev?.stopImmediatePropagation?.();
+    if(window.__ptdAngelLoginInFlight){badge('LOGIN ALREADY RUNNING','warn');note('A login request is already running. Wait for the current result before retrying.');return false;}
     const btn=el('angelConnectBtn');
     const clientCode=(el('angelClient')?.value||'').trim();
     const pin=el('angelPin')?.value||'';
     const totp=(el('angelTotp')?.value||'').trim();
     if(!pin||!totp){badge('LOGIN INPUT MISSING','danger');note('Connection blocked: PIN + TOTP are required.');return false;}
+    window.__ptdAngelLoginInFlight=true;
     if(btn){btn.disabled=true;btn.textContent='Connecting…';}
     badge('CONNECTING','warn');note('Connecting to Angel One… waiting for login response.');
     const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),25000);
@@ -1463,7 +1509,7 @@ body.chart-fullscreen-open>.app>.bottom{
       const msg=e?.name==='AbortError'?'Connection timed out after 25 seconds.':(e?.message||'Connection failed');
       badge('CONNECTION ERROR','danger');note('Angel One connection error: '+msg);
     }finally{
-      clearTimeout(timer);if(btn){btn.disabled=false;btn.textContent='Connect Angel One';}
+      clearTimeout(timer);window.__ptdAngelLoginInFlight=false;if(btn){btn.disabled=false;btn.textContent='Connect Angel One';}
     }
     return false;
   }
@@ -1497,7 +1543,8 @@ async function angelStatus(){
     return d;
   }catch(e){ setGate('cxLogin',false,'OFF'); setGate('cxWs',false,'OFF'); return {connected:false}; }
 }
-async function angelReconnect(){  try{
+async function angelReconnect(){
+  try{
     const r=await fetch(API_BASE+'/api/angel/reconnect',{method:'POST'});
     const d=await r.json().catch(()=>({}));
     if(!r.ok) throw new Error(d.error||('Reconnect failed (HTTP '+r.status+')'));
@@ -1586,6 +1633,14 @@ function renderTicker(m){
  const arr=[['nifty','NIFTY'],['bank','BANKNIFTY'],['fin','FINNIFTY'],['mid','MIDCPNIFTY'],['vix','VIX']];
  for(const [id,k] of arr)$(id).textContent=m[k]?.ltp??'WAIT';
  $('globalRisk').textContent=m.GLOBAL_RISK?.label??'WAIT';
+ // Keep the chart price line in sync with the fresh ticker quote, separately from closed-candle OHLC.
+ const quoteSymbol=String(symbol||'NIFTY').toUpperCase();
+ const quote=m?.[quoteSymbol];
+ const ltp=Number(quote?.ltp);
+ if(Number.isFinite(ltp)&&ltp>0){
+   window.__chartLiveQuote={symbol:quoteSymbol,ltp,receivedAt:Date.now(),exchangeTimestamp:quote?.exchangeTimestamp||null};
+   if(typeof drawChart==='function')drawChart();
+ }
 }
 function toneClass(v){return v==='BULLISH'||v==='RISK-ON'||v==='POSITIVE'||v==='UP'?'bullish':v==='BEARISH'||v==='RISK-OFF'||v==='NEGATIVE'||v==='DOWN'?'bearish':'neutral'}
 function setToneText(id,v){const el=$(id);if(!el)return;el.textContent=v??'WAIT';el.className=toneClass(v)}
@@ -1794,21 +1849,37 @@ async function analyseContract(x,button=null){
     if(button){button.disabled=false;button.textContent='Analyse';}
   }
 }
-window.analyseContract=analyseContract;$('cfUnderlying')?.addEventListener('change',()=>{ $('cfExpiry').innerHTML='<option value="">Load expiries</option>'; refreshExpiries(); });
+window.analyseContract=analyseContract;
+function reloadContractFinderExpiries(){
+  const underlying=String($('cfUnderlying')?.value||'').trim().toUpperCase();
+  // Route supported index products through the correct exchange without
+  // requiring the user to discover that SENSEX index options are on BSE.
+  if(underlying==='SENSEX') $('cfExchange').value='BSE';
+  else if(['NIFTY','BANKNIFTY','FINNIFTY','MIDCPNIFTY'].includes(underlying)) $('cfExchange').value='NSE';
+  const expiry=$('cfExpiry');
+  if(expiry) expiry.innerHTML='<option value="">Loading expiries…</option>';
+  refreshExpiries({silent:true}).catch(()=>{});
+}
+$('cfUnderlying')?.addEventListener('change',reloadContractFinderExpiries);
+$('cfExchange')?.addEventListener('change',reloadContractFinderExpiries);
+$('cfSegment')?.addEventListener('change',reloadContractFinderExpiries);
+document.addEventListener('DOMContentLoaded',()=>reloadContractFinderExpiries(),{once:true});
 
 
-async function refreshExpiries(){
+async function refreshExpiries(options={}){
+  const silent=options?.silent===true;
   const exchange=$('cfExchange').value,segment=$('cfSegment').value,underlying=$('cfUnderlying').value.trim().toUpperCase();
   if(!underlying){toast('Enter an underlying symbol first');return}
   try{
     const r=await getJSON('/api/angel/expiries?'+new URLSearchParams({exchange,segment,underlying}));
     $('cfExpiry').innerHTML=(r.expiries||[]).map(x=>`<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join('')||'<option value="">No expiry</option>';
-    toast((r.expiries||[]).length?'Expiries loaded':'No expiry data');
-    setGate('cxMaster',!!r.expiries?.length,'ON');
-  }catch(e){ toast('Expiry load failed'); }
+    if(!silent) toast((r.expiries||[]).length?'Expiries loaded':'No expiry data');
+    const hasExpiries=!!r.expiries?.length;
+    setGate('cxMaster',hasExpiries,hasExpiries?'ON':'WAIT');
+  }catch(e){ if(!silent) toast('Expiry load failed'); }
 }
 window.testAngelFeed = async function testAngelFeed(){
-  const testSymbol=String(window.symbol||'NIFTY').toUpperCase();
+  const testSymbol=String((typeof symbol==='string'&&symbol)||'NIFTY').toUpperCase();
   try{
     const health=await getJSON('/api/health');
     setGate('cxBackend',!!health.ok,'ON');
@@ -2013,11 +2084,22 @@ async function refreshLiveChart(){
     const d=await rr.json().catch(()=>({}));
     const rows=Array.isArray(d?.rows)?d.rows:[];
     if(chartRowsOk(rows)){
-      chartDataCache.set(tf,rows); liveData=rows; chartDay=''; renderChartDays(rows); window.__chartCacheAt=Date.now();
-      const src=$('chartSource'); if(src)src.textContent=(d?.source||'ANGEL')+' • LIVE AUTO UPDATE • '+rows.length+' BARS';
+      // Keep a user-selected historical day; renderChartDays changes it only if missing.
+      chartDataCache.set(tf,rows); liveData=rows; renderChartDays(rows); window.__chartCacheAt=Date.now();
+      const source=String(d?.source||'ANGEL').toUpperCase();
+      const stale=/STALE CACHE/.test(source);
+      const fallback=/YAHOO/.test(source);
+      const last=rows.at(-1);
+      const lastBar=last?.t?chartTime(last.t):'—';
+      const src=$('chartSource');
+      if(src)src.textContent=(stale?'⚠ HISTORICAL FETCH FAILED • USING CACHED BARS':fallback?'YAHOO FALLBACK • NOT BROKER-VERIFIED':'ANGEL ONE • LAST CLOSED BAR')+' • '+lastBar+' • '+rows.length+' BARS';
       drawChart();
+    }else{
+      const src=$('chartSource'); if(src)src.textContent='⚠ NO NEW HISTORICAL DATA • LAST CHART RETAINED';
     }
-  }catch(_){ } finally { ptdChartRefreshBusy=false; }
+  }catch(_){
+    const src=$('chartSource'); if(src)src.textContent='⚠ HISTORICAL REFRESH FAILED • LAST CHART RETAINED';
+  }finally{ ptdChartRefreshBusy=false; }
 }
 function setP10Tone(el,state){ if(!el)return; const x=String(state||'').toUpperCase(); el.className=x==='BULLISH'||x==='CALL'?'bullish':x==='BEARISH'||x==='PUT'?'bearish':'neutral'; }
 function formatPct(v){ return Number.isFinite(Number(v))?Number(v).toFixed(1)+'%':'—'; }
@@ -2249,11 +2331,80 @@ function recordP10Opportunity(p){
   }catch{}
   renderP10OpportunityCount();
 }
+function renderFreeAdvisor(p,resp={}){
+  const plan=p?.optionPlan||{};
+  const state=String(p?.signalState||'NO TRADE').toUpperCase();
+  const action=String(p?.action||'NO TRADE').toUpperCase();
+  const direction=String(p?.prediction||'NEUTRAL').toUpperCase();
+  const reasons=Array.isArray(p?.noTradeReasons)?p.noTradeReasons.filter(Boolean):[];
+  const marketClosed=resp?.mode==='OFF_SESSION_FAST_PATH'||resp?.health?.marketOpen===false||p?.marketOpen===false;
+  const strictConfirmed=!marketClosed&&state==='CONFIRMED'&&['CALL','PUT'].includes(action)&&plan.available===true
+    &&p?.exchangeTickVerified===true&&p?.feedComplete===true
+    &&Number(p?.modelConfidence)>=78&&Number(p?.confirmationPct)>=80;
+  const watchOnly=!strictConfirmed&&!marketClosed&&state==='WATCH';
+  const gatedConfirmation=!strictConfirmed&&!marketClosed&&state==='CONFIRMED';
+  const hasCandidate=plan.available===true&&(strictConfirmed||watchOnly);
+  const decision=$('freeAdvisorDecision');
+  const reason=$('freeAdvisorReason');
+  const stateBadge=$('freeAdvisorState');
+  const status=$('freeAdvisorBadge');
+  const contract=$('freeAdvisorContract');
+  const meta=$('freeAdvisorContractMeta');
+  const money=v=>v!==null&&v!==undefined&&v!==''&&Number.isFinite(Number(v))?'₹'+Number(v).toFixed(2):'—';
+  if(strictConfirmed){
+    decision.textContent='RECOMMENDED • '+String(plan.contract||'VERIFIED OPTION');
+    decision.className='stcc-decision bullish';
+    reason.textContent=`Confirmed ${action} setup. All final data gates passed • confidence ${Number(p.modelConfidence).toFixed(0)}% • confirmation ${Number(p.confirmationPct).toFixed(0)}%. Review the premium-based Entry, SL and Targets below. No order is placed automatically.`;
+    stateBadge.textContent='CONFIRMED • GATES PASSED';stateBadge.className='badge ok';
+    status.textContent='READY TO REVIEW';status.className='stcc-badge bullish';
+  }else if(marketClosed){
+    decision.textContent='NO TRADE • MARKET CLOSED';
+    decision.className='stcc-decision neutral';
+    reason.textContent='NSE is closed. Historical or cached values are for context only; wait for the next market session and fresh exchange-time-stamped data.';
+    stateBadge.textContent='MARKET CLOSED';stateBadge.className='badge danger';
+    status.textContent='OFF SESSION';status.className='stcc-badge neutral';
+  }else if(watchOnly){
+    decision.textContent='WAIT • CANDIDATE ONLY';
+    decision.className='stcc-decision neutral';
+    reason.textContent=`A ${direction==='BULLISH'?'bullish':direction==='BEARISH'?'bearish':'directional'} setup is WATCH only, not a buy signal. Do not buy yet; wait until all live-data and confirmation gates pass.`;
+    stateBadge.textContent='WATCH • NOT BUY';stateBadge.className='badge warn';
+    status.textContent='WAIT FOR CONFIRMATION';status.className='stcc-badge neutral';
+  }else if(gatedConfirmation){
+    decision.textContent='NO TRADE • FINAL GATE FAILED';
+    decision.className='stcc-decision neutral';
+    reason.textContent='The direction may look confirmed, but the live tick, feed completeness, confidence/confirmation threshold or verified option contract is missing. No buy recommendation is allowed.';
+    stateBadge.textContent='SAFETY GATE';stateBadge.className='badge danger';
+    status.textContent='LOCKED';status.className='stcc-badge neutral';
+  }else{
+    decision.textContent='NO TRADE • WAIT FOR SETUP';
+    decision.className='stcc-decision neutral';
+    reason.textContent=reasons.slice(0,4).join(' • ')||p?.reasoning||'No fully verified option setup is available. The scanner must wait instead of manufacturing a recommendation.';
+    stateBadge.textContent='NO TRADE';stateBadge.className='badge danger';
+    status.textContent='SCANNING';status.className='stcc-badge neutral';
+  }
+  const showPlan=hasCandidate;
+  if(contract)contract.textContent=showPlan?String(plan.contract||'—'):'—';
+  if(meta)meta.textContent=showPlan?`${plan.optionType||''} ${plan.strike??''} • Expiry ${plan.expiry||'—'} • Lot ${plan.lotSize??'—'}${watchOnly?' • CANDIDATE ONLY':''}`:'Only display a contract after its live checks pass';
+  $('freeAdvisorEntry').textContent=showPlan?money(plan.entry):'—';
+  $('freeAdvisorSL').textContent=showPlan?money(plan.stopLoss):'—';
+  $('freeAdvisorT1').textContent=showPlan?money(plan.target1):'—';
+  $('freeAdvisorT2').textContent=showPlan?money(plan.target2):'—';
+  $('freeAdvisorConfidence').textContent=p?.modelConfidence!==null&&p?.modelConfidence!==undefined&&p?.modelConfidence!==''&&Number.isFinite(Number(p?.modelConfidence))
+    ?`${Number(p.modelConfidence).toFixed(0)}% / ${Number.isFinite(Number(p?.confirmationPct))?Number(p.confirmationPct).toFixed(0):'—'}% confirm`
+    :'—';
+  const checks=$('freeAdvisorChecks');
+  if(checks){
+    if(strictConfirmed) checks.textContent=`Reason: ${p.reasoning||'Required confluence checks passed.'} • This is a rule-based recommendation, not a profit guarantee or an automatic order.`;
+    else if(watchOnly) checks.textContent='Candidate details are for observation only. The system will not label this contract BUY until the final gates pass.';
+    else checks.textContent=(reasons.slice(0,6).join(' • ')||p?.reasoning||'Waiting for verified market data, fresh exchange tick and all safety gates.');
+  }
+}
 function renderPredictionPanel(resp){
   const p=resp?.prediction||resp||{};
+  renderFreeAdvisor(p,resp);
   // Keep the Command Center connected to each fresh prediction result. Without this
   // handoff, stccCurrentPlan() reads an empty global and can never surface a signal.
-  window.__lastPrediction={...p,marketOpen:resp?.health?.marketOpen??p?.marketOpen??null};
+  window.__lastPrediction={...p,marketOpen:resp?.health?.marketOpen??p?.marketOpen??null,__updatedAt:Date.now()};
   stccEvaluate(window.__lastPrediction);
   stccRender(stccLoad());
   const bt=resp?.optionBacktest||p?.optionBacktest||resp?.backtest||p?.historical||{};
@@ -2462,7 +2613,7 @@ async function loadAll(){
    const fresh=rows.length && Number.isFinite(lastMs) && lastMs<=Date.now() && Date.now()-lastMs<=maxAge;
 
    if(fresh){
-     liveData=rows; chartDay=''; renderChartDays(rows);
+     liveData=rows; renderChartDays(rows);
      window.__chartCacheAt=Date.now();
      try{localStorage.setItem('PTD_LAST_CANDLES_'+symbol,JSON.stringify({savedAt:window.__chartCacheAt,rows:rows.slice(-2500)}));}catch{}
    }else{
@@ -2472,7 +2623,7 @@ async function loadAll(){
        const freshRows=Array.isArray(cd?.rows)?cd.rows:[];
        const fm=freshRows.length?Date.parse(freshRows.at(-1)?.t):NaN;
        if(freshRows.length&&Number.isFinite(fm)&&fm<=Date.now()&&Date.now()-fm<=maxAge){
-         liveData=freshRows; chartDay=''; renderChartDays(freshRows);
+         liveData=freshRows; renderChartDays(freshRows);
          window.__chartCacheAt=Date.now();
          try{localStorage.setItem('PTD_LAST_CANDLES_'+symbol,JSON.stringify({savedAt:window.__chartCacheAt,source:cd?.source||'UNKNOWN',rows:freshRows.slice(-500)}));}catch{}
        }
@@ -2540,13 +2691,27 @@ function drawChart(){
  for(let i=0;i<=8;i++){const y=top+i*plotH/8;ctx.beginPath();ctx.moveTo(left,y);ctx.lineTo(left+plotW,y);ctx.stroke()}for(let i=0;i<=10;i++){const x=left+i*plotW/10;ctx.beginPath();ctx.moveTo(x,top);ctx.lineTo(x,top+plotH);ctx.stroke()}
  const raw=chartDataCache.get(tf)||liveData||localRows(tf);if(!chartRowsOk(raw)){$('chartLoading').style.display='flex';$('chartLoading').textContent='NO LIVE CANDLES • CONNECT ANGEL ONE';$('chartOHLC').textContent='O — H — L — C —';$('chartLast').textContent='—';return}
  $('chartLoading').style.display='none';const dayRows=chartDay?raw.filter(x=>istDateKey(x.t)===chartDay):raw;const base=chartType==='heikin'?haRows(dayRows.length?dayRows:raw):dayRows.length?dayRows:raw;const mobileChart=w<700;const visible=Math.min(base.length,Math.max(mobileChart?26:35,Math.floor(plotW/(mobileChart?8:5)/Math.max(.55,scale)))),maxOffset=Math.max(0,base.length-visible);chartOffset=Math.max(0,Math.min(chartOffset,maxOffset));const end=base.length-chartOffset,start=Math.max(0,end-visible),view=base.slice(start,end);
- let min=Math.min(...view.map(x=>x.l)),max=Math.max(...view.map(x=>x.h));const pad=(max-min||1)*.06;min-=pad;max+=pad;
+ const quote=window.__chartLiveQuote;
+ const quoteAge=quote?Date.now()-Number(quote.receivedAt):Infinity;
+ const quoteDay=quote?istDateKey(quote.receivedAt):'';
+ const showLiveQuote=!!quote&&quote.symbol===String(symbol||'NIFTY').toUpperCase()&&Number.isFinite(Number(quote.ltp))&&quoteAge<=20000&&(!chartDay||chartDay===quoteDay);
+ const liveLtp=showLiveQuote?Number(quote.ltp):null;
+ let min=Math.min(...view.map(x=>x.l)),max=Math.max(...view.map(x=>x.h));
+ if(liveLtp!==null){min=Math.min(min,liveLtp);max=Math.max(max,liveLtp)}
+ const pad=(max-min||1)*.06;min-=pad;max+=pad;
  const py=v=>{if(!logScale)return top+(max-v)*plotH/(max-min||1);const lo=Math.log(Math.max(.0001,min)),hi=Math.log(Math.max(.0001,max)),z=Math.log(Math.max(.0001,v));return top+(hi-z)*plotH/(hi-lo||1)};
- const step=plotW/view.length*scale*.94,baseX=left+Math.max(0,plotW-view.length*step),last=view.at(-1),prev=view.at(-2),lp=Number(last.c);
- $('chartOHLC').textContent=`O ${Number(last.o).toFixed(2)} H ${Number(last.h).toFixed(2)} L ${Number(last.l).toFixed(2)} C ${lp.toFixed(2)} V ${Number(last.v||0).toLocaleString('en-IN')}`;$('chartLast').textContent=lp.toFixed(2);$('chartPriceTag').textContent=lp.toFixed(2);$('chartOverlayTop').textContent=(tf+' • '+(chartType==='heikin'?'HEIKIN ASHI':chartType.toUpperCase())+' • '+(logScale?'LOG':'REGULAR')).toUpperCase();$('chartStatus').textContent=tf+' • '+chartType.toUpperCase()+' • '+(logScale?'LOG':'REGULAR')+' • '+(autoScale?'AUTO':'MANUAL');$('chartRangeLabel').textContent=(chartDay?formatChartDay(chartDay)+' • ':'')+tf+' • '+view.length+' BARS';
+ const step=plotW/view.length*scale*.94,baseX=left+Math.max(0,plotW-view.length*step),last=view.at(-1),prev=view.at(-2),candleClose=Number(last.c),lp=liveLtp??candleClose;
+ const hasVolume=view.some(x=>Number(x.v||0)>0);
+ const isIndexSymbol=['NIFTY','BANKNIFTY','FINNIFTY','MIDCPNIFTY','SENSEX','VIX'].includes(String(symbol||'').toUpperCase());
+ const volumeLabel=hasVolume?Number(last.v||0).toLocaleString('en-IN'):'—';
+ $('chartOHLC').textContent=`O ${Number(last.o).toFixed(2)} H ${Number(last.h).toFixed(2)} L ${Number(last.l).toFixed(2)} C ${candleClose.toFixed(2)} V ${volumeLabel}`;
+ $('chartLast').textContent=lp.toFixed(2);$('chartPriceTag').textContent=lp.toFixed(2);
+ $('chartOverlayTop').textContent=(tf+' • '+(chartType==='heikin'?'HEIKIN ASHI':chartType.toUpperCase())+' • '+(showLiveQuote?'LIVE LTP':'LAST CLOSED BAR')+' • '+(logScale?'LOG':'REGULAR')).toUpperCase();
+ $('chartStatus').textContent=tf+' • '+chartType.toUpperCase()+' • '+(logScale?'LOG':'REGULAR')+' • '+(autoScale?'AUTO':'MANUAL')+(!hasVolume&&isIndexSymbol?' • INDEX VOLUME N/A':'');
+ $('chartRangeLabel').textContent=(chartDay?formatChartDay(chartDay)+' • ':'')+tf+' • '+view.length+' BARS';
  ctx.font='10px system-ui';ctx.textAlign='left';ctx.fillStyle='#91a0b5';for(let i=0;i<=8;i++){const p=max-i*(max-min)/8;ctx.fillText(p.toFixed(2),left+plotW+8,py(p)+3)}
  ctx.textAlign='center';ctx.font='9px system-ui';for(let i=0;i<7;i++){const idx=Math.min(view.length-1,Math.floor(i*(view.length-1)/6));const x=baseX+idx*step+step/2;ctx.fillStyle='#6f7f96';ctx.fillText(chartTime(view[idx].t),x,h-11)}
- if(chartIndicators.volume){const vh=Math.min(55,plotH*.15),vTop=top+plotH-vh,vMax=Math.max(1,...view.map(x=>Number(x.v||0)));for(let i=0;i<view.length;i++){const x=baseX+i*step+step/2,bh=(Number(view[i].v||0)/vMax)*(vh-5);ctx.fillStyle=view[i].c>=view[i].o?'rgba(33,230,161,.24)':'rgba(255,95,128,.24)';ctx.fillRect(x-step*.28,vTop+vh-bh,Math.max(2,step*.56),bh)}}
+ if(chartIndicators.volume&&hasVolume){const vh=Math.min(55,plotH*.15),vTop=top+plotH-vh,vMax=Math.max(1,...view.map(x=>Number(x.v||0)));for(let i=0;i<view.length;i++){const x=baseX+i*step+step/2,bh=(Number(view[i].v||0)/vMax)*(vh-5);ctx.fillStyle=view[i].c>=view[i].o?'rgba(33,230,161,.24)':'rgba(255,95,128,.24)';ctx.fillRect(x-step*.28,vTop+vh-bh,Math.max(2,step*.56),bh)}}
  for(let i=0;i<view.length;i++){const a=view[i],x=baseX+i*step+step/2,up=a.c>=a.o,col=up?'#21e6a1':'#ff5f80';ctx.strokeStyle=col;ctx.fillStyle=col;ctx.lineWidth=1;
    if(chartType==='line'){if(i){ctx.beginPath();ctx.moveTo(baseX+(i-1)*step+step/2,py(view[i-1].c));ctx.lineTo(x,py(a.c));ctx.stroke()}}
    else if(chartType==='bars'){ctx.beginPath();ctx.moveTo(x,py(a.h));ctx.lineTo(x,py(a.l));ctx.moveTo(x-step*.3,py(a.o));ctx.lineTo(x,py(a.o));ctx.moveTo(x,py(a.c));ctx.lineTo(x+step*.3,py(a.c));ctx.stroke()}
@@ -2554,12 +2719,12 @@ function drawChart(){
  }
  if(chartIndicators.ema){for(const n of [20,50,200]){const s=emaSeries(view,n);if(!s.length)continue;ctx.strokeStyle=n===20?'#64e6ff':n===50?'#a98bff':'#ffd86d';ctx.lineWidth=1.1;ctx.beginPath();s.forEach(([i,v],j)=>{const x=baseX+i*step+step/2;if(j)ctx.lineTo(x,py(v));else ctx.moveTo(x,py(v))});ctx.stroke()}}
  if(chartIndicators.vwap){let pv=0,vv=0;for(const x of view){const q=Number(x.v||0);pv+=((x.h+x.l+x.c)/3)*q;vv+=q}if(vv){ctx.strokeStyle='#fff';ctx.setLineDash([3,3]);const y=py(pv/vv);ctx.beginPath();ctx.moveTo(left,y);ctx.lineTo(left+plotW,y);ctx.stroke();ctx.setLineDash([])}}
- if(Number.isFinite(lp)){const y=py(lp);ctx.save();ctx.setLineDash([5,4]);ctx.strokeStyle='rgba(33,230,161,.72)';ctx.beginPath();ctx.moveTo(left,y);ctx.lineTo(left+plotW,y);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=lp>=Number(prev?.c||lp)?'#21e6a1':'#ff5f80';ctx.fillRect(left+plotW+2,y-10,72,20);ctx.fillStyle='#061018';ctx.font='10px system-ui';ctx.textAlign='center';ctx.fillText(lp.toFixed(2),left+plotW+38,y+4);ctx.restore()}
+ if(Number.isFinite(lp)){const y=py(lp);ctx.save();ctx.setLineDash([5,4]);ctx.strokeStyle='rgba(33,230,161,.72)';ctx.beginPath();ctx.moveTo(left,y);ctx.lineTo(left+plotW,y);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=(showLiveQuote?lp>=candleClose:lp>=Number(prev?.c||lp))?'#21e6a1':'#ff5f80';ctx.fillRect(left+plotW+2,y-10,72,20);ctx.fillStyle='#061018';ctx.font='10px system-ui';ctx.textAlign='center';ctx.fillText(lp.toFixed(2),left+plotW+38,y+4);ctx.restore()}
  for(const d of chartDrawings){ctx.save();ctx.strokeStyle='#ffd86d';ctx.lineWidth=1.2;ctx.setLineDash(d.kind==='trend'?[]:[4,4]);ctx.beginPath();if(d.kind==='trend'){ctx.moveTo(d.x1,d.y1);ctx.lineTo(d.x2,d.y2)}else if(d.kind==='hline'){ctx.moveTo(left,d.y);ctx.lineTo(left+plotW,d.y)}else{ctx.moveTo(d.x,top);ctx.lineTo(d.x,top+plotH)}ctx.stroke();ctx.restore()}
 }
 function toggleCrosshair(){crosshair=!crosshair;drawChart()}
 function addLine(){setDrawMode('trend')}
-function onChartPointer(ev){if(!crosshair&&!chartDrawMode)return;const c=$('cv'),r=c.getBoundingClientRect();if(crosshair){const d=chartDataCache.get(tf)||liveData;if(!chartRowsOk(d))return;drawChart();const x=ev.clientX-r.left,view=d.slice(-Math.min(d.length,Math.max(35,Math.floor((r.width-118)/5/Math.max(.55,scale))))),step=(r.width-118)/view.length*scale*.94,baseX=44+Math.max(0,(r.width-118)-view.length*step),idx=Math.max(0,Math.min(view.length-1,Math.round((x-baseX-step/2)/step))),a=view[idx];if(!a)return;const[ctx]=resizeCanvas(c),left=44,top=18,bottom=44,plotW=r.width-left-74,max=Math.max(...view.map(z=>z.h)),min=Math.min(...view.map(z=>z.l)),py=v=>top+(max-v)*(r.height-top-bottom)/(max-min||1),px=baseX+idx*step+step/2;ctx.strokeStyle='rgba(255,216,109,.78)';ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(px,top);ctx.lineTo(px,r.height-bottom);ctx.moveTo(left,py(a.c));ctx.lineTo(left+plotW,py(a.c));ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#0b1324';ctx.strokeStyle='#40516d';ctx.fillRect(8,8,320,56);ctx.strokeRect(8,8,320,56);ctx.fillStyle='#f4f7ff';ctx.font='10px system-ui';ctx.textAlign='left';ctx.fillText(chartTime(a.t),15,23);ctx.fillStyle='#9eabc0';ctx.fillText(`O ${a.o.toFixed(2)} H ${a.h.toFixed(2)} L ${a.l.toFixed(2)} C ${a.c.toFixed(2)} V ${Number(a.v||0).toLocaleString('en-IN')}`,15,43)}}
+function onChartPointer(ev){if(!crosshair&&!chartDrawMode)return;const c=$('cv'),r=c.getBoundingClientRect();if(crosshair){const d=chartDataCache.get(tf)||liveData;if(!chartRowsOk(d))return;drawChart();const x=ev.clientX-r.left,view=d.slice(-Math.min(d.length,Math.max(35,Math.floor((r.width-118)/5/Math.max(.55,scale))))),step=(r.width-118)/view.length*scale*.94,baseX=44+Math.max(0,(r.width-118)-view.length*step),idx=Math.max(0,Math.min(view.length-1,Math.round((x-baseX-step/2)/step))),a=view[idx];if(!a)return;const[ctx]=resizeCanvas(c),left=44,top=18,bottom=44,plotW=r.width-left-74,max=Math.max(...view.map(z=>z.h)),min=Math.min(...view.map(z=>z.l)),py=v=>top+(max-v)*(r.height-top-bottom)/(max-min||1),px=baseX+idx*step+step/2;ctx.strokeStyle='rgba(255,216,109,.78)';ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(px,top);ctx.lineTo(px,r.height-bottom);ctx.moveTo(left,py(a.c));ctx.lineTo(left+plotW,py(a.c));ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#0b1324';ctx.strokeStyle='#40516d';ctx.fillRect(8,8,320,56);ctx.strokeRect(8,8,320,56);ctx.fillStyle='#f4f7ff';ctx.font='10px system-ui';ctx.textAlign='left';ctx.fillText(chartTime(a.t),15,23);ctx.fillStyle='#9eabc0';ctx.fillText(`O ${a.o.toFixed(2)} H ${a.h.toFixed(2)} L ${a.l.toFixed(2)} C ${a.c.toFixed(2)} V ${Number(a.v||0)>0?Number(a.v).toLocaleString('en-IN'):'N/A'}`,15,43)}}
 $('cv').addEventListener('pointerdown',ev=>{if(crosshair||chartDrawMode)return;const c=$('cv'),r=c.getBoundingClientRect(),raw=chartDataCache.get(tf)||liveData;if(!chartRowsOk(raw))return;chartDrag={x:ev.clientX,offset:chartOffset,startWidth:r.width};c.setPointerCapture?.(ev.pointerId)});$('cv').addEventListener('pointermove',ev=>{if(chartDrag){const c=$('cv'),r=c.getBoundingClientRect(),raw=chartDataCache.get(tf)||liveData;if(!chartRowsOk(raw))return;const base=chartType==='heikin'?haRows(raw):raw;const visible=Math.min(base.length,Math.max(35,Math.floor((r.width-118)/5/Math.max(.55,scale))));const step=Math.max(.4,(r.width-118)/Math.max(1,visible)*scale*.94);const delta=(ev.clientX-chartDrag.x)/step;const maxOffset=Math.max(0,base.length-visible);chartOffset=Math.max(0,Math.min(maxOffset,Math.round(chartDrag.offset-delta)));drawChart();return}onChartPointer(ev)});$('cv').addEventListener('pointerup',()=>{chartDrag=null});$('cv').addEventListener('pointercancel',()=>{chartDrag=null});$('cv').addEventListener('pointerleave',()=>{if(!chartDrag)drawChart()});$('cv').addEventListener('click',ev=>{if(!chartDrawMode)return;const c=$('cv'),r=c.getBoundingClientRect(),x=ev.clientX-r.left,y=ev.clientY-r.top;if(chartDrawMode==='trend'){if(!chartDraft)chartDraft={x1:x,y1:y};else{chartDrawings.push({kind:'trend',x1:chartDraft.x1,y1:chartDraft.y1,x2:x,y2:y});chartDraft=null;chartDrawMode='';drawChart()}}else{chartDrawings.push(chartDrawMode==='hline'?{kind:'hline',y}:{kind:'vline',x});chartDrawMode='';drawChart()}});
 function zoom(z){scale=Math.min(5,Math.max(.5,scale*z));autoScale=false;drawChart()}function resetChart(){scale=1;autoScale=true;chartOffset=0;chartDay='';renderChartDays(chartDataCache.get(tf)||liveData||[]);chartDrawings.length=0;chartDrawMode='';chartDraft=null;drawChart()}async function fullChart(){
   const card=$('chart'); if(!card)return;
@@ -2993,6 +3158,164 @@ document.addEventListener('DOMContentLoaded',()=>{
       if(button){button.disabled=false;button.classList.remove('is-refreshing');button.removeAttribute('aria-busy');if(label)label.textContent=previous;}
     }
   };
+})();
+</script>
+<script id="LIVE_TICK_MONITOR_V1">
+(function(){
+  const $=id=>document.getElementById(id);
+  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  function fmtAge(s){if(s==null)return 'Never';if(s<2)return 'just now';if(s<60)return s+'s';return Math.floor(s/60)+'m '+(s%60)+'s';}
+  async function refresh(){
+    const state=$('tickMonitorState'); if(state){state.textContent='CHECKING';state.className='badge warn';}
+    try{
+      const r=await fetch('/api/angel/tick-diagnostics?ts='+Date.now(),{cache:'no-store',headers:{'Cache-Control':'no-cache'}});
+      const d=await r.json(); if(!r.ok||!d.ok)throw new Error(d.error||('HTTP '+r.status));
+      $('tickMonitorTotal').textContent=Number(d.ticksLast60Sec||0).toLocaleString();
+      $('tickMonitorInstruments').textContent=(d.instrumentsWithTicks||0)+' / '+(d.totalInstruments||0);
+      $('tickMonitorSocket').textContent=d.websocket?'WebSocket connected':'WebSocket disconnected';
+      $('tickMonitorMarket').textContent=d.marketOpen?'Market session open':'Market closed / outside session';
+      $('tickMonitorLast').textContent=d.lastTickAt?new Date(d.lastTickAt).toLocaleTimeString()+' ('+fmtAge(Math.max(0,Math.floor((Date.now()-Date.parse(d.lastTickAt))/1000)))+' ago)':'No price tick received this session';
+      const rows=$('tickMonitorRows');
+      if(rows){
+        if(!d.instruments?.length)rows.innerHTML='<tr><td colspan="5" style="padding:10px">No instruments subscribed or ticks received yet. Subscribe to NIFTY / option contracts first.</td></tr>';
+        else rows.innerHTML=d.instruments.map(x=>{
+          const age=x.secondsSinceLastTick;
+          const fresh=age!=null&&age<60;
+          const status=age==null?'NO TICKS':fresh?'FRESH':'STALE';
+          const color=age==null?'var(--danger,#ef4444)':fresh?'var(--success,#22c55e)':'var(--warning,#f59e0b)';
+          const ltp=x.ltp==null?'—':(Number.isFinite(Number(x.ltp))?Number(x.ltp).toFixed(2):'—');
+          return '<tr style="border-top:1px solid var(--line,rgba(128,128,128,.2))"><td style="padding:8px"><b>'+esc(x.symbol)+'</b><div style="font-size:11px;opacity:.7">'+esc(x.exchange)+' · '+esc(x.token)+'</div></td><td style="padding:8px">'+esc(fmtAge(age))+'</td><td style="padding:8px;text-align:right">'+Number(x.ticksLast60Sec||0)+'</td><td style="padding:8px;text-align:right">'+esc(ltp)+'</td><td style="padding:8px;color:'+color+';font-weight:700">'+status+'</td></tr>';
+        }).join('');
+      }
+      if(state){state.textContent=d.marketOpen?(d.websocket&&d.ticksLast60Sec>0?'LIVE TICKS':'WAITING FOR TICKS'):(d.websocket?'CONNECTED · MARKET CLOSED':'MARKET CLOSED');state.className='badge '+(d.marketOpen&&d.websocket&&d.ticksLast60Sec>0?'ok':'warn');}
+      $('tickMonitorNote').textContent=d.marketOpen?(d.websocket?(d.ticksLast60Sec>0?'Actual price updates received in the last 60 seconds. Tick counts are per instrument.':'Socket is connected but no price updates arrived in the last 60 seconds. Verify subscriptions; stale-data entries remain locked.'):'WebSocket disconnected. Automatic reconnect should recover the stream; do not trust stale prices.'):'Market is closed or outside exchange hours; zero new ticks can be normal. The next open-session check must confirm fresh price updates.';
+      $('tickMonitorChecked').textContent='Checked '+new Date(d.checkedAt||Date.now()).toLocaleTimeString();
+    }catch(e){
+      if(state){state.textContent='CHECK FAILED';state.className='badge danger';}
+      $('tickMonitorNote').textContent='Could not read tick diagnostics: '+(e.message||'unknown error');
+    }
+  }
+  window.refreshLiveTickMonitor=refresh;
+  document.addEventListener('DOMContentLoaded',()=>{
+    $('tickMonitorRefresh')?.addEventListener('click',refresh);
+    refresh();setInterval(refresh,5000);
+  });
+})();
+</script>
+<script id="APP_LIVE_CLOCK_V1">
+(function(){
+  const clock=document.getElementById('appLiveClock');
+  const date=document.getElementById('appLiveDate');
+  if(!clock||!date)return;
+  const timeFormat=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'});
+  const dateFormat=new Intl.DateTimeFormat('en-IN',{timeZone:'Asia/Kolkata',weekday:'short',day:'2-digit',month:'short',year:'numeric'});
+  let timer=null;
+  function tick(){
+    if(timer!==null)clearTimeout(timer);
+    const now=new Date();
+    clock.textContent=timeFormat.format(now);
+    clock.dateTime=now.toISOString();
+    date.textContent=dateFormat.format(now);
+    timer=setTimeout(tick,1000-(Date.now()%1000));
+  }
+  tick();
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)tick();});
+})();
+</script>
+<script id="APP_FULL_REFRESH_V1">
+(function(){
+  const button=document.getElementById('appRefreshBtn');
+  if(!button)return;
+  let refreshing=false;
+  button.addEventListener('click',function(){
+    if(refreshing)return;
+    refreshing=true;
+    button.disabled=true;
+    button.setAttribute('aria-busy','true');
+    button.title='Refreshing the entire app…';
+    const label=button.querySelector('.app-refresh-label');
+    if(label)label.textContent='Loading…';
+    const icon=button.querySelector('span[aria-hidden="true"]');
+    if(icon)icon.textContent='⟳';
+    try{window.location.reload();}
+    catch(_){window.location.href=window.location.href;}
+  });
+})();
+</script>
+<script id="HISTORICAL_PROVIDER_HEALTH_V1">
+(function(){
+  const $=id=>document.getElementById(id);
+  let busy=false;
+  function badge(id,ok,okText='PASS',waitText='WAIT'){
+    const el=$(id);if(!el)return;
+    el.textContent=ok?okText:waitText;
+    el.className='badge '+(ok?'ok':'danger');
+  }
+  function prettyAge(seconds){
+    if(seconds==null||!Number.isFinite(Number(seconds)))return 'unknown age';
+    const n=Math.max(0,Number(seconds));
+    return n<60?Math.round(n)+'s':Math.floor(n/60)+'m '+Math.round(n%60)+'s';
+  }
+  async function refresh(){
+    if(busy)return;busy=true;
+    try{
+      const activeSymbol=(typeof symbol==='string'&&symbol)||'NIFTY';
+      const base=(typeof API_BASE==='string'&&API_BASE)||location.origin;
+      const url=base+'/api/data-health?symbol='+encodeURIComponent(activeSymbol)+'&ts='+Date.now();
+      const response=await fetch(url,{cache:'no-store',headers:{'Cache-Control':'no-cache'},signal:AbortSignal.timeout(6000)});
+      const data=await response.json();
+      if(!response.ok||!data.ok)throw new Error(data.error||('HTTP '+response.status));
+      const history=data.historicalCandles||{};
+      const tick=data.angelOne||{};
+      const volume=data.futuresVolume||{};
+      const backup=data.alternateProvider||{};
+      const prediction=window.__lastPrediction||{};
+      const predictionFresh=Number.isFinite(Number(prediction.__updatedAt))&&(Date.now()-Number(prediction.__updatedAt)<45000);
+      const confirmations=prediction.confirmations||{};
+      badge('dhPrice',history.verified===true,history.verified?'VERIFIED':'WAIT');
+      badge('dhTick',tick.indexTickFresh===true&&tick.lastIndexTickAgeSeconds!=null&&tick.lastIndexTickAgeSeconds<=120,'FRESH','STALE / WAIT');
+      badge('dhVolume',volume.verified===true,'VERIFIED','WAIT');
+      badge('dhOpt',predictionFresh&&confirmations.options===true,'VERIFIED','WAIT');
+      badge('dhGreeks',predictionFresh&&confirmations.greeks===true,'VERIFIED','WAIT');
+      badge('dhNews',predictionFresh&&confirmations.news===true,'VERIFIED','WAIT');
+      badge('dhGlobal',predictionFresh&&confirmations.global===true,'VERIFIED','WAIT');
+
+      const source=String(history.baseSource||history.source||'UNAVAILABLE').toUpperCase();
+      const stale=source.includes('STALE CACHE');
+      const verified=history.verified===true;
+      const srcLabel=verified?(source.startsWith('UPSTOX_HISTORICAL')?'UPSTOX VERIFIED':'ANGEL ONE VERIFIED'):stale?'STALE CACHE':source.includes('YAHOO')?'YAHOO FALLBACK':source;
+      const src=$('dhHistorySource');
+      if(src){src.textContent=srcLabel;src.className='badge '+(verified?'ok':'warn');}
+      const indexCfg=backup.index||{};
+      const futCfg=backup.futures||{};
+      const backupReady=indexCfg.configured===true&&futCfg.configured===true;
+      const alt=$('dhAltProvider');
+      if(alt){
+        alt.textContent=backupReady?'INDEX + FUTURES READY':(!indexCfg.tokenConfigured?'TOKEN NEEDED':(!indexCfg.instrumentKeyConfigured?'INDEX KEY NEEDED':(!futCfg.instrumentKeyConfigured?'FUTURES KEY NEEDED':'CONFIG INCOMPLETE')));
+        alt.className='badge '+(backupReady?'ok':'warn');
+      }
+      const detail=$('dhHistoryDetail');
+      if(detail){
+        const last=history.lastCandleAt?new Date(history.lastCandleAt).toLocaleString():'none';
+        const err=history.diagnostic?.error||history.diagnostic?.fallbackError||null;
+        detail.textContent='Source: '+source+' • '+Number(history.rowCount||0)+' candles • last bar '+last+' ('+prettyAge(history.ageSeconds)+')'+(err?' • Error: '+String(err).slice(0,170):'');
+      }
+      const last=$('lastUpdated');
+      if(last)last.textContent='Checked '+new Date(data.checkedAt||Date.now()).toLocaleTimeString()+' • index tick '+prettyAge(tick.lastIndexTickAgeSeconds)+' • futures volume '+prettyAge(volume.ageSeconds);
+    }catch(error){
+      const src=$('dhHistorySource');
+      if(src){src.textContent='CHECK FAILED';src.className='badge danger';}
+      const detail=$('dhHistoryDetail');
+      if(detail)detail.textContent='Could not verify market-data providers: '+String(error?.message||'server unavailable').slice(0,180)+'. Treat prior data as stale.';
+      badge('dhPrice',false,'VERIFIED','WAIT');badge('dhTick',false,'FRESH','WAIT');badge('dhVolume',false,'VERIFIED','WAIT');
+    }finally{busy=false;}
+  }
+  window.refreshHistoricalProviderHealth=refresh;
+  document.addEventListener('DOMContentLoaded',function(){
+    refresh();
+    setInterval(refresh,12000);
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();});
+  });
 })();
 </script>
 </body>

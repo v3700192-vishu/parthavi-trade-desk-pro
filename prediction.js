@@ -103,6 +103,12 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
   const futureCandleTimestamp=Number.isFinite(rawCandleAge)&&rawCandleAge < -0.25;
   const candleAgeMinutes=Number.isFinite(rawCandleAge)&&rawCandleAge>=-0.25?Number(Math.max(0,rawCandleAge).toFixed(1)):null;
   const candlesFresh=candleAgeMinutes!=null&&candleAgeMinutes<=10&&!futureCandleTimestamp;
+  const candleSource=String(m5?.candleSource||'UNKNOWN').toUpperCase();
+  // Angel One is primary; a separately authenticated Upstox V3 candle feed is an accepted
+  // independent historical source. Stale caches and public Yahoo fallback remain unverified.
+  const historicalProviderVerified=(candleSource.startsWith('ANGEL')&&!candleSource.includes('YAHOO')) || candleSource.startsWith('UPSTOX_HISTORICAL');
+  const brokerCandlesVerified=historicalProviderVerified&&!candleSource.includes('YAHOO')&&!candleSource.includes('STALE CACHE');
+  const candlesVerified=candlesFresh&&brokerCandlesVerified;
   const hasVix=vix!==null&&vix!==undefined&&vix!==''&&Number.isFinite(Number(vix));
   const thetaRaw=options?.theta,deltaRaw=options?.delta;
   const hasGreeks=thetaRaw!==null&&thetaRaw!==undefined&&thetaRaw!==''&&deltaRaw!==null&&deltaRaw!==undefined&&deltaRaw!==''&&Number.isFinite(Number(thetaRaw))&&Number.isFinite(Number(deltaRaw));
@@ -143,6 +149,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
   if(!hasVix) noTradeReasons.push('No Trade: India VIX is not verified live.');
   else if(Number(vix)<12 || Number(vix)>22) noTradeReasons.push('No Trade: Market is too slow or too volatile.');
   if(!candlesFresh) noTradeReasons.push('No Trade: the latest completed 5-minute candle is stale or unavailable.');
+  else if(!brokerCandlesVerified) noTradeReasons.push('No Trade: technical candles are from an unverified, fallback, or stale source; fresh authenticated historical candles are required.');
   if(!newsVerified) noTradeReasons.push('No Trade: fresh market news is not verified.');
   if(!globalVerified) noTradeReasons.push('No Trade: fewer than three fresh global-risk inputs are verified.');
   if(!optionFlowVerified) noTradeReasons.push('No Trade: live option-chain PCR/OI values are unavailable or unverified.');
@@ -211,14 +218,14 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
     + backtestBonus,
     50,95
   ));
-  const feedComplete=!!marketOpen && candlesFresh && hasVerifiedVolume && hasVix && Number(vix)>=12 && Number(vix)<=22 && newsVerified && globalVerified && optionFlowVerified && hasGreeks && eventSafe;
+  const feedComplete=!!marketOpen && candlesVerified && hasVerifiedVolume && hasVix && Number(vix)>=12 && Number(vix)<=22 && newsVerified && globalVerified && optionFlowVerified && hasGreeks && eventSafe;
   const hardNoTrade=noTradeReasons.length>0;
   // Opportunity tiers: keep directional opportunities visible early, while
   // preserving hard safety blockers and the existing confirmed-entry gate.
   const opportunityConfidenceThreshold=78;
   const hardSafetyBlock =
     !marketOpen ||
-    !candlesFresh ||
+    !candlesVerified ||
     !hasVerifiedVolume ||
     !hasVix ||
     !newsVerified ||
@@ -262,7 +269,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
     modelConfidenceBand:modelConfidence>=78?'OPTION OPPORTUNITY':modelConfidence>=70?'WATCH':'WEAK',
     confirmationPct, confirmedCount, confirmationTotal:required.length,
     confirmations, trend1h:h1d, setup15m:m15d, trigger5m:String(m5?.candle||'WAIT'),
-    volumeRatio:vr, volumeRatio10d:vr10, volumeBreakout:!!x5.volumeBreakout, volumeSource:x5.volumeSource||null, volumeUnavailable:!hasVerifiedVolume, candleAgeMinutes, candlesFresh, futureCandleTimestamp, optionDataVerified:optionFlowVerified, eventCalendarConnected:!!events?.connected, eventTimestampsVerified:!events?.unverifiedTimes, eventSafetyStatus, eventSafe, rsi, adx, atr, vwap, last, vix:hasVix?Number(vix):null, delta:hasGreeks?delta:null, theta:hasGreeks?theta:null, greekRisk:options?.greekRisk||null, oi:oi||null, noTradeReasons, rrGate:'1:2 MINIMUM',
+    volumeRatio:vr, volumeRatio10d:vr10, volumeBreakout:!!x5.volumeBreakout, volumeSource:x5.volumeSource||null, volumeUnavailable:!hasVerifiedVolume, candleAgeMinutes, candlesFresh, candlesVerified, candleSource, futureCandleTimestamp, optionDataVerified:optionFlowVerified, eventCalendarConnected:!!events?.connected, eventTimestampsVerified:!events?.unverifiedTimes, eventSafetyStatus, eventSafe, rsi, adx, atr, vwap, last, vix:hasVix?Number(vix):null, delta:hasGreeks?delta:null, theta:hasGreeks?theta:null, greekRisk:options?.greekRisk||null, oi:oi||null, noTradeReasons, rrGate:'1:2 MINIMUM',
     finalPlan:plan,
     signalBarTime:rows5?.at?.(-1)?.t||null,
     historical:backtest||{available:false,kind:'UNDERLYING_PRICE_ONLY',instrument:'NIFTY INDEX',reason:'Index price-only backtest unavailable.'},

@@ -1,6 +1,9 @@
 import SmartApiPackage from "smartapi-javascript";
 import address from "address";
-import { isFreshExchangeTick } from "./marketFreshness.js";
+import { createReadStream, statSync } from "node:fs";
+import { Readable } from "node:stream";
+import { exchangeTimestampMs, isFreshExchangeTick } from "./marketFreshness.js";
+import { recordLiveIndexTick } from "./liveIndexCandles.js";
 
 const { SmartAPI, WebSocketV2 } = SmartApiPackage;
 
@@ -25,10 +28,22 @@ let wsConnectPromise=null;
 let reconnectDelayMs=5000;
 let latestTicks = new Map();
 let lastTickAt = null;
+// Rolling per-token tick timestamps for the live feed monitor (last 60 seconds).
+const tickWindows = new Map();
+const subscribedTokens = new Map();
+const EXCHANGE_LABELS = {1:'NSE',2:'NFO',3:'BSE',4:'BFO',5:'MCX'};
 let wsGeneration = 0;
 let lastRefreshAt = 0;
 let refreshPromise=null;
 const AUTH_REFRESH_GRACE_MS = 5 * 60 * 1000;
+// Deduplicate and pace historical/Greek calls to avoid SmartAPI's strict historical rate limits.
+const HISTORICAL_MIN_GAP_MS = 4000;
+let historicalRequestQueue = Promise.resolve();
+let historicalNextRequestAt = 0;
+const historicalRequestCache = new Map();
+const historicalInflight = new Map();
+const optionGreekCache = new Map();
+const optionGreekInflight = new Map();
 
 function pruneStaleTicks(now = Date.now()) {
   for (const [token, tick] of latestTicks) {
@@ -79,7 +94,7 @@ export async function logoutAngel(){
   if(ws){ try{ws.close?.()}catch{}; try{ws.closeConnection?.()}catch{}; ws=null; }
   wsConnected=false; wsConnectBusy=false; wsError=null; lastTickAt=null;
   reconnectDelayMs=5000;
-  api=null; session={connected:false,clientCode:null,loginAt:null,jwtToken:null,refreshToken:null,feedToken:null,profile:null}; latestTicks.clear();
+  api=null; session={connected:false,clientCode:null,loginAt:null,jwtToken:null,refreshToken:null,feedToken:null,profile:null}; latestTicks.clear(); tickWindows.clear(); subscribedTokens.clear();
   wsConnectBusy=false;
   return angelStatus();
 }
@@ -185,23 +200,26 @@ export async function quoteInstruments(instruments){
   return rows;
 }
 export async function optionGreeks({name, expirydate}){
-  const {jwtToken}=requireSession();
+  requireSession();
   const endpoint='https://apiconnect.angelone.in/rest/secure/angelbroking/marketData/v1/optionGreek';
-  const headers={
-    'Content-Type':'application/json',
-    'Accept':'application/json',
-    'X-PrivateKey':angelApiKey(),
-    'Authorization':`Bearer ${jwtToken}`,
-    'X-UserType':'USER',
-    'X-SourceID':'WEB',
-    'X-ClientLocalIP':(process.env.ANGEL_CLIENT_LOCAL_IP || process.env.ANGELONE_CLIENT_LOCAL_IP || '127.0.0.1'),
-    'X-ClientPublicIP':(process.env.ANGEL_CLIENT_PUBLIC_IP || process.env.ANGELONE_PUBLIC_IP || '127.0.0.1'),
-    'X-MACAddress':(process.env.ANGEL_MAC_ADDRESS || process.env.ANGELONE_MAC_ADDRESS || '00:00:00:00:00:00')
-  };
-  const r=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({name,expirydate:normalizeExpiry(expirydate)}),signal:AbortSignal.timeout(8000)});
-  const out=await r.json().catch(()=>({status:false,message:'Invalid JSON'}));
-  if(!r.ok || out?.status===false) throw new Error(out?.message||`Option Greeks HTTP ${r.status}`);
-  return out?.data||[];
+  const normalizedExpiry=normalizeExpiry(expirydate);
+  const key=String(name||'').trim().toUpperCase()+'|'+normalizedExpiry;
+  const cached=optionGreekCache.get(key);
+  if(cached&&Date.now()-cached.at<5000) return cached.data;
+  if(optionGreekInflight.has(key)) return await optionGreekInflight.get(key);
+  // Same-key requests from simultaneous dashboard panels share one broker call.
+  const job=(async()=>{
+    const out=await secureJson(endpoint,{
+      method:'POST',
+      headers:secureHeaders(),
+      body:JSON.stringify({name,expirydate:normalizedExpiry})
+    });
+    const rows=Array.isArray(out?.data)?out.data:[];
+    if(rows.length) optionGreekCache.set(key,{at:Date.now(),data:rows});
+    return rows;
+  })();
+  optionGreekInflight.set(key,job);
+  try{return await job;}finally{optionGreekInflight.delete(key);}
 }
 
 
@@ -223,9 +241,23 @@ function secureHeaders(){
 
 async function secureJson(url, options={}, retryAuth=true){
   const r=await fetch(url,{...options,headers:{...(options.headers||secureHeaders())},signal:AbortSignal.timeout(8000)});
-  const out=await r.json().catch(()=>({status:false,message:`HTTP ${r.status}`}));
+  const rawBody=await r.text();
+  let out;
+  try{out=rawBody?JSON.parse(rawBody):{};}catch{out={status:false,message:`HTTP ${r.status}: ${rawBody.trim().slice(0,200)}`.trim()};}
+  if(!out||typeof out!=='object') out={status:false,message:`HTTP ${r.status}: ${String(rawBody||'').trim().slice(0,180)}`};
+  if(!r.ok||out?.status===false){
+    const errorCode=String(out.errorcode||out.errorCode||out.code||'').trim();
+    const providerMessage=String(out.message||out.error||'').trim();
+    const detail=String(rawBody||'').trim().replace(/\s+/g,' ').slice(0,180);
+    const cleanMessage=providerMessage&&!/^HTTP \d{3}:/i.test(providerMessage)?providerMessage:(detail||providerMessage);
+    const statusPrefix=r.status!==200?`HTTP ${r.status}`:'';
+    out.message=[statusPrefix,errorCode,cleanMessage].filter(Boolean).join(' — ').slice(0,240)||`HTTP ${r.status}`;
+  }
   const message=String(out?.message||out?.error||'').toLowerCase();
-  const authFailure=(r.status===401||r.status===403||/token|jwt|authoriz|session|login|expired|invalid credential/.test(message));
+  const authMessage=/token|jwt|authoriz|session|login|expired|invalid credential/.test(message);
+  // A generic HTTP 403 often means endpoint permission/IP policy, not an expired JWT.
+  // Do not rotate the refresh token or rebuild WebSockets for non-auth 403 responses.
+  const authFailure=(r.status===401||(r.status===403&&authMessage));
   if((!r.ok||out?.status===false)&&authFailure&&retryAuth&&session.connected&&session.refreshToken){
     // Never churn the freshly created session. Some SmartAPI endpoints can
     // transiently return 401/403 immediately after login; rotating the refresh
@@ -316,10 +348,49 @@ export async function findInstrumentByToken(token, hint={}){
 
 export function getLatestTicks(){ pruneStaleTicks(); return [...latestTicks.values()].sort((a,b)=>b.at-a.at).slice(0,200); }
 
+export function getTickDiagnostics(now=Date.now()){
+  const cutoff=now-60000;
+  const tokenSet=new Set([...subscribedTokens.keys(),...latestTicks.keys()]);
+  const instruments=[];
+  let ticksLast60Sec=0;
+  for(const token of tokenSet){
+    const meta=subscribedTokens.get(token)||{};
+    const tick=latestTicks.get(token)||null;
+    let times=tickWindows.get(token)||[];
+    let first=0;
+    while(first<times.length && times[first]<cutoff) first++;
+    if(first) times=times.slice(first);
+    if(times.length) tickWindows.set(token,times); else tickWindows.delete(token);
+    ticksLast60Sec+=times.length;
+    const rawLtp=tick?.data?.last_traded_price??tick?.data?.ltp??tick?.data?.lastTradedPrice;
+    instruments.push({
+      token,
+      symbol:meta.symbol||meta.name||token,
+      exchange:meta.exchange||EXCHANGE_LABELS[meta.exchangeType]||'Unknown',
+      subscribed:subscribedTokens.has(token),
+      lastTickAt:tick?new Date(tick.at).toISOString():null,
+      secondsSinceLastTick:tick?Math.max(0,Math.floor((now-tick.at)/1000)):null,
+      ticksLast60Sec:times.length,
+      ltp:rawLtp==null?null:Number(rawLtp)/100
+    });
+  }
+  instruments.sort((a,b)=>(b.ticksLast60Sec-a.ticksLast60Sec)||((a.secondsSinceLastTick??Infinity)-(b.secondsSinceLastTick??Infinity))||a.symbol.localeCompare(b.symbol));
+  return {
+    ok:true,windowSeconds:60,checkedAt:new Date(now).toISOString(),
+    connected:!!session.connected,websocket:!!ws&&wsConnected,websocketError:wsError||null,
+    lastTickAt:lastTickAt?new Date(lastTickAt).toISOString():null,
+    totalInstruments:instruments.length,
+    subscribedInstruments:subscribedTokens.size,
+    instrumentsWithTicks:instruments.filter(x=>x.lastTickAt).length,
+    ticksLast60Sec,
+    instruments:instruments.slice(0,200)
+  };
+}
+
 export async function subscribeMasterTokens(items){
   const groups=new Map([[1,[]],[2,[]],[3,[]],[4,[]],[5,[]]]);
   const toType=x=>({nse_cm:1,nse_fo:2,bse_cm:3,bse_fo:4,mcx_fo:5}[String(x.exch_seg||'').toLowerCase()]||null);
-  for(const x of items||[]){ const t=toType(x); if(t && x.token) groups.get(t).push(String(x.token)); }
+  for(const x of items||[]){ const t=toType(x); if(t && x.token){ const token=String(x.token); const prev=subscribedTokens.get(token)||{}; subscribedTokens.set(token,{...prev,symbol:String(x.symbol||x.name||token),name:String(x.name||x.symbol||token),exchange:String(x.exchange||x.exch_seg||EXCHANGE_LABELS[t]||'Unknown'),exchangeType:t}); groups.get(t).push(token); } }
   const results=[];
   for(const [exchangeType,tokens] of groups){
     if(!tokens.length) continue;
@@ -341,7 +412,52 @@ export async function quote({mode="FULL", exchangeTokens}){
 
 export async function candles({exchange, symboltoken, interval, fromdate, todate}){
   requireSession();
-  return await secureJson("https://apiconnect.angelone.in/rest/secure/angelbroking/historical/v1/getCandleData",{method:"POST",headers:secureHeaders(),body:JSON.stringify({exchange,symboltoken:String(symboltoken),interval,fromdate,todate})});
+  const endpoint="https://apiconnect.angelone.in/rest/secure/angelbroking/historical/v1/getCandleData";
+  const payload={exchange,symboltoken:String(symboltoken),interval,fromdate,todate};
+  const key=JSON.stringify(payload);
+  const cached=historicalRequestCache.get(key);
+  if(cached&&Date.now()-cached.at<15000) return cached.data;
+  if(historicalInflight.has(key)) return await historicalInflight.get(key);
+  // Serialize candle pulls globally. Multiple dashboard panels used to issue
+  // overlapping index/futures requests, triggering SmartAPI 403/429 throttles.
+  const job=historicalRequestQueue.then(async()=>{
+    const wait=Math.max(0,historicalNextRequestAt-Date.now());
+    // Do not leave Express requests hanging for minutes after the provider rejects history.
+    // Fail fast during a long throttle cooldown; the caller can serve its safe fallback.
+    if(wait>HISTORICAL_MIN_GAP_MS){
+      const seconds=Math.ceil(wait/1000);
+      throw new Error(`HISTORICAL_COOLDOWN_ACTIVE: retry in ${seconds}s without waiting in the request queue`);
+    }
+    if(wait>0) await new Promise(resolve=>setTimeout(resolve,wait));
+    try{
+      const result=await secureJson(endpoint,{method:"POST",headers:secureHeaders(),body:JSON.stringify(payload)});
+      historicalRequestCache.set(key,{at:Date.now(),data:result});
+      for(const [cacheKey,value] of historicalRequestCache){
+        if(Date.now()-value.at>60000) historicalRequestCache.delete(cacheKey);
+      }
+      while(historicalRequestCache.size>100) historicalRequestCache.delete(historicalRequestCache.keys().next().value);
+      return result;
+    }catch(error){
+      const message=String(error?.message||error);
+      if(/HTTP 403|HTTP 429|Access denied|too many requests|rate.?limit|exceeding access rate/i.test(message)){
+        // SmartAPI can keep returning "exceeding access rate" even for isolated calls.
+        // Apply a shared 5-minute cooldown to ALL historical calls after a rate rejection;
+        // per-request pacing alone is not enough when several UI panels share this client code.
+        const rateRejected=/HTTP 429|Access denied|too many requests|rate.?limit|exceeding access rate/i.test(message);
+        const cooldown=rateRejected?5*60*1000:60*1000;
+        historicalNextRequestAt=Math.max(historicalNextRequestAt,Date.now()+cooldown);
+        console.warn('[ANGEL_HISTORY_COOLDOWN] rejection detected; retry delayed '+Math.round(cooldown/1000)+'s');
+      }
+      throw error;
+    }finally{
+      // Enforce a quiet interval after each response, including slow requests,
+      // so queued chart/prediction/futures calls cannot burst back-to-back.
+      historicalNextRequestAt=Math.max(historicalNextRequestAt,Date.now()+HISTORICAL_MIN_GAP_MS);
+    }
+  });
+  historicalRequestQueue=job.then(()=>undefined,()=>undefined);
+  historicalInflight.set(key,job);
+  try{return await job;}finally{historicalInflight.delete(key);}
 }
 
 export async function searchScrip({exchange, searchscrip}){
@@ -365,16 +481,27 @@ async function loadSharedIndexMaster(){
   if(indexMasterCache.loadedAt && Date.now()-indexMasterCache.loadedAt<15*60*1000) return indexMasterCache.byUnderlying;
   if(indexMasterInflight) return await indexMasterInflight;
   const job=(async()=>{
-    const r=await fetch(MASTER_URL,{headers:{accept:'application/json','user-agent':'PARTHAVI-TRADE-DESK-PRO/2.1'},signal:AbortSignal.timeout(20000)});
-    if(!r.ok) throw new Error('Instrument master HTTP '+r.status);
-    if(!r.body?.getReader) throw new Error('Instrument master streaming response is unavailable');
     const byUnderlying=new Map([...INDEX_UNDERLYINGS].map(k=>[k,[]]));
-    const reader=r.body.getReader(), decoder=new TextDecoder();
+    let reader;
+    const cachePath=new URL("./data/OpenAPIScripMaster.json",import.meta.url);
+    try{
+      const cached=statSync(cachePath);
+      if(cached.size<1000000) throw new Error("Instrument-master disk cache is incomplete");
+      reader=Readable.toWeb(createReadStream(cachePath)).getReader();
+      console.log('[ANGEL_MASTER] using disk cache bytes='+cached.size);
+    }catch(cacheError){
+      const r=await fetch(MASTER_URL,{headers:{accept:'application/json','user-agent':'PARTHAVI-TRADE-DESK-PRO/2.1'},signal:AbortSignal.timeout(60000)});
+      if(!r.ok) throw new Error('Instrument master HTTP '+r.status);
+      if(!r.body?.getReader) throw new Error('Instrument master streaming response is unavailable');
+      reader=r.body.getReader();
+      console.warn('[ANGEL_MASTER] disk cache unavailable; streaming broker download');
+    }
+    const decoder=new TextDecoder();
     let parsed=0;
     const parseSegment=segment=>{
       parsed++;
       // Filter irrelevant instruments before allocating a structured object.
-      if(!/"exch_seg"\s*:\s*"(?:nse_fo|nfo)"/i.test(segment)) return;
+      if(!/"exch_seg"\s*:\s*"(?:nse_fo|nfo|bfo|bse_fo)"/i.test(segment)) return;
       if(!/"(?:instrumenttype"\s*:\s*"FUTIDX"|(?:symbol|tradingSymbol)"\s*:\s*"[^"]*(?:CE|PE)")/i.test(segment)) return;
       if(!/"name"\s*:\s*"(?:NIFTY|BANKNIFTY|FINNIFTY|MIDCPNIFTY|SENSEX)"/i.test(segment)) return;
       try{
@@ -383,7 +510,8 @@ async function loadSharedIndexMaster(){
         const symbol=String(x?.symbol||x?.tradingSymbol||'').toUpperCase();
         const type=String(x?.instrumenttype||'').toUpperCase();
         const exchange=String(x?.exch_seg||'').toLowerCase();
-        if(!byUnderlying.has(underlying)||!['nse_fo','nfo'].includes(exchange)) return;
+        const allowedExchange=underlying==='SENSEX'?['bfo','bse_fo']:['nse_fo','nfo'];
+        if(!byUnderlying.has(underlying)||!allowedExchange.includes(exchange)) return;
         if(type!=='FUTIDX' && !/(?:CE|PE)$/.test(symbol)) return;
         byUnderlying.get(underlying).push({
           token:x?.token,symbol:String(x?.symbol||x?.tradingSymbol||''),name:underlying,
@@ -446,19 +574,34 @@ async function loadUnderlyingMaster(underlying){
   return (all.get(key)||[]).filter(x=>/(?:CE|PE)$/i.test(String(x.symbol||'')));
 }
 
-export async function findLightContracts({underlying='',expiry='',optionType='',strike='',query=''}={}){
+function lightExpiryTimestamp(value){
+  const m=String(value||'').trim().toUpperCase().match(/^(\d{1,2})([A-Z]{3})(\d{4})$/);
+  if(!m) return Number.NaN;
+  const months={JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11};
+  const month=months[m[2]];
+  return month==null?Number.NaN:new Date(Number(m[3]),month,Number(m[1]),23,59,59,999).getTime();
+}
+
+export async function findLightContracts({underlying='',expiry='',optionType='',strike='',query='',exchange='NSE'}={}){
   const key=normalizeUnderlyingName(underlying||query);
   const items=await loadUnderlyingMaster(key);
+  const ex=String(exchange||'NSE').toUpperCase();
   const ot=String(optionType||'').trim().toUpperCase();
   const st=strike!==''&&strike!=null?Number(strike):null;
   return items.filter(x=>{
     const sym=String(x.symbol||'').toUpperCase();
-    if(!/(?:CE|PE)$/.test(sym)) return false;
+    const seg=String(x.exch_seg||x.exchange||'').toUpperCase();
+    const segOk=ex==='BSE'?['BFO','BSE_FO'].includes(seg):['NFO','NSE_FO'].includes(seg);
+    if(!segOk||!/(?:CE|PE)$/.test(sym)) return false;
     if(expiry && String(x.expiry||'').toUpperCase()!==String(expiry).toUpperCase()) return false;
     if(ot && !sym.endsWith(ot)) return false;
     if(st!==null && Number(x.strike)/100!==st && Number(x.strike)!==st) return false;
     return true;
-  }).slice(0,300);
+  }).sort((a,b)=>{
+    const ea=lightExpiryTimestamp(a.expiry), eb=lightExpiryTimestamp(b.expiry);
+    const expiryOrder=(Number.isFinite(ea)?ea:Number.MAX_SAFE_INTEGER)-(Number.isFinite(eb)?eb:Number.MAX_SAFE_INTEGER);
+    return expiryOrder || (Number(a.strike)||0)-(Number(b.strike)||0) || String(a.symbol||'').localeCompare(String(b.symbol||''));
+  });
 }
 
 export async function findLightFutures({underlying='',expiry='',query=''}={}){
@@ -563,6 +706,7 @@ async function subscribeOnSocket(tokens, exchangeType=1, mode=1){
   if(!ws || !wsConnected) throw new Error("Angel One WebSocket is not connected");
   const clean=[...new Set((tokens||[]).map(String).filter(Boolean))];
   if(!clean.length) throw new Error("No tokens supplied");
+  for(const token of clean){ const prev=subscribedTokens.get(token)||{}; subscribedTokens.set(token,{...prev,exchangeType:Number(exchangeType),exchange:prev.exchange||EXCHANGE_LABELS[Number(exchangeType)]||'Unknown'}); }
   const req={correlationID:`PTD${Date.now().toString().slice(-7)}`,action:1,mode:Number(mode),exchangeType:Number(exchangeType),tokens:clean};
   ws.fetchData(req);
   return {subscribed:true,tokens:clean.length,exchangeType:Number(exchangeType),mode:Number(mode)};
@@ -725,7 +869,16 @@ async function connectMarketWebSocket(){
             if(rawToken==null || rawPrice==null || !Number.isFinite(Number(rawPrice))) return;
             const token=String(rawToken).replace(/^"|"$/g,'');
             if(!isFreshExchangeTick(payload)) return;
-            latestTicks.set(token,{data:payload,at:Date.now()});
+            const receivedAt=Date.now();
+            latestTicks.set(token,{data:payload,at:receivedAt});
+            const window=(tickWindows.get(token)||[]);
+            window.push(receivedAt);
+            while(window.length && window[0]<receivedAt-60000) window.shift();
+            if(window.length>1000) window.splice(0,window.length-1000);
+            tickWindows.set(token,window);
+            // Build conservative 5M index OHLC from fresh broker WebSocket ticks.
+            // Index volume is deliberately kept at zero/unavailable; no volume is fabricated.
+            recordLiveIndexTick(token,Number(rawPrice)/100,exchangeTimestampMs(payload)||receivedAt);
             if(latestTicks.size>200){
               const oldest=[...latestTicks.entries()].sort((x,y)=>x[1].at-y[1].at).slice(0,latestTicks.size-200);
               for(const [key] of oldest) latestTicks.delete(key);
@@ -766,7 +919,13 @@ async function connectMarketWebSocket(){
       console.log('[ANGEL_WS] connected');
 
       const sub=await subscribeOnSocket(["99926000","99926009","99926017","99926037","99926074"],1,1);
-      console.log('[ANGEL_WS] subscribed index tokens='+sub.tokens);
+      console.log('[ANGEL_WS] subscribed NSE index tokens='+sub.tokens);
+      // The BSE SENSEX cash-index token uses exchangeType 3, not NSE exchangeType 1.
+      // Isolate this optional subscription so a BSE-side failure never drops NSE live ticks.
+      try{
+        const bse=await subscribeOnSocket(["99919000"],3,1);
+        console.log('[ANGEL_WS] subscribed BSE index tokens='+bse.tokens);
+      }catch(e){console.warn('[ANGEL_WS] BSE SENSEX subscription unavailable:',e?.message||e);}
       return angelStatus();
     }catch(e){
       wsConnected=false;
