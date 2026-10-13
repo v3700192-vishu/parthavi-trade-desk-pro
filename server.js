@@ -10,7 +10,7 @@ import { normalizeNews, analyzeNews, normalizeGlobal, analyzeGlobal, analyzeEven
 import { buildPrediction, backtestFiveMinute } from "./prediction.js";
 import { productionReadiness } from "./phase12.js";
 import { isFreshExchangeTick, exchangeTickAgeMs } from "./marketFreshness.js";
-import { fetchUpstoxHistoricalCandles, upstoxConfigStatus } from "./marketDataProviders.js";
+import { fetchUpstoxHistoricalCandles, shouldUseUpstoxFuturesFallback, upstoxConfigStatus } from "./marketDataProviders.js";
 import { summarizeContractMetrics } from "./contractAnalysis.js";
 import { status as phase11ProtectionStatus, evaluate as phase11Evaluate, onOrderSubmitted as phase11OnOrderSubmitted, recordOutcome as phase11RecordOutcome, resetProtection as phase11ResetProtection } from "./riskGuard.js";
 
@@ -1872,9 +1872,19 @@ async function loadFuturesVolume(symbol){
       const angelRateRejected=fetchErrors.some(e=>/HTTP 403|HTTP 429|Access denied|rate.?limit|exceeding access rate/i.test(String(e)));
       const upstoxFuturesConfig=upstoxConfigStatus({symbol:key,role:'futures'});
       let volumeProvider='ANGEL', upstoxFuturesKey='';
-      // If Angel One history is blocked or yielded too few futures samples, use a separately
-      // authenticated Upstox front-month futures key when configured. Never substitute index volume.
-      if((angelRateRejected||rows.length<100)&&upstoxFuturesConfig.configured){
+      // Decide from the actual volume/VWAP readiness, not only row count. A partial
+      // Angel One response can contain 100+ rows yet still lack the 8-of-10-day benchmark.
+      const angelCompleted=dropIncompleteCandle(rows,5);
+      const angelBenchmark=fiveMinuteVolumeBenchmark(angelCompleted);
+      const angelSession=verifiedFuturesSessionVWAP(angelCompleted);
+      const needUpstoxFutures=shouldUseUpstoxFuturesFallback({
+        rateRejected:angelRateRejected,
+        rowCount:angelCompleted.length,
+        benchmarkRatio10d:angelBenchmark.ratio10d,
+        sessionVwap:angelSession.vwap
+      });
+      // Use only the explicitly configured front-month futures contract; never substitute index volume.
+      if(needUpstoxFutures&&upstoxFuturesConfig.configured){
         const alternate=await fetchUpstoxHistoricalCandles({symbol:key,role:'futures',fromDate:start,toDate:end,intervalMinutes:5});
         if(alternate.ok){rows=alternate.rows;fetchErrors.length=0;volumeProvider='UPSTOX';upstoxFuturesKey=alternate.instrumentKey;}
         else fetchErrors.push('Upstox futures fallback: '+alternate.error);
