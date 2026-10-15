@@ -98,7 +98,7 @@ test("free smart advisor gives a buy recommendation only when every final live g
   assert.match(html, /function renderFreeAdvisor\(p,resp=\{\}\)/);
   assert.match(html, /const strictConfirmed=!marketClosed&&state==='CONFIRMED'/);
   assert.match(html, /p\?\.exchangeTickVerified===true&&p\?\.feedComplete===true/);
-  assert.match(html, /Number\(p\?\.modelConfidence\)>=78&&Number\(p\?\.confirmationPct\)>=80/);
+  assert.match(html, /Number\(p\?\.modelConfidence\)>=PTD_ADVISOR_CONFIDENCE&&Number\(p\?\.confirmationPct\)>=80/);
   assert.match(html, /NO TRADE • MARKET CLOSED/);
   assert.match(html, /WAIT • CANDIDATE ONLY/);
   assert.match(html, /NO TRADE • FINAL GATE FAILED/);
@@ -109,11 +109,37 @@ const freeAdvisorSource = html.match(/function renderFreeAdvisor\(p,resp=\{\}\)\
 function renderFreeAdvisorForTest(prediction, response = {}) {
   const ids = ["freeAdvisorDecision","freeAdvisorReason","freeAdvisorState","freeAdvisorBadge","freeAdvisorContract","freeAdvisorContractMeta","freeAdvisorEntry","freeAdvisorSL","freeAdvisorT1","freeAdvisorT2","freeAdvisorConfidence","freeAdvisorChecks"];
   const nodes = Object.fromEntries(ids.map(id => [id, { textContent: "", className: "" }]));
-  const render = vm.runInNewContext(freeAdvisorSource + "\nrenderFreeAdvisor", { $: id => nodes[id] });
+  const render = vm.runInNewContext(freeAdvisorSource + "\nrenderFreeAdvisor", { $: id => nodes[id], PTD_ADVISOR_CONFIDENCE: 80 });
   render(prediction, response);
   return nodes;
 }
 
+test("staged contract visibility thresholds are distinct and the Command Center requires 90% plus confirmation", () => {
+  assert.ok(html.includes("const PTD_FINAL_PLAN_CONFIDENCE=70;"));
+  assert.ok(html.includes("const PTD_ADVISOR_CONFIDENCE=80;"));
+  assert.ok(html.includes("const PTD_COMMAND_CENTER_CONFIDENCE=90;"));
+  assert.match(html, /const finalPlanVisible=!!optionPlan\?\.available&&optionConfidence>=PTD_FINAL_PLAN_CONFIDENCE/);
+  assert.match(html, /const optionVisible=!!optionPlan\?\.available&&optionConfidence>=PTD_ADVISOR_CONFIDENCE/);
+  assert.match(html, /Number\(p\?\.modelConfidence\)>=PTD_COMMAND_CENTER_CONFIDENCE && Number\(p\?\.confirmationPct\)>=80/);
+  assert.match(serviceWorker, /ptd-shell-v20/);
+});
+const stccCurrentPlanSource = html.match(/function stccCurrentPlan\(p\)\{[\s\S]*?\n\}/)?.[0] || "";
+function stccCurrentPlanForTest(prediction) {
+  const build = vm.runInNewContext(stccCurrentPlanSource + "\nstccCurrentPlan", {
+    PTD_COMMAND_CENTER_CONFIDENCE: 90, symbol: "NIFTY"
+  });
+  return build(prediction);
+}
+test("Command Center surfaces a plan only at 90% final confidence and 80% confirmation", () => {
+  const plan = {
+    signalState: "CONFIRMED", action: "CALL", prediction: "BULLISH",
+    optionPlan: { available: true, contract: "NIFTYTESTCE", optionType: "CE", strike: 23000, lotSize: 65, entry: 35, stopLoss: 30, target1: 45, target2: 47.5 },
+    modelConfidence: 89, confirmationPct: 90
+  };
+  assert.equal(stccCurrentPlanForTest(plan), null, "89% must not show as a Command Center trade");
+  assert.ok(stccCurrentPlanForTest({ ...plan, modelConfidence: 90, confirmationPct: 79 }) === null, "confirmation below 80% must stay blocked");
+  assert.equal(stccCurrentPlanForTest({ ...plan, modelConfidence: 90, confirmationPct: 80 })?.contract, "NIFTYTESTCE");
+});
 test("free advisor says RECOMMENDED only with a verified contract and every final gate", () => {
   const nodes = renderFreeAdvisorForTest({
     signalState: "CONFIRMED", action: "CALL", prediction: "BULLISH",
@@ -126,7 +152,7 @@ test("free advisor says RECOMMENDED only with a verified contract and every fina
   assert.equal(nodes.freeAdvisorEntry.textContent, "₹35.00");
 });
 
-test("78% directional confidence can display a risk-blocked contract candidate only as NO TRADE", () => {
+test("80% directional confidence can display a risk-blocked contract candidate only as NO TRADE", () => {
   const candidate = renderFreeAdvisorForTest({
     signalState: "NO TRADE", action: "NO TRADE", prediction: "BULLISH",
     directionalConfidence: 80, modelConfidence: 72, confirmationPct: 73, exchangeTickVerified: true,
@@ -160,7 +186,7 @@ test("free advisor treats WATCH as candidate-only and keeps the market-closed st
   const candidate = renderFreeAdvisorForTest({
     signalState: "WATCH", action: "NO TRADE", prediction: "BEARISH",
     optionPlan: { available: true, contract: "TESTPE", optionType: "PE", strike: 22000, expiry: "13OCT2026", lotSize: 65, entry: 35, stopLoss: 30, target1: 45, target2: 47.5 },
-    exchangeTickVerified: true, feedComplete: true, modelConfidence: 79, confirmationPct: 73
+    exchangeTickVerified: true, feedComplete: true, modelConfidence: 80, confirmationPct: 73
   }, { health: { marketOpen: true } });
   assert.match(candidate.freeAdvisorDecision.textContent, /WAIT • CANDIDATE ONLY/);
   assert.match(candidate.freeAdvisorContractMeta.textContent, /CANDIDATE ONLY/);
@@ -196,7 +222,7 @@ test("chart reports stale candle fallback and preserves selected historical day 
 });
 
 test("service-worker cache version is bumped and never caches live API responses", () => {
-  assert.match(serviceWorker, /const CACHE='ptd-shell-v19'/);
+  assert.match(serviceWorker, /const CACHE='ptd-shell-v20'/);
   assert.match(serviceWorker, /prediction-report\.html/);
   assert.match(serviceWorker, /if\(u\.pathname\.startsWith\('\/api\/'\)\) return/);
   assert.doesNotMatch(serviceWorker, /const CACHE='ptd-shell-v[345678]'/);
