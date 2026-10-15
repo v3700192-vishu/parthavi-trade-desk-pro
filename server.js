@@ -436,6 +436,7 @@ function positionSizeFromRisk({riskBudget=1000,entry,sl,lotSize,availableBudget=
   return {riskBudget:cap,entry:e,stopLoss:s,lossPerUnit:Number.isFinite(perUnit)?perUnit:null,lotSize:lot,lossPerLot:Number.isFinite(perLot)?perLot:null,recommendedLots:lots,recommendedQuantity:lots*lot,usedRisk:Number((lots*perLot).toFixed(2)),unusedRisk:Number(Math.max(0,cap-lots*perLot).toFixed(2))};
 }
 
+const optionPlanScanInflight=new Map();
 async function findBuyableOptionPlan(symbol, direction, underlyingEntry, underlyingSl, target1, target2){
   const action=String(direction||'').toUpperCase();
   const optionType=action==='CALL'?'CE':action==='PUT'?'PE':'';
@@ -459,7 +460,7 @@ async function findBuyableOptionPlan(symbol, direction, underlyingEntry, underly
     };
     const knownExpiries=[...new Set(allContracts.map(x=>String(x.expiry||'').toUpperCase()).filter(Boolean))]
       .sort((a,b)=>expiryMillis(a)-expiryMillis(b));
-    const expiriesToScan=[...new Set([...(knownExpiries.includes(expiry)?[expiry]:[]),...knownExpiries.filter(x=>x!==expiry)])].slice(0,4);
+    const expiriesToScan=[...new Set([...(knownExpiries.includes(expiry)?[expiry]:[]),...knownExpiries.filter(x=>x!==expiry)])].slice(0,2);
     if(!expiriesToScan.length) return {available:false,reason:'No current or future live option contracts found.',expiry,atm,optionType};
     const capitalBudget=Math.max(0,numEnv('MAX_OPTION_CAPITAL_RUPEES',5000));
     // Prefer a fully passing option at any active expiry; retain a caution-only
@@ -472,9 +473,10 @@ async function findBuyableOptionPlan(symbol, direction, underlyingEntry, underly
         .sort((a,b)=>Math.abs(a._strike-atm)-Math.abs(b._strike-atm))
         .slice(0,30);
       if(!contracts.length) continue;
-      const quotes=await quoteInstruments(contracts);
+      // Quotes and the expiry Greek matrix are independent authenticated reads; fetch concurrently
+      // so two scanned expiries fit inside the prediction response deadline.
+      const [quotes,greeks]=await Promise.all([quoteInstruments(contracts),liveOptionGreeks(symbol,scanExpiry)]);
       const qmap=new Map((quotes||[]).map(x=>[String(x.symbolToken),x]));
-      const greeks=await liveOptionGreeks(symbol,scanExpiry);
       const gmap=new Map((greeks||[]).map(x=>[String(x.optionType)+'|'+Number(x.strike).toFixed(2),x]));
       const candidates=contracts.map(x=>{
         const q=qmap.get(String(x.token))||{};
@@ -515,7 +517,7 @@ async function findBuyableOptionPlan(symbol, direction, underlyingEntry, underly
       selectedExpiry=best.expiry;
       selectedPremiumCap=best.premiumCap;
     }
-    if(!best) return {available:false,reason:'No live CE/PE within the ₹'+capitalBudget+' one-lot budget passed live quote/OI/volume and Delta ≥0.35 with Theta <10 across the next four active expiries.',expiry,atm,optionType,expiriesScanned:expiriesToScan};
+    if(!best) return {available:false,reason:'No live CE/PE within the ₹'+capitalBudget+' one-lot budget passed live quote/OI/volume and Delta ≥0.35 with Theta <10 across the next two active expiries.',expiry,atm,optionType,expiriesScanned:expiriesToScan};
 
     const stopPoints=Math.abs(Number(underlyingEntry)-Number(underlyingSl));
     const targetPoints1=Math.abs(Number(target1)-Number(underlyingEntry));
@@ -570,6 +572,16 @@ async function findBuyableOptionPlan(symbol, direction, underlyingEntry, underly
   }
 }
 
+async function findBuyableOptionPlanCoalesced(symbol,direction,underlyingEntry,underlyingSl,target1,target2){
+  const riskDistance=Math.abs(Number(underlyingEntry)-Number(underlyingSl));
+  const key=[String(symbol||'NIFTY').toUpperCase(),String(direction||'').toUpperCase(),
+    Number.isFinite(riskDistance)?riskDistance.toFixed(1):'NA'].join('|');
+  const existing=optionPlanScanInflight.get(key);
+  if(existing) return await existing;
+  const job=findBuyableOptionPlan(symbol,direction,underlyingEntry,underlyingSl,target1,target2);
+  optionPlanScanInflight.set(key,job);
+  try{return await job;}finally{if(optionPlanScanInflight.get(key)===job)optionPlanScanInflight.delete(key);}
+}
 const newsCache=new Map();
 const globalCache={at:0,data:null};
 const eventCalendarCache={at:0,rows:[],connected:false,source:null,promise:null};
@@ -2155,7 +2167,7 @@ app.get('/api/phase10/prediction',async(req,res)=>{
       // Search for the actual executable contract using underlying levels even if the
       // arbitrary ATM Greek snapshot is unsafe. The selected contract must pass its own
       // live quote, liquidity, expiry, premium and Delta/Theta filters before approval.
-      optionPlan=await boundedFeed(findBuyableOptionPlan(symbol,optionAction,prediction.candidatePlan.entry,prediction.candidatePlan.sl,prediction.candidatePlan.target1,prediction.candidatePlan.target2),{available:false,reason:'Option contract scan exceeded its response deadline; no trade.'},'option-plan',20000);
+      optionPlan=await boundedFeed(findBuyableOptionPlanCoalesced(symbol,optionAction,prediction.candidatePlan.entry,prediction.candidatePlan.sl,prediction.candidatePlan.target1,prediction.candidatePlan.target2),{available:false,reason:'Option contract scan exceeded its response deadline; no trade.'},'option-plan',20000);
       if(!optionPlan.available) optionPlan={...optionPlan,threshold:70,reason:optionPlan.reason||'No suitable live contract passed the premium/Greek/liquidity filters.'};
       if(optionPlan.available){
         const selectedDelta=optionPlan.optionType==='PE'?-Math.abs(Number(optionPlan.delta)):Math.abs(Number(optionPlan.delta));

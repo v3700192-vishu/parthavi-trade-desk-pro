@@ -114,6 +114,14 @@ function renderFreeAdvisorForTest(prediction, response = {}) {
   return nodes;
 }
 
+test("candidate contract scanner is single-flight, parallelizes independent quote/Greek reads, and has a bounded expiry scan", () => {
+  const server = readFileSync(path.join(root, "server.js"), "utf8");
+  assert.ok(server.includes("const optionPlanScanInflight=new Map();"));
+  assert.ok(server.includes("findBuyableOptionPlanCoalesced"));
+  assert.ok(server.includes("Promise.all([quoteInstruments(contracts),liveOptionGreeks(symbol,scanExpiry)])"));
+  assert.ok(server.includes(")].slice(0,2);"));
+  assert.ok(server.includes("boundedFeed(findBuyableOptionPlanCoalesced"));
+});
 test("staged contract visibility thresholds are distinct and the Command Center requires 90% plus confirmation", () => {
   assert.ok(html.includes("const PTD_FINAL_PLAN_CONFIDENCE=70;"));
   assert.ok(html.includes("const PTD_ADVISOR_CONFIDENCE=80;"));
