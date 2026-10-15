@@ -266,7 +266,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
     marketOpen && candidatePlan.available && candlesVerified && hasVerifiedVolume && hasVix && Number(vix)>=12 && Number(vix)<=22 &&
     newsVerified && globalVerified && optionFlowVerified && events?.connected && !events?.unverifiedTimes && !events?.unverifiedHighImpact &&
     !events?.hardBlock && !events?.eventDayBlock &&
-    required.filter(k=>!['greeks','trigger','eventSafe','momentum','options'].includes(k)).every(k=>confirmations[k]);
+    required.filter(k=>!['greeks','trigger','eventSafe','momentum','options','volume'].includes(k)).every(k=>confirmations[k]);
   const reasoning = signalState==='CONFIRMED'
     ? `${prediction} structure aligns across 1H/15M/5M with ${confirmedCount}/${required.length} confirmation checks; VIX/ADX/volume/event filters passed and minimum RR is 1:2.`
     : signalState==='WATCH' && modelConfidence>=opportunityConfidenceThreshold
