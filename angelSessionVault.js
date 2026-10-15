@@ -26,7 +26,7 @@ function runPowerShell(script, input) {
 
 function saveSecureRefreshToken(token, filePath = defaultVaultPath()) {
   if (process.platform !== "win32" || !String(token ?? "")) return false;
-  const script = "$ErrorActionPreference='Stop'; Import-Module Microsoft.PowerShell.Security -ErrorAction Stop; $plain=[Console]::In.ReadToEnd(); if([String]::IsNullOrWhiteSpace($plain)){throw 'Empty input'}; $secure=ConvertTo-SecureString -String $plain -AsPlainText -Force; [Console]::Out.Write((ConvertFrom-SecureString -SecureString $secure))";
+  const script = "$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.Security -ErrorAction Stop; $plain=[Console]::In.ReadToEnd(); if([String]::IsNullOrWhiteSpace($plain)){throw 'Empty input'}; $bytes=[System.Text.Encoding]::UTF8.GetBytes($plain); $cipher=[System.Security.Cryptography.ProtectedData]::Protect($bytes,$null,[System.Security.Cryptography.DataProtectionScope]::CurrentUser); [Console]::Out.Write([Convert]::ToBase64String($cipher))";
   const encrypted = runPowerShell(script, String(token));
   if (!encrypted) throw new Error("Windows DPAPI did not return an encrypted refresh token.");
   const dir = path.dirname(filePath);
@@ -46,7 +46,7 @@ function loadSecureRefreshToken(filePath = defaultVaultPath()) {
   if (process.platform !== "win32" || !existsSync(filePath)) return null;
   const encrypted = readFileSync(filePath, "utf8").trim();
   if (!encrypted) return null;
-  const script = "$ErrorActionPreference='Stop'; Import-Module Microsoft.PowerShell.Security -ErrorAction Stop; $cipher=[Console]::In.ReadToEnd().Trim(); $secure=ConvertTo-SecureString -String $cipher -ErrorAction Stop; $plain=[System.Net.NetworkCredential]::new('', $secure).Password; [Console]::Out.Write($plain)";
+  const script = "$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.Security -ErrorAction Stop; $cipherText=[Console]::In.ReadToEnd().Trim(); $plain=$null; try { $protected=[Convert]::FromBase64String($cipherText); $raw=[System.Security.Cryptography.ProtectedData]::Unprotect($protected,$null,[System.Security.Cryptography.DataProtectionScope]::CurrentUser); $plain=[System.Text.Encoding]::UTF8.GetString($raw) } catch { $secure=ConvertTo-SecureString -String $cipherText -ErrorAction Stop; $plain=[System.Net.NetworkCredential]::new('', $secure).Password }; [Console]::Out.Write($plain)";
   const token = runPowerShell(script, encrypted);
   return token || null;
 }
