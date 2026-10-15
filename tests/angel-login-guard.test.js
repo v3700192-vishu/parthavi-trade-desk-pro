@@ -12,7 +12,8 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const server = readFileSync(join(root, 'server.js'), 'utf8');
 const html = readFileSync(join(root, 'public', 'index.html'), 'utf8');
 
-test('Windows DPAPI vault encrypts and restores a dummy token without storing plaintext', { skip: process.platform !== 'win32' }, () => {
+// The hosted Windows Actions runner's disposable profile can hang inside DPAPI; exercise this OS-bound integration test on the actual Kiran PC instead.
+test('Windows DPAPI vault encrypts and restores a dummy token without storing plaintext', { skip: process.platform !== 'win32' || process.env.GITHUB_ACTIONS === 'true' }, () => {
   const dir = mkdtempSync(join(os.tmpdir(), 'ptd-vault-test-'));
   const file = join(dir, 'refresh.dpapi');
   const feedFile = join(dir, 'feed.dpapi');
