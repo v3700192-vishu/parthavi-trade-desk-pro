@@ -9,7 +9,7 @@
     "desktop:start": "electron .",
     "desktop:build": "electron-builder --win --x64",
     "test": "node --test tests/*.test.js",
-    "check": "node --check server.js && node --check marketDataProviders.js && node --check angelone.js && node --check liveIndexCandles.js && node --check fusion.js && node --check phase12.js && node --check prediction.js && node --check riskGuard.js && node --check marketFreshness.js && node --check contractAnalysis.js && node --check predictionReport.js && node --check electron/main.cjs && node --check public/sw.js && node --check public/mobile-haptics.js"
+    "check": "node --check server.js && node --check marketDataProviders.js && node --check angelone.js && node --check liveIndexCandles.js && node --check fusion.js && node --check phase12.js && node --check prediction.js && node --check riskGuard.js && node --check marketFreshness.js && node --check angelSessionVault.js && node --check contractAnalysis.js && node --check predictionReport.js && node --check electron/main.cjs && node --check public/sw.js && node --check public/mobile-haptics.js"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
@@ -39,6 +39,7 @@
       "prediction.js",
       "riskGuard.js",
       "marketFreshness.js",
+      "angelSessionVault.js",
       "contractAnalysis.js",
       "predictionReport.js",
       "data/**/*",

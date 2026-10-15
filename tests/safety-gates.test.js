@@ -43,6 +43,32 @@ test("a high-impact release outside NSE hours does not block the full Indian ses
   assert.equal(result.eventDayBlock, false);
 });
 
+test("a non-Indian high-impact release during NSE hours does not block the whole session", () => {
+  const day = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit"
+  }).format(new Date());
+  const result = analyzeEvents([{
+    title: "UK GDP m/m",
+    country: "GBP",
+    risk: "HIGH",
+    time: day + "T13:00:00+05:30"
+  }]);
+  assert.equal(result.eventDayBlock, false);
+});
+
+test("an explicitly India-specific high-impact event during NSE hours blocks the session", () => {
+  const day = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit"
+  }).format(new Date());
+  const result = analyzeEvents([{
+    title: "CPI inflation",
+    country: "INR",
+    risk: "HIGH",
+    time: day + "T13:00:00+05:30"
+  }]);
+  assert.equal(result.eventDayBlock, true);
+});
+
 test("a high-impact release during NSE hours keeps the session blocked", () => {
   const day = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit"
@@ -63,6 +89,7 @@ test("fusion cannot pass when event safety was not explicitly verified", () => {
   assert.equal(fuse(base).hardGate, true);
   assert.equal(fuse({ ...base, feeds: { ...base.feeds, eventSafe: false } }).hardGate, true);
   assert.equal(fuse({ ...base, feeds: { ...base.feeds, eventSafe: true } }).hardGate, false);
+  assert.equal(fuse({ ...base, feeds: { ...base.feeds, eventSafe: true, eventDayBlock: true } }).hardGate, true);
 });
 
 test("prediction cannot emit a trade when option Greeks are missing", () => {
@@ -85,6 +112,38 @@ test("prediction cannot emit a trade when option Greeks are missing", () => {
   assert.equal(prediction.confirmations.greeks, false);
   assert.equal(prediction.delta, null);
   assert.equal(prediction.finalPlan.available, false);
+});
+
+test("unsafe ATM Greeks allow a scan for a separately verified contract, but never allow a trade by themselves", () => {
+  const input = {
+    h1: { trend: "BULLISH", last: 101, ema20: 100, ema50: 99 },
+    m15: { trend: "BULLISH", last: 101, ema20: 100, ema50: 99 },
+    m5: { trend: "BULLISH", candle: "BULLISH CANDLE", candleSource: "ANGEL", last: 101, ema20: 100, ema50: 99,
+      rsi: 60, macd: { hist: 1 }, adx: 25, atr: 2, vwap: 100,
+      volumeRatio10d: 1.6, volumeSource: "NIFTY FUTURES 5M test fixture" },
+    rows5: [{ t: new Date(Date.now() - 5 * 60_000).toISOString(), o: 100, h: 102, l: 99, c: 101, v: 100 }],
+    marketOpen: true,
+    vix: 15,
+    news: { connected: true, freshCount: 5, bias: "BULLISH" },
+    global: { connected: true, freshInputs: 4, bias: "RISK-ON" },
+    options: { connected: true, pcr: 1.1, ceoi: 100, peoi: 110, theta: -14, delta: 0.5 },
+    events: { connected: true, eventSafe: true }
+  };
+  const waiting = buildPrediction(input);
+  assert.equal(waiting.action, "NO TRADE");
+  assert.equal(waiting.confirmations.greeks, false);
+  assert.equal(waiting.contractScanEligible, true);
+  assert.equal(waiting.candidatePlan.available, true);
+
+  const selected = buildPrediction({
+    ...input,
+    options: { ...input.options, theta: -4, delta: 0.5,
+      greekRisk: { status: "PASS", message: "Selected live contract passed safeguards." } }
+  });
+  assert.equal(selected.confirmations.greeks, true);
+  assert.equal(selected.signalState, "CONFIRMED");
+  assert.equal(selected.action, "CALL");
+  assert.equal(selected.finalPlan.available, true);
 });
 
 test("prediction returns NO TRADE when verified futures volume is missing", () => {
@@ -166,6 +225,26 @@ test("only a verified option-premium backtest with fees and slippage may affect 
     }
   });
   assert.ok(verifiedOptionBacktest.modelConfidence > base.modelConfidence);
+});
+
+test("completed five-minute broker candle freshness is measured from bar close", () => {
+  const latestTime = new Date(Date.now() - 12 * 60_000).toISOString();
+  const prediction = buildPrediction({
+    h1: { trend: "BULLISH", last: 101, ema20: 100, ema50: 99 },
+    m15: { trend: "BULLISH", last: 101, ema20: 100, ema50: 99 },
+    m5: { trend: "BULLISH", candle: "BULLISH CANDLE", candleSource: "ANGEL", last: 101,
+      ema20: 100, ema50: 99, rsi: 60, macd: { hist: 1 }, adx: 25, atr: 2, vwap: 100,
+      volumeRatio10d: 1.6, volumeSource: "NIFTY FUTURES 5M fixture" },
+    rows5: [{ t: latestTime, o: 100, h: 102, l: 99, c: 101, v: 100 }],
+    marketOpen: true, vix: 15,
+    news: { connected: true, freshCount: 5, bias: "BULLISH" },
+    global: { connected: true, freshInputs: 4, bias: "RISK-ON" },
+    options: { connected: true, pcr: 1.1, ceoi: 100, peoi: 110, theta: -4, delta: 0.5 },
+    events: { connected: true }
+  });
+  assert.equal(prediction.candlesFresh, true);
+  assert.equal(prediction.candleAgeMinutes, 7);
+  assert.equal(prediction.candlesVerified, true);
 });
 
 test("fresh fallback candles cannot satisfy the broker-verified entry gate", () => {

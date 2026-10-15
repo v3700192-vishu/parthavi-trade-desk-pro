@@ -15,6 +15,13 @@ function exchangeTickAgeMs(payload, now = Date.now()) {
   const timestamp = exchangeTimestampMs(payload);
   return timestamp == null ? null : now - timestamp;
 }
+// Candle APIs normally timestamp each bar at its start. Age a completed 5-minute
+// candle from its close time, not its open timestamp, to avoid false stale-feed blocks.
+function completedCandleAgeMs(timestamp, intervalMs = 300000, now = Date.now()) {
+  const stamp = typeof timestamp === "number" ? timestamp : Date.parse(String(timestamp ?? ""));
+  const interval = Number(intervalMs);
+  return Number.isFinite(stamp) && Number.isFinite(interval) && interval >= 0 ? now - (stamp + interval) : null;
+}
 function isFreshExchangeTick(payload, now = Date.now(), maxAgeMs = 120000, maxFutureMs = 15000) {
   const age = exchangeTickAgeMs(payload, now);
   const rawPrice = payload?.last_traded_price ?? payload?.ltp ?? payload?.lastTradedPrice;
@@ -22,4 +29,4 @@ function isFreshExchangeTick(payload, now = Date.now(), maxAgeMs = 120000, maxFu
   return age != null && age <= maxAgeMs && age >= -maxFutureMs &&
     rawPrice != null && rawPrice !== "" && Number.isFinite(price) && price > 0;
 }
-export { exchangeTimestampMs, exchangeTickAgeMs, isFreshExchangeTick };
+export { exchangeTimestampMs, exchangeTickAgeMs, completedCandleAgeMs, isFreshExchangeTick };

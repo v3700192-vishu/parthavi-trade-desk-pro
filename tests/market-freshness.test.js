@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { exchangeTimestampMs, exchangeTickAgeMs, isFreshExchangeTick } from "../marketFreshness.js";
+import { exchangeTimestampMs, exchangeTickAgeMs, completedCandleAgeMs, isFreshExchangeTick } from "../marketFreshness.js";
 import { productionReadiness } from "../phase12.js";
 const NOW = 1_800_000_000_000;
 test("accepts a valid recent exchange timestamp in milliseconds", () => {
@@ -8,6 +8,11 @@ test("accepts a valid recent exchange timestamp in milliseconds", () => {
   assert.equal(exchangeTimestampMs(tick), NOW - 60_000);
   assert.equal(exchangeTickAgeMs(tick, NOW), 60_000);
   assert.equal(isFreshExchangeTick(tick, NOW), true);
+});
+test("measures five-minute candle freshness from interval close, not candle-open time", () => {
+  const candleOpen = NOW - 10 * 60_000;
+  assert.equal(completedCandleAgeMs(candleOpen, 5 * 60_000, NOW), 5 * 60_000);
+  assert.equal(completedCandleAgeMs("invalid", 5 * 60_000, NOW), null);
 });
 test("accepts epoch seconds and ISO timestamps", () => {
   const seconds = { exchange_timestamp: String(Math.floor((NOW - 30_000) / 1000)), ltp: 22520 };

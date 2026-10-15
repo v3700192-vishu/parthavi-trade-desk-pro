@@ -797,8 +797,7 @@ body.chart-fullscreen-open>.app>.bottom{
   <div class="grid2">
     <div class="strategy-box"><small>Ticks • Last 60 sec</small><b id="tickMonitorTotal">—</b><span id="tickMonitorMarket">Checking market session…</span></div>
     <div class="strategy-box"><small>Instruments with ticks</small><b id="tickMonitorInstruments">—</b><span id="tickMonitorSocket">WebSocket status unknown</span></div>
-  </div>
-  <div class="check"><span>Last received tick (server)</span><span id="tickMonitorLast" class="neutral">—</span></div>
+  </div>  <div class="check"><span>Last received tick (server)</span><span id="tickMonitorLast" class="neutral">—</span></div>
   <div style="overflow-x:auto;margin-top:10px"><table style="width:100%;border-collapse:collapse;min-width:520px"><thead><tr><th style="text-align:left;padding:8px">Instrument</th><th style="text-align:left;padding:8px">Last tick age</th><th style="text-align:right;padding:8px">Ticks / 60s</th><th style="text-align:right;padding:8px">LTP</th><th style="text-align:left;padding:8px">Status</th></tr></thead><tbody id="tickMonitorRows"><tr><td colspan="5" style="padding:10px">Waiting for feed diagnostics…</td></tr></tbody></table></div>
   <div class="finder-note" id="tickMonitorNote">Tick counts use actual WebSocket price updates, not heartbeat pings. Market-closed periods can correctly show zero new ticks.</div>
   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px"><button class="btn" type="button" id="tickMonitorRefresh">↻ Refresh feed status</button><span class="finder-note" id="tickMonitorChecked">Not checked yet</span></div>
@@ -1597,8 +1596,7 @@ function renderDecision(d){
    d.oi?.support!=null?`S OI ${d.oi.support}`:''
  ].filter(Boolean).join(' • ');
  $('decisionReason').textContent=(d.reason||'Waiting for verified data.')+(diag?' | '+diag:'');
- const c=action==='CALL'?'bullish':action==='PUT'?'bearish':'neutral'; $('decision').className=c; $('action').className=c;
- const map={m1h:'trend1h',m15:'setup15m',m5:'trigger5m',ema:'ema',rsi:'rsi',macd:'macd',adx:'adx',vwap:'vwap',pa:'priceAction',volume:'volume',atr:'atr'};
+ const c=action==='CALL'?'bullish':action==='PUT'?'bearish':'neutral'; $('decision').className=c; $('action').className=c; const map={m1h:'trend1h',m15:'setup15m',m5:'trigger5m',ema:'ema',rsi:'rsi',macd:'macd',adx:'adx',vwap:'vwap',pa:'priceAction',volume:'volume',atr:'atr'};
  for(const [id,k] of Object.entries(map)) paintSignal(id,d[k]??'WAIT');
  paintSignal('why1',d.trend1h??'WAIT');paintSignal('why15',d.setup15m??'WAIT');paintSignal('why5',d.trigger5m??'WAIT');
  paintSignal('whyMom',d.momentum??'WAIT');paintSignal('whyOI',d.options??'WAIT');paintSignal('whyNews',d.news??'WAIT');
@@ -2057,7 +2055,7 @@ const ptdPredictionNotice={key:null,booted:false}; window.__notifyAlways=('Notif
 function announcePrediction(p){
   const pred=String(p?.prediction||'NO TRADE').toUpperCase(), act=String(p?.action||'NO TRADE').toUpperCase(), state=String(p?.signalState||'LOCKED').toUpperCase();
   const displayAct=state==='WATCH'?(p?.watchAction||(pred==='BULLISH'?'CE WATCH':pred==='BEARISH'?'PE WATCH':'NO TRADE')):act;
-  const contractReady=!!p?.optionPlan?.available && Number(p?.modelConfidence)>=78;
+  const contractReady=!!p?.optionPlan?.available && p?.optionPlan?.candidateOnly!==true && String(p?.signalState||'').toUpperCase()==='CONFIRMED' && ['CALL','PUT'].includes(String(p?.action||'').toUpperCase()) && Number(p?.modelConfidence)>=78 && Number(p?.confirmationPct)>=80 && p?.feedComplete===true && p?.exchangeTickVerified===true;
   const key=pred+'|'+act+'|'+state+'|'+(contractReady?'CONTRACT_READY':'');
   if(!ptdPredictionNotice.booted){ptdPredictionNotice.booted=true;ptdPredictionNotice.key=key;return}
   if(!key||key===ptdPredictionNotice.key)return;
@@ -2338,12 +2336,15 @@ function renderFreeAdvisor(p,resp={}){
   const direction=String(p?.prediction||'NEUTRAL').toUpperCase();
   const reasons=Array.isArray(p?.noTradeReasons)?p.noTradeReasons.filter(Boolean):[];
   const marketClosed=resp?.mode==='OFF_SESSION_FAST_PATH'||resp?.health?.marketOpen===false||p?.marketOpen===false;
-  const strictConfirmed=!marketClosed&&state==='CONFIRMED'&&['CALL','PUT'].includes(action)&&plan.available===true
+  const strictConfirmed=!marketClosed&&state==='CONFIRMED'&&['CALL','PUT'].includes(action)&&plan.available===true&&plan.candidateOnly!==true
     &&p?.exchangeTickVerified===true&&p?.feedComplete===true
     &&Number(p?.modelConfidence)>=78&&Number(p?.confirmationPct)>=80;
-  const watchOnly=!strictConfirmed&&!marketClosed&&state==='WATCH';
+  const directionalConfidence=Number(p?.directionalConfidence??p?.modelConfidence)||0;
+  const optionConfidence=plan.candidateOnly===true?directionalConfidence:Number(p?.modelConfidence??directionalConfidence)||0;
+  const watchOnly=!strictConfirmed&&!marketClosed&&state==='WATCH'&&plan.candidateOnly!==true&&optionConfidence>=78;
   const gatedConfirmation=!strictConfirmed&&!marketClosed&&state==='CONFIRMED';
-  const hasCandidate=plan.available===true&&(strictConfirmed||watchOnly);
+  const candidatePreview=!strictConfirmed&&!marketClosed&&p?.exchangeTickVerified===true&&plan.available===true&&optionConfidence>=78&&(plan.candidateOnly===true||state!=='WATCH');
+  const hasCandidate=plan.available===true&&(strictConfirmed||watchOnly||candidatePreview);
   const decision=$('freeAdvisorDecision');
   const reason=$('freeAdvisorReason');
   const stateBadge=$('freeAdvisorState');
@@ -2375,6 +2376,12 @@ function renderFreeAdvisor(p,resp={}){
     reason.textContent='The direction may look confirmed, but the live tick, feed completeness, confidence/confirmation threshold or verified option contract is missing. No buy recommendation is allowed.';
     stateBadge.textContent='SAFETY GATE';stateBadge.className='badge danger';
     status.textContent='LOCKED';status.className='stcc-badge neutral';
+  }else if(candidatePreview){
+    decision.textContent='NO TRADE • CONTRACT CANDIDATE';
+    decision.className='stcc-decision neutral';
+    reason.textContent=`Directional/setup confidence ${directionalConfidence.toFixed(0)}% has crossed 78%, so the live ${plan.optionType||'CE/PE'} candidate is shown for review only. Final model confidence is ${Number(p?.modelConfidence||0).toFixed(0)}%; Greek status is ${plan.greekStatus||'UNVERIFIED'}. The signal stays NO TRADE until the selected contract Greeks, 5M trigger, event window and all final gates pass.`;
+    stateBadge.textContent='CANDIDATE ONLY • NO TRADE';stateBadge.className='badge danger';
+    status.textContent='SAFETY GATE LOCKED';status.className='stcc-badge neutral';
   }else{
     decision.textContent='NO TRADE • WAIT FOR SETUP';
     decision.className='stcc-decision neutral';
@@ -2384,18 +2391,18 @@ function renderFreeAdvisor(p,resp={}){
   }
   const showPlan=hasCandidate;
   if(contract)contract.textContent=showPlan?String(plan.contract||'—'):'—';
-  if(meta)meta.textContent=showPlan?`${plan.optionType||''} ${plan.strike??''} • Expiry ${plan.expiry||'—'} • Lot ${plan.lotSize??'—'}${watchOnly?' • CANDIDATE ONLY':''}`:'Only display a contract after its live checks pass';
+  if(meta)meta.textContent=showPlan?`${plan.optionType||''} ${plan.strike??''} • Expiry ${plan.expiry||'—'} • Lot ${plan.lotSize??'—'}${candidatePreview?' • ANALYSIS ONLY • NO TRADE':watchOnly?' • CANDIDATE ONLY':''} • Greeks ${plan.greekStatus||'UNVERIFIED'}`:'Only display a contract after directional confidence reaches 78% and live checks run';
   $('freeAdvisorEntry').textContent=showPlan?money(plan.entry):'—';
   $('freeAdvisorSL').textContent=showPlan?money(plan.stopLoss):'—';
   $('freeAdvisorT1').textContent=showPlan?money(plan.target1):'—';
-  $('freeAdvisorT2').textContent=showPlan?money(plan.target2):'—';
-  $('freeAdvisorConfidence').textContent=p?.modelConfidence!==null&&p?.modelConfidence!==undefined&&p?.modelConfidence!==''&&Number.isFinite(Number(p?.modelConfidence))
-    ?`${Number(p.modelConfidence).toFixed(0)}% / ${Number.isFinite(Number(p?.confirmationPct))?Number(p.confirmationPct).toFixed(0):'—'}% confirm`
+  $('freeAdvisorT2').textContent=showPlan?money(plan.target2):'—';  $('freeAdvisorConfidence').textContent=p?.modelConfidence!==null&&p?.modelConfidence!==undefined&&p?.modelConfidence!==''&&Number.isFinite(Number(p?.modelConfidence))
+    ?`${Number(p.modelConfidence).toFixed(0)}% final / ${Number.isFinite(Number(p?.directionalConfidence))?Number(p.directionalConfidence).toFixed(0)+'% directional / ':''}${Number.isFinite(Number(p?.confirmationPct))?Number(p.confirmationPct).toFixed(0):'—'}% confirm`
     :'—';
   const checks=$('freeAdvisorChecks');
   if(checks){
     if(strictConfirmed) checks.textContent=`Reason: ${p.reasoning||'Required confluence checks passed.'} • This is a rule-based recommendation, not a profit guarantee or an automatic order.`;
     else if(watchOnly) checks.textContent='Candidate details are for observation only. The system will not label this contract BUY until the final gates pass.';
+    else if(candidatePreview) checks.textContent=`Directional confidence ${directionalConfidence.toFixed(0)}% crossed 78%, so this live contract is shown for analysis only. Final confidence ${Number(p?.modelConfidence||0).toFixed(0)}%; Greek status ${plan.greekStatus||'UNVERIFIED'}. No trade unless all final safety gates pass.`;
     else checks.textContent=(reasons.slice(0,6).join(' • ')||p?.reasoning||'Waiting for verified market data, fresh exchange tick and all safety gates.');
   }
 }
@@ -2415,6 +2422,10 @@ function renderPredictionPanel(resp){
   const displayAction=state==='WATCH'?(p?.watchAction||(pred==='BULLISH'?'CE WATCH':pred==='BEARISH'?'PE WATCH':'NO TRADE')):action;
   const conf=p?.modelConfidence;
   const optionPlan=p?.optionPlan||{};
+  const directionalConfidence=Number(p?.directionalConfidence??conf)||0;
+  const optionConfidence=optionPlan?.candidateOnly===true?directionalConfidence:Number(conf??directionalConfidence)||0;
+  const optionVisible=!!optionPlan?.available&&optionConfidence>=78;
+  const candidatePreview=optionVisible&&(optionPlan?.candidateOnly===true||!['CONFIRMED','WATCH'].includes(state));
   const pct=p?.confirmationPct;
   const confirmed=p?.confirmedCount;
   const total=p?.confirmationTotal||11;
@@ -2452,9 +2463,9 @@ function renderPredictionPanel(resp){
   const er=$('p10ExpectedR'); if(er)er.textContent=optionBacktestVerified&&bt?.expectedR!=null?String(bt.expectedR)+'R':'N/A';
   const finder=$('p10TradeFinder');
   if(finder){
-    const contractLine=optionPlan?.available
-      ? ` • Contract: <b>${escapeHtml(optionPlan.contract||'—')}</b> • LTP ₹${Number(optionPlan.entry||0).toFixed(2)} • Δ ${Number(optionPlan.delta||0).toFixed(3)} • Θ ${Number(optionPlan.theta||0).toFixed(2)}`
-      : (Number(conf)>=78?' • Contract finder is checking a suitable live CE/PE.':'');
+    const contractLine=optionVisible
+      ? ` • ${optionPlan.candidateOnly?'Candidate (NO TRADE)':'Contract'}: <b>${escapeHtml(optionPlan.contract||'—')}</b> • LTP ₹${Number(optionPlan.entry||0).toFixed(2)} • Δ ${Number(optionPlan.delta||0).toFixed(3)} • Θ ${Number(optionPlan.theta||0).toFixed(2)} • Greek ${escapeHtml(optionPlan.greekStatus||'WAIT')}`
+      : (directionalConfidence>=78?' • Confidence ≥78%: checking live contract and safety gates.':'');
     finder.innerHTML=`🎯 <b>TWO-TRADE FINDER ACTIVE</b> • Confirmed opportunities today: <b id="p10OpportunityCount">0 / 2</b> • 70–77% = WATCH • ≥78% = OPTION OPPORTUNITY${contractLine} • Scanner keeps searching during the NSE session.`;
   }
   renderP10OpportunityCount();
@@ -2464,28 +2475,28 @@ function renderPredictionPanel(resp){
   try{
     const fd=$('finalPlanDirection'), fc=$('finalPlanContract'), fm=$('finalPlanContractMeta');
     const fe=$('finalPlanEntry'), fsl=$('finalPlanSL'), ft1=$('finalPlanT1'), ft2=$('finalPlanT2'), frr=$('finalPlanRR'), fn=$('finalPlanNote'), fb=$('finalPlanBar');
-    if(state==='CONFIRMED' || state==='WATCH'){
-      if(fd){fd.textContent=state==='CONFIRMED'?action:displayAction;fd.className=(displayAction==='CALL'||displayAction==='CE WATCH')?'bullish':(displayAction==='PUT'||displayAction==='PE WATCH')?'bearish':'neutral';}
-      if(fe)fe.textContent=p?.finalPlan?.entry!=null?Number(p.finalPlan.entry).toFixed(2):'—';
-      if(fsl)fsl.textContent=p?.finalPlan?.sl!=null?Number(p.finalPlan.sl).toFixed(2):'—';
-      if(ft1)ft1.textContent=p?.finalPlan?.target1!=null?Number(p.finalPlan.target1).toFixed(2):'—';
-      if(ft2)ft2.textContent=p?.finalPlan?.target2!=null?Number(p.finalPlan.target2).toFixed(2):'—';
-      if(frr)frr.textContent=p?.finalPlan?.rr1!=null?`1:${p.finalPlan.rr1} / 1:${p.finalPlan.rr2}`:'—';
+    if(state==='CONFIRMED' || state==='WATCH' || candidatePreview){
+      if(fd){fd.textContent=candidatePreview?`${optionPlan.optionType} CANDIDATE • NO TRADE`:state==='CONFIRMED'?action:displayAction;fd.className=(optionPlan.optionType==='CE'||displayAction==='CALL'||displayAction==='CE WATCH')?'bullish':(optionPlan.optionType==='PE'||displayAction==='PUT'||displayAction==='PE WATCH')?'bearish':'neutral';}
+      if(fe)fe.textContent=candidatePreview?Number(optionPlan.entry).toFixed(2):p?.finalPlan?.entry!=null?Number(p.finalPlan.entry).toFixed(2):'—';
+      if(fsl)fsl.textContent=candidatePreview?Number(optionPlan.stopLoss).toFixed(2):p?.finalPlan?.sl!=null?Number(p.finalPlan.sl).toFixed(2):'—';
+      if(ft1)ft1.textContent=candidatePreview?Number(optionPlan.target1).toFixed(2):p?.finalPlan?.target1!=null?Number(p.finalPlan.target1).toFixed(2):'—';
+      if(ft2)ft2.textContent=candidatePreview?Number(optionPlan.target2).toFixed(2):p?.finalPlan?.target2!=null?Number(p.finalPlan.target2).toFixed(2):'—';
+      if(frr)frr.textContent=candidatePreview?`1:${optionPlan.rr1} / 1:${optionPlan.rr2}`:p?.finalPlan?.rr1!=null?`1:${p.finalPlan.rr1} / 1:${p.finalPlan.rr2}`:'—';
       if(fc){
-        fc.textContent=optionPlan?.available?String(optionPlan.contract):'WAIT';
-        fc.className=optionPlan?.available?(optionPlan.optionType==='PE'?'bearish':'bullish'):'wait';
+        fc.textContent=optionVisible?String(optionPlan.contract):'WAIT';
+        fc.className=optionVisible?(optionPlan.optionType==='PE'?'bearish':'bullish'):'wait';
       }
       if(fm){
-        fm.textContent=optionPlan?.available
-          ? `${optionPlan.optionType} ${optionPlan.strike} • Premium ₹${Number(optionPlan.entry).toFixed(2)} • Δ ${Number(optionPlan.delta).toFixed(3)} • Θ ${Number(optionPlan.theta).toFixed(2)} • ${state==='CONFIRMED'?'CONFIRMED':'WAIT FOR 5M TRIGGER'}`
-          : (Number(conf)>=78?'No suitable live contract yet • keep scanning':'Contract selection starts at 78% confidence');
+        fm.textContent=optionVisible
+          ? `${optionPlan.optionType} ${optionPlan.strike} • Expiry ${optionPlan.expiry} • Premium ₹${Number(optionPlan.entry).toFixed(2)} • Δ ${Number(optionPlan.delta).toFixed(3)} • Θ ${Number(optionPlan.theta).toFixed(2)} • ${candidatePreview?'ANALYSIS ONLY • NO TRADE':optionPlan.candidateOnly?'GREEK CAUTION':'WATCH / CONFIRMED'}`
+          : (directionalConfidence>=78?'Confidence ≥78%; scanning live contracts':'Contract selection starts at 78% confidence');
       }
       if(fn){
-        fn.textContent=optionPlan?.available
-          ? `Underlying trigger / SL / T1 / T2 shown above. Option premium plan: Entry ₹${Number(optionPlan.entry).toFixed(2)} • SL ₹${Number(optionPlan.stopLoss).toFixed(2)} • T1 ₹${Number(optionPlan.target1).toFixed(2)} • T2 ₹${Number(optionPlan.target2).toFixed(2)} • R:R 1:${optionPlan.rr1}/1:${optionPlan.rr2}. Live execution remains locked until the prediction becomes CONFIRMED.`
-          : 'No live contract passed the current threshold/filters. The directional scanner remains active.';
+        fn.textContent=optionVisible
+          ? `${candidatePreview?'Candidate only. ':'Contract candidate. '}Premium Entry ₹${Number(optionPlan.entry).toFixed(2)} • SL ₹${Number(optionPlan.stopLoss).toFixed(2)} • T1 ₹${Number(optionPlan.target1).toFixed(2)} • T2 ₹${Number(optionPlan.target2).toFixed(2)} • R:R 1:${optionPlan.rr1}/1:${optionPlan.rr2}. Delta ${Number(optionPlan.delta).toFixed(3)}, Theta ${Number(optionPlan.theta).toFixed(2)} (${optionPlan.greekStatus||'UNVERIFIED'}). Directional confidence ${directionalConfidence.toFixed(0)}%; final confidence ${Number(conf||0).toFixed(0)}%. Live execution remains OFF and all failed gates remain NO TRADE.`
+          : 'No contract is displayed below the 78% directional-confidence threshold. The live scanner continues checking contracts and safety gates.';
       }
-      if(fb)fb.textContent=state==='CONFIRMED'?'CONFIRMED TRADE PLAN':'WATCH • CONTRACT READY / WAIT FOR 5M TRIGGER';
+      if(fb)fb.textContent=candidatePreview?'NO TRADE • CANDIDATE ONLY':state==='CONFIRMED'?'CONFIRMED TRADE PLAN':'WATCH • WAIT FOR FINAL GATES';
     }else{
       if(fd){fd.textContent='NO TRADE';fd.className='neutral';}
       if(fc){fc.textContent='—';fc.className='neutral';}
@@ -2495,7 +2506,7 @@ function renderPredictionPanel(resp){
       if(fb)fb.textContent='WAIT • SCANNING';
     }
 
-    if(optionPlan?.available && (state==='WATCH'||state==='CONFIRMED')){
+    if(optionVisible && optionPlan?.available && optionPlan.candidateOnly!==true && (state==='WATCH'||state==='CONFIRMED')){
       window.selectedContract={
         contract:optionPlan.contract,symbol:optionPlan.symbol,token:optionPlan.token,
         underlying:optionPlan.underlying,expiry:optionPlan.expiry,optionType:optionPlan.optionType,
@@ -3183,8 +3194,7 @@ document.addEventListener('DOMContentLoaded',()=>{
           const fresh=age!=null&&age<60;
           const status=age==null?'NO TICKS':fresh?'FRESH':'STALE';
           const color=age==null?'var(--danger,#ef4444)':fresh?'var(--success,#22c55e)':'var(--warning,#f59e0b)';
-          const ltp=x.ltp==null?'—':(Number.isFinite(Number(x.ltp))?Number(x.ltp).toFixed(2):'—');
-          return '<tr style="border-top:1px solid var(--line,rgba(128,128,128,.2))"><td style="padding:8px"><b>'+esc(x.symbol)+'</b><div style="font-size:11px;opacity:.7">'+esc(x.exchange)+' · '+esc(x.token)+'</div></td><td style="padding:8px">'+esc(fmtAge(age))+'</td><td style="padding:8px;text-align:right">'+Number(x.ticksLast60Sec||0)+'</td><td style="padding:8px;text-align:right">'+esc(ltp)+'</td><td style="padding:8px;color:'+color+';font-weight:700">'+status+'</td></tr>';
+          const ltp=x.ltp==null?'—':(Number.isFinite(Number(x.ltp))?Number(x.ltp).toFixed(2):'—');          return '<tr style="border-top:1px solid var(--line,rgba(128,128,128,.2))"><td style="padding:8px"><b>'+esc(x.symbol)+'</b><div style="font-size:11px;opacity:.7">'+esc(x.exchange)+' · '+esc(x.token)+'</div></td><td style="padding:8px">'+esc(fmtAge(age))+'</td><td style="padding:8px;text-align:right">'+Number(x.ticksLast60Sec||0)+'</td><td style="padding:8px;text-align:right">'+esc(ltp)+'</td><td style="padding:8px;color:'+color+';font-weight:700">'+status+'</td></tr>';
         }).join('');
       }
       if(state){state.textContent=d.marketOpen?(d.websocket&&d.ticksLast60Sec>0?'LIVE TICKS':'WAITING FOR TICKS'):(d.websocket?'CONNECTED · MARKET CLOSED':'MARKET CLOSED');state.className='badge '+(d.marketOpen&&d.websocket&&d.ticksLast60Sec>0?'ok':'warn');}
@@ -3288,11 +3298,14 @@ document.addEventListener('DOMContentLoaded',()=>{
       if(src){src.textContent=srcLabel;src.className='badge '+(verified?'ok':'warn');}
       const indexCfg=backup.index||{};
       const futCfg=backup.futures||{};
-      const backupReady=indexCfg.configured===true&&futCfg.configured===true;
+      const backupError=String(history.diagnostic?.fallbackError||'');
+      const indexBackupVerified=history.verified===true&&String(history.baseSource||'').toUpperCase()==='UPSTOX_HISTORICAL';
+      const futuresBackupVerified=volume.verified===true&&String(volume.source||'').toUpperCase().startsWith('UPSTOX FUTURES');
+      const backupVerified=indexCfg.configured===true&&futCfg.configured===true&&indexBackupVerified&&futuresBackupVerified;
       const alt=$('dhAltProvider');
       if(alt){
-        alt.textContent=backupReady?'INDEX + FUTURES READY':(!indexCfg.tokenConfigured?'TOKEN NEEDED':(!indexCfg.instrumentKeyConfigured?'INDEX KEY NEEDED':(!futCfg.instrumentKeyConfigured?'FUTURES KEY NEEDED':'CONFIG INCOMPLETE')));
-        alt.className='badge '+(backupReady?'ok':'warn');
+        alt.textContent=backupVerified?'INDEX + FUTURES VERIFIED':(!indexCfg.tokenConfigured?'TOKEN NEEDED':(!indexCfg.instrumentKeyConfigured?'INDEX KEY NEEDED':(!futCfg.instrumentKeyConfigured?'FUTURES KEY NEEDED':(backupError?'BACKUP ERROR':'CONFIGURED — NOT VERIFIED'))));
+        alt.className='badge '+(backupVerified?'ok':(backupError?'danger':'warn'));
       }
       const detail=$('dhHistoryDetail');
       if(detail){
@@ -3316,6 +3329,87 @@ document.addEventListener('DOMContentLoaded',()=>{
     setInterval(refresh,12000);
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();});
   });
+})();
+</script>
+<script id="GLOBAL_RISK_LIVE_BINDING_V1">
+(function(){
+  'use strict';
+  const el=document.getElementById('globalRisk');
+  if(!el)return;
+  let busy=false;
+
+  function showWait(reason){
+    el.textContent='WAIT';
+    el.className='wait';
+    el.style.color='#ffcf67';
+    el.style.fontSize='clamp(11px,1.05vw,14px)';
+    el.dataset.globalRiskState='WAIT';
+    el.setAttribute('aria-label','Global risk is waiting for verified inputs');
+    el.title=String(reason||'Global risk inputs are not verified yet. This is not a trade signal.');
+  }
+
+  async function refreshGlobalRisk(){
+    if(busy||document.hidden)return;
+    busy=true;
+    try{
+      const response=await fetch('/api/global?ts='+Date.now(),{
+        cache:'no-store',
+        headers:{'Cache-Control':'no-cache','Pragma':'no-cache'},
+        signal:AbortSignal.timeout(7000)
+      });
+      const payload=await response.json();
+      if(!response.ok)throw new Error(payload?.error||('HTTP '+response.status));
+
+      const strategy=payload?.strategy||{};
+      const freshInputs=Number(strategy.freshInputs||0);
+      const score=Number(strategy.score);
+      const bias=String(strategy.bias||'WAIT').trim().toUpperCase();
+      const allowed=['RISK-ON','RISK-OFF','MIXED'];
+
+      if(payload.connected!==true||strategy.connected!==true||freshInputs<1||
+         !Number.isFinite(score)||!allowed.includes(bias)){
+        showWait(strategy.reason||'No fresh verified global-market inputs are available.');
+        return;
+      }
+
+      const checkedAt=payload.checkedAt?new Date(payload.checkedAt):null;
+      if(checkedAt&&!Number.isNaN(checkedAt.getTime())&&Date.now()-checkedAt.getTime()>120000){
+        showWait('Global-risk response is older than 2 minutes. Waiting for a fresh server check.');
+        return;
+      }
+
+      const scoreText=(score>0?'+':'')+score.toFixed(1);
+      const color=bias==='RISK-ON'?'#21e6a1':bias==='RISK-OFF'?'#ff5f80':'#ffcf67';
+      el.textContent=bias+' '+scoreText;
+      el.className=bias==='RISK-ON'?'global-risk-on':bias==='RISK-OFF'?'global-risk-off':'global-risk-mixed';
+      el.style.color=color;
+      el.style.fontSize='clamp(11px,1.05vw,14px)';
+      el.dataset.globalRiskState=bias;
+      const live=Number(strategy.liveInputs||0);
+      const delayed=Number(strategy.delayedInputs||0);
+      const timeText=checkedAt&&!Number.isNaN(checkedAt.getTime())
+        ? checkedAt.toLocaleString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',second:'2-digit'})
+        : 'time unavailable';
+      el.setAttribute('aria-label','Global risk '+bias+', score '+scoreText+', '+freshInputs+' fresh inputs');
+      el.title='Global risk: '+bias+' ('+scoreText+') • Fresh inputs: '+freshInputs+
+        ' • Live: '+live+' • Delayed: '+delayed+' • Checked IST: '+timeText+
+        '. Secondary risk modifier only; not a standalone CALL/PUT signal. '+String(strategy.reason||'');
+    }catch(error){
+      showWait('Global risk unavailable: '+String(error?.message||'Could not verify the global-market feed')+
+        '. The app will retry automatically.');
+    }finally{
+      busy=false;
+    }
+  }
+
+  window.refreshGlobalRisk=refreshGlobalRisk;
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded',()=>{refreshGlobalRisk();setInterval(refreshGlobalRisk,15000);},{once:true});
+  }else{
+    refreshGlobalRisk();
+    setInterval(refreshGlobalRisk,15000);
+  }
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshGlobalRisk();});
 })();
 </script>
 </body>

@@ -4,13 +4,13 @@ import path from "path";
 import crypto from "crypto";
 import { createPredictionReportStore } from "./predictionReport.js";
 import { fileURLToPath } from "url";
-import { angelStatus, loginAngel, logoutAngel, ltp as angelLtp, quote as angelQuote, candles as angelCandles, searchScrip as angelSearchScrip, loadMaster, findContracts, findLightContracts, findLightFutures, findInstrumentByToken, subscribe as angelSubscribe, reconnectWebSocket as angelReconnectWebSocket, quoteInstruments, optionGreeks, getLatestTicks, getTickDiagnostics, rms as angelRms, orderBook as angelOrderBook, placeOrder as angelPlaceOrder, cancelOrder as angelCancelOrder, holdings as angelHoldings, allHoldings as angelAllHoldings, positions as angelPositions, tradeBook as angelTradeBook, modifyOrder as angelModifyOrder } from "./angelone.js";
+import { angelStatus, loginAngel, logoutAngel, restoreAngelSessionFromVault, ltp as angelLtp, quote as angelQuote, candles as angelCandles, searchScrip as angelSearchScrip, loadMaster, findContracts, findLightContracts, findLightFutures, findInstrumentByToken, subscribe as angelSubscribe, reconnectWebSocket as angelReconnectWebSocket, quoteInstruments, optionGreeks, getLatestTicks, getTickDiagnostics, rms as angelRms, orderBook as angelOrderBook, placeOrder as angelPlaceOrder, cancelOrder as angelCancelOrder, holdings as angelHoldings, allHoldings as angelAllHoldings, positions as angelPositions, tradeBook as angelTradeBook, modifyOrder as angelModifyOrder } from "./angelone.js";
 import { getLiveIndexCandles } from "./liveIndexCandles.js";
 import { normalizeNews, analyzeNews, normalizeGlobal, analyzeGlobal, analyzeEvents, fuse } from "./fusion.js";
 import { buildPrediction, backtestFiveMinute } from "./prediction.js";
 import { productionReadiness } from "./phase12.js";
 import { isFreshExchangeTick, exchangeTickAgeMs } from "./marketFreshness.js";
-import { fetchUpstoxHistoricalCandles, upstoxConfigStatus } from "./marketDataProviders.js";
+import { fetchUpstoxHistoricalCandles, shouldUseUpstoxFuturesFallback, upstoxConfigStatus } from "./marketDataProviders.js";
 import { summarizeContractMetrics } from "./contractAnalysis.js";
 import { status as phase11ProtectionStatus, evaluate as phase11Evaluate, onOrderSubmitted as phase11OnOrderSubmitted, recordOutcome as phase11RecordOutcome, resetProtection as phase11ResetProtection } from "./riskGuard.js";
 
@@ -353,7 +353,7 @@ async function fetchOptionsInternal(symbol){
     return {connected:!!liveExpiry&&!!ceMax&&!!peMax&&Number.isFinite(ceoi)&&Number.isFinite(peoi),atm,expiry:liveExpiry,ceoi:Number.isFinite(ceoi)?ceoi:null,cedoi:null,peoi:Number.isFinite(peoi)?peoi:null,pedoi:null,iv:null,pcr:Number.isFinite(ceoi)&&Number.isFinite(peoi)&&ceoi?Number((peoi/ceoi).toFixed(3)):null,
       ceMaxOi:ceMax?{strike:Number(ceMax._strike),oi:ceMax.oi,symbol:ceMax.symbol}:null,
       peMaxOi:peMax?{strike:Number(peMax._strike),oi:peMax.oi,symbol:peMax.symbol}:null,
-      resistance,support,oiInterpretation:ceMax&&peMax?`CE OI concentration ${ceMax._strike} resistance • PE OI concentration ${peMax._strike} support`:'Partial OI chain',chainCount:enriched.length};
+      resistance,support,oiInterpretation:ceMax&&peMax?`CE OI concentration ${ceMax._strike} resistance â€¢ PE OI concentration ${peMax._strike} support`:'Partial OI chain',chainCount:enriched.length};
   }catch(e){console.warn('[OPTIONS_FEED]',e?.message||e);return {connected:false,atm:null,ceoi:null,cedoi:null,peoi:null,pedoi:null,iv:null,pcr:null,error:e?.message||'Live option-chain lookup failed'};}
 }
 const optionChainCache=new Map();
@@ -450,41 +450,72 @@ async function findBuyableOptionPlan(symbol, direction, underlyingEntry, underly
       return {available:false,reason:'Live option chain, positive ATM and expiry are not verified.'};
 
     const contractExchange=String(symbol||'').toUpperCase()==='SENSEX'?'BSE':'NSE';
-    let contracts=await findLightContracts({underlying:symbol,expiry,optionType,exchange:contractExchange});
-    contracts=contracts.map(x=>({...x,_strike:Number(x.strike)/100}))
-      .filter(x=>Number.isFinite(x._strike))
-      .sort((a,b)=>Math.abs(a._strike-atm)-Math.abs(b._strike-atm))
-      .slice(0,30);
-    if(!contracts.length) return {available:false,reason:'No live option contracts found for the selected expiry.'};
-
-    const quotes=await quoteInstruments(contracts);
-    const qmap=new Map((quotes||[]).map(x=>[String(x.symbolToken),x]));
-    const greeks=await liveOptionGreeks(symbol,expiry);
-    const gmap=new Map((greeks||[]).map(x=>[String(x.optionType)+'|'+Number(x.strike).toFixed(2),x]));
-
-    const candidates=contracts.map(x=>{
-      const q=qmap.get(String(x.token))||{};
-      const entryRaw=q.ltp, entry=entryRaw==null||entryRaw===''?NaN:Number(entryRaw);
-      const key=String(optionType)+'|'+Number(x._strike).toFixed(2);
-      const g=gmap.get(key)||null;
-      const delta=g?.delta==null||g.delta===''?NaN:Math.abs(Number(g.delta));
-      const theta=g?.theta==null||g.theta===''?NaN:Math.abs(Number(g.theta));
-      const oiRaw=q.opnInterest??q.openInterest??q.oi;
-      const volumeRaw=q.tradeVolume??q.volume;
-      const oi=oiRaw==null||oiRaw===''?NaN:Number(oiRaw);
-      const volume=volumeRaw==null||volumeRaw===''?NaN:Number(volumeRaw);
-      const greekPass=Number.isFinite(delta)&&Number.isFinite(theta)&&theta<6&&delta>=0.35;
-      const premiumPass=Number.isFinite(entry)&&entry>=25&&entry<=50;
-      const liquidityPass=Number.isFinite(oi)&&oi>0&&Number.isFinite(volume)&&volume>0;
-      const liquidityScore=(Number.isFinite(oi)?Math.log10(Math.max(1,oi)):0)+(Number.isFinite(volume)&&volume>0?Math.log10(Math.max(1,volume)):0);
-      const deltaScore=Number.isFinite(delta)?Math.abs(delta-0.50):9;
-      const premiumScore=Number.isFinite(entry)?Math.abs(entry-35):99;
-      const score=(greekPass?0:100)+(premiumPass?0:100)+(liquidityPass?0:100)+deltaScore*20+premiumScore+Math.max(0,5-liquidityScore);
-      return {x,q,g,entry,delta,theta,oi,volume,score,greekPass,premiumPass,liquidityPass};
-    }).filter(v=>v.greekPass&&v.premiumPass&&v.liquidityPass&&Number.isFinite(v.entry)).sort((a,b)=>a.score-b.score);
-
-    const best=candidates[0];
-    if(!best) return {available:false,reason:'No live option in ₹25–₹50 passed verified quote, OI, traded-volume and Delta/Theta checks.',expiry,atm,optionType};
+    const allContracts=await findLightContracts({underlying:symbol,optionType,exchange:contractExchange});
+    const expiryMillis=value=>{
+      const m=String(value||'').trim().toUpperCase().match(/^(\d{1,2})([A-Z]{3})(\d{4})$/);
+      if(!m) return Number.MAX_SAFE_INTEGER;
+      const months={JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11};
+      return months[m[2]]==null?Number.MAX_SAFE_INTEGER:Date.UTC(Number(m[3]),months[m[2]],Number(m[1]));
+    };
+    const knownExpiries=[...new Set(allContracts.map(x=>String(x.expiry||'').toUpperCase()).filter(Boolean))]
+      .sort((a,b)=>expiryMillis(a)-expiryMillis(b));
+    const expiriesToScan=[...new Set([...(knownExpiries.includes(expiry)?[expiry]:[]),...knownExpiries.filter(x=>x!==expiry)])].slice(0,4);
+    if(!expiriesToScan.length) return {available:false,reason:'No current or future live option contracts found.',expiry,atm,optionType};
+    const capitalBudget=Math.max(0,numEnv('MAX_OPTION_CAPITAL_RUPEES',5000));
+    // Prefer a fully passing option at any active expiry; retain a caution-only
+    // candidate solely for the >=78% analysis panel, never as a trade-ready contract.
+    let best=null,bestCaution=null,selectedExpiry=expiry,selectedPremiumCap=0;
+    for(const scanExpiry of expiriesToScan){
+      const contracts=allContracts.filter(x=>String(x.expiry||'').toUpperCase()===scanExpiry)
+        .map(x=>({...x,_strike:Number(x.strike)/100}))
+        .filter(x=>Number.isFinite(x._strike))
+        .sort((a,b)=>Math.abs(a._strike-atm)-Math.abs(b._strike-atm))
+        .slice(0,30);
+      if(!contracts.length) continue;
+      const quotes=await quoteInstruments(contracts);
+      const qmap=new Map((quotes||[]).map(x=>[String(x.symbolToken),x]));
+      const greeks=await liveOptionGreeks(symbol,scanExpiry);
+      const gmap=new Map((greeks||[]).map(x=>[String(x.optionType)+'|'+Number(x.strike).toFixed(2),x]));
+      const candidates=contracts.map(x=>{
+        const q=qmap.get(String(x.token))||{};
+        const entryRaw=q.ltp, entry=entryRaw==null||entryRaw===''?NaN:Number(entryRaw);
+        const key=String(optionType)+'|'+Number(x._strike).toFixed(2);
+        const g=gmap.get(key)||null;
+        const delta=g?.delta==null||g.delta===''?NaN:Math.abs(Number(g.delta));
+        const theta=g?.theta==null||g.theta===''?NaN:Math.abs(Number(g.theta));
+        const oiRaw=q.opnInterest??q.openInterest??q.oi;
+        const volumeRaw=q.tradeVolume??q.volume;
+        const oi=oiRaw==null||oiRaw===''?NaN:Number(oiRaw);
+        const volume=volumeRaw==null||volumeRaw===''?NaN:Number(volumeRaw);
+        const lotSize=Math.max(1,Number(x.lotsize)||1);
+        const premiumCap=Math.min(80,capitalBudget/lotSize);
+        const greekPass=Number.isFinite(delta)&&Number.isFinite(theta)&&theta<6&&delta>=0.35;
+        const greekCandidatePass=Number.isFinite(delta)&&Number.isFinite(theta)&&theta<15&&delta>=0.35;
+        const premiumPass=Number.isFinite(entry)&&entry>=25&&entry<=premiumCap;
+        const liquidityPass=Number.isFinite(oi)&&oi>0&&Number.isFinite(volume)&&volume>0;
+        const liquidityScore=(Number.isFinite(oi)?Math.log10(Math.max(1,oi)):0)+(Number.isFinite(volume)&&volume>0?Math.log10(Math.max(1,volume)):0);
+        const deltaScore=Number.isFinite(delta)?Math.abs(delta-0.50):9;
+        const premiumScore=Number.isFinite(entry)?Math.abs(entry-Math.min(60,premiumCap)):99;
+        const score=(greekPass?0:100)+(premiumPass?0:100)+(liquidityPass?0:100)+deltaScore*20+premiumScore+Math.max(0,5-liquidityScore);
+        return {x,q,g,entry,delta,theta,oi,volume,score,greekPass,greekCandidatePass,premiumPass,liquidityPass,premiumCap};
+      }).filter(v=>v.greekCandidatePass&&v.premiumPass&&v.liquidityPass&&Number.isFinite(v.entry)).sort((a,b)=>(Number(b.greekPass)-Number(a.greekPass))||(a.score-b.score));
+      if(candidates.length){
+        const strict=candidates.find(v=>v.greekPass);
+        if(strict){
+          best={...strict,expiry:scanExpiry};
+          selectedExpiry=scanExpiry;
+          selectedPremiumCap=strict.premiumCap;
+          break;
+        }
+        if(!bestCaution) bestCaution={...candidates[0],expiry:scanExpiry};
+      }
+    }
+    if(!best&&bestCaution) best=bestCaution;
+    if(best){
+      selectedExpiry=best.expiry;
+      selectedPremiumCap=best.premiumCap;
+    }
+    if(!best) return {available:false,reason:'No live CE/PE within the ₹'+capitalBudget+' one-lot budget passed live quote/OI/volume and Delta ≥0.35 with Theta <10 across the next four active expiries.',expiry,atm,optionType,expiriesScanned:expiriesToScan};
 
     const stopPoints=Math.abs(Number(underlyingEntry)-Number(underlyingSl));
     const targetPoints1=Math.abs(Number(target1)-Number(underlyingEntry));
@@ -503,11 +534,15 @@ async function findBuyableOptionPlan(symbol, direction, underlyingEntry, underly
 
     return {
       available:true,
+      candidateOnly:!best.greekPass,
+      contractChecksPass:best.greekPass,
+      tradeReady:false,
+      greekStatus:best.greekPass?'PASS':(best.theta>=10?'NO TRADE':'CAUTION'),
       contract:best.x.symbol,
       symbol:best.x.symbol,
       token:String(best.x.token),
       underlying:String(symbol).toUpperCase(),
-      expiry,
+      expiry:selectedExpiry,
       optionType,
       strike:Number(best.x._strike),
       lotSize:Math.max(1,Number(best.x.lotsize)||1),
@@ -523,8 +558,8 @@ async function findBuyableOptionPlan(symbol, direction, underlyingEntry, underly
       iv:Number.isFinite(Number(best.g?.iv))?Number(best.g.iv):null,
       oi:Number.isFinite(best.oi)?best.oi:null,
       volume:Number.isFinite(best.volume)?best.volume:null,
-      priceBand:'₹25–₹50',
-      selection:'Nearest-expiry live option • premium ₹25–₹50 • Delta ≥0.35 • Theta <6 • live quote/OI checked',
+      priceBand:`₹25–₹${selectedPremiumCap.toFixed(2)}`,
+      selection:`Active-expiry live option • premium ₹25–₹${selectedPremiumCap.toFixed(2)} • Delta ≥0.35 • Theta ${best.greekPass?'<6 PASS':best.theta>=10?'10–15 NO TRADE':'6–10 CAUTION'} • quote/OI/volume verified • ₹${capitalBudget} one-lot budget`,
       underlyingEntry:Number(Number(underlyingEntry).toFixed(2)),
       underlyingStop:Number(Number(underlyingSl).toFixed(2)),
       underlyingTarget1:Number(Number(target1).toFixed(2)),
@@ -751,7 +786,8 @@ app.get("/api/data-health",(req,res)=>{
   const rows=Array.isArray(cache?.rows)?cache.rows:[];
   const last=rows.at(-1)||null;
   const lastAt=last?.t&&Number.isFinite(Date.parse(last.t))?Date.parse(last.t):null;
-  const ageSeconds=lastAt==null?null:Number(((Date.now()-lastAt)/1000).toFixed(1));
+  // Five-minute source candles are timestamped at open; evaluate freshness from close.
+  const ageSeconds=lastAt==null?null:Number(((Date.now()-(lastAt+5*60_000))/1000).toFixed(1));
   const baseSource=String(cache?.baseSource||cache?.source||'UNAVAILABLE').toUpperCase();
   const fresh=ageSeconds!=null&&ageSeconds>=-15&&ageSeconds<=600;
   const trusted=(baseSource.startsWith('ANGEL')&&!baseSource.includes('YAHOO')&&!baseSource.includes('STALE CACHE'))||baseSource==='UPSTOX_HISTORICAL';
@@ -761,11 +797,11 @@ app.get("/api/data-health",(req,res)=>{
   const indexTick=freshIndexTick(symbol);
   const indexTickAgeMs=indexTick?exchangeTickAgeMs(indexTick.data):null;
   const tickAgeSeconds=indexTickAgeMs==null?null:Number((Math.max(0,indexTickAgeMs)/1000).toFixed(1));
-  const indexTickFresh=Boolean(indexTick&&isFreshExchangeTick(indexTick.data));
-  const volumeEntry=futuresVolumeCache.get(symbol)||null;
+  const indexTickFresh=Boolean(indexTick&&isFreshExchangeTick(indexTick.data));  const volumeEntry=futuresVolumeCache.get(symbol)||null;
   const volume=volumeEntry?.data||null;
   const volumeCandleTime=volume?.vwapLastCandleTime||volume?.lastCandleTime||null;
-  const volumeCandleAgeSeconds=volumeCandleTime&&Number.isFinite(Date.parse(volumeCandleTime))?Number(((Date.now()-Date.parse(volumeCandleTime))/1000).toFixed(1)):null;
+  // futures candles are stamped at interval start, so report freshness from the 5-minute close.
+  const volumeCandleAgeSeconds=volumeCandleTime&&Number.isFinite(Date.parse(volumeCandleTime))?Number(((Date.now()-(Date.parse(volumeCandleTime)+5*60_000))/1000).toFixed(1)):null;
   const futuresVolumeVerified=Boolean(volume?.source&&Number.isFinite(Number(volume?.ratio10d))&&volumeCandleAgeSeconds!=null&&volumeCandleAgeSeconds>=-15&&volumeCandleAgeSeconds<=600);
   const executionEnabled=['1','true','yes','on'].includes(String(process.env.ORDER_EXECUTION_ENABLED||'false').toLowerCase());
   const killSwitch=['1','true','yes','on'].includes(String(process.env.TRADING_KILL_SWITCH??'true').toLowerCase());
@@ -1071,7 +1107,7 @@ app.get("/api/angel/stream-test", async (req,res)=>{
 
 
 
-// RISK ENGINE — daily loss budget, live lot sizing and option Greek guard.
+// RISK ENGINE â€” daily loss budget, live lot sizing and option Greek guard.
 app.get('/api/risk/status',(req,res)=>{
   const p=phase11ProtectionStatus(), configured=numEnv('MAX_RISK_RUPEES',1000);
   res.json({ok:true,riskBudgetRupees:configured,dailyLossCapRupees:p.dailyLossCap,dailyLoss:p.dailyLoss,dailyLossRemaining:p.dailyLossRemaining});
@@ -1097,7 +1133,7 @@ app.post('/api/risk/position-size',async(req,res)=>{
     res.json({ok:true,symbol,expiry,strike,optionType,contract:c0.symbol,token:String(c0.token),lotSize,entry,optionStopLoss:stop,premiumRiskPerUnit:Math.abs(entry-stop),delta:Number.isFinite(delta)?delta:null,theta:Number.isFinite(Number(g?.theta))?Number(g.theta):null,iv:Number.isFinite(Number(g?.iv))?Number(g.iv):null,greeks:g,greekRisk,sizing:sized,protection});
   }catch(e){res.status(502).json({ok:false,error:e?.message||'Risk sizing unavailable'});}
 });
-// PHASE 5 — controlled execution & server-side pre-trade risk gate.
+// PHASE 5 â€” controlled execution & server-side pre-trade risk gate.
 
 app.get('/api/phase11/protection',(req,res)=>res.json({ok:true,phase:11,protection:phase11ProtectionStatus()}));
 app.post('/api/phase11/reset',(req,res)=>res.json({ok:true,phase:11,protection:phase11ResetProtection()}));
@@ -1175,7 +1211,7 @@ app.get('/api/execution/orders',async(req,res)=>{
   }catch(e){res.status(502).json({ok:false,error:e?.message||'Order book unavailable'});}
 });
 
-// PHASE 9 — Broker Account Center: funds, holdings, positions, trades, order modification and controlled exits.
+// PHASE 9 â€” Broker Account Center: funds, holdings, positions, trades, order modification and controlled exits.
 app.get('/api/broker/account',async(req,res)=>{
   try{
     if(!angelStatus().connected) return res.status(401).json({ok:false,error:'ANGEL_NOT_CONNECTED'});
@@ -1315,7 +1351,7 @@ app.post('/api/order/cancel',async(req,res)=>{
   }catch(e){res.status(502).json({ok:false,error:e?.message||'Cancel request failed'});}
 });
 
-// PHASE 6 — live position/order monitoring and alert feed.
+// PHASE 6 â€” live position/order monitoring and alert feed.
 const phase6State = { lastOrders: new Map(), lastMonitorAt: 0 };
 function normalizeOrderEvents(rows){
   const arr=Array.isArray(rows)?rows:[];
@@ -1420,11 +1456,28 @@ app.get("/api/events",async(req,res)=>{ try{ const raw=await events(); const str
 app.get("/api/fusion",async(req,res)=>{
   try{
     const symbol=String(req.query.symbol||"NIFTY").toUpperCase();
-    const [ni,gd,ev]=await Promise.all([news(symbol),globalData(),events()]);
-    const ns=analyzeNews(ni), gs=analyzeGlobal(gd), es=analyzeEvents(ev);
-    const out=fuse({technicalScore:0,newsScore:ns.score,globalScore:gs.score,eventRisk:es.hardBlock,marketOpen:marketSession(),feeds:{market:angelStatus().connected,options:false,news:ns.connected,global:gs.connected,eventSafe:es.eventSafe}});
-    res.json({ok:true,news:ns,global:gs,events:es,fusion:out});
-  }catch(e){res.status(502).json({ok:false,error:e?.message||"Fusion unavailable"});}
+    // Keep one authoritative path for technical scoring and live safety gates.
+    // The old endpoint scored technicals as zero and hard-coded options=false,
+    // which forced a misleading NEUTRAL / hardGate=true on every request.
+    const url=`http://127.0.0.1:${PORT}/api/analyze?symbol=${encodeURIComponent(symbol)}`;
+    const response=await fetch(url,{cache:'no-store',signal:AbortSignal.timeout(28000)});
+    const report=await response.json();
+    if(!response.ok||!report?.decision) throw new Error(report?.error||`Live decision feed returned HTTP ${response.status}`);
+    const d=report.decision;
+    const ns=d.newsStrategy||{connected:false,bias:'WAIT',score:0};
+    const gs=d.globalStrategy||{connected:false,bias:'WAIT',score:0};
+    const es=d.eventStrategy||{connected:false,eventSafe:false,reason:'Event safety is unverified.'};
+    const reasons=Array.isArray(d.noTradeReasons)?d.noTradeReasons.slice():[];
+    const tradeReady=['CALL','PUT'].includes(String(d.action||''))&&d.fusion?.hardGate===false&&reasons.length===0;
+    if(!tradeReady&&!reasons.length) reasons.push(d.reason||'One or more verified live-trading gates have not passed.');
+    const out={...(d.fusion||{}),direction:d.fusion?.direction||'NEUTRAL',hardGate:!tradeReady,tradeReady,
+      hardGateReasons:reasons,source:'PB Predictive Fusion /api/analyze',
+      technicalScore:d.fusion?.technicalScore??d.technicalScore??null,newsScore:d.fusion?.newsScore??(Number(ns.score)||0),globalScore:d.fusion?.globalScore??(Number(gs.score)||0)};
+    res.setHeader('Cache-Control','no-store');
+    res.json({ok:true,symbol,news:ns,global:gs,events:es,fusion:out,
+      technical:{trend1h:d.trend1h||'WAIT',setup15m:d.setup15m||'WAIT',trigger5m:d.trigger5m||'WAIT',adx:d.adx??null,rsi:d.rsi??null},
+      action:d.action||'NO TRADE',noTradeReasons:reasons,health:report.health||{},checkedAt:nowISO(),mode:'LIVE_INTEGRATED'});
+  }catch(e){res.status(502).json({ok:false,error:e?.message||"Fusion unavailable",fusion:{direction:'NEUTRAL',hardGate:true,tradeReady:false,hardGateReasons:['Live integrated fusion data unavailable.']}});}
 });
 
 
@@ -1543,8 +1596,7 @@ async function resolveIndexToken(symbol){
    if(x) return {token:String(x.token||x.symboltoken),symbol:String(x.tradingsymbol||x.symbol||x.name),exchange:'NSE'};
  }catch{}
  throw new Error('Index instrument not found');
- const aliases={NIFTY:['NIFTY','NIFTY 50'],BANKNIFTY:['BANKNIFTY','BANK NIFTY'],FINNIFTY:['FINNIFTY','NIFTY FIN SERVICE'],MIDCPNIFTY:['MIDCPNIFTY','NIFTY MID SELECT'],SENSEX:['SENSEX'],VIX:['INDIAVIX','INDIA VIX','VIX']};
- const arr=aliases[s]||[s];
+ const aliases={NIFTY:['NIFTY','NIFTY 50'],BANKNIFTY:['BANKNIFTY','BANK NIFTY'],FINNIFTY:['FINNIFTY','NIFTY FIN SERVICE'],MIDCPNIFTY:['MIDCPNIFTY','NIFTY MID SELECT'],SENSEX:['SENSEX'],VIX:['INDIAVIX','INDIA VIX','VIX']}; const arr=aliases[s]||[s];
  let x=items.find(z=>arr.includes(String(z.name||'').toUpperCase())&&(String(z.exch_seg||'').toLowerCase()==='nse_cm'||String(z.exch_seg||'').toUpperCase()==='NSE'));
  if(!x) x=items.find(z=>arr.includes(String(z.symbol||'').toUpperCase())&&(String(z.exch_seg||'').toLowerCase()==='nse_cm'||String(z.exch_seg||'').toUpperCase()==='NSE'));
  if(!x) throw new Error('Index instrument not found');
@@ -1576,7 +1628,7 @@ function candleRows(raw){
   }).filter(x=>[x.o,x.h,x.l,x.c].every(Number.isFinite));
 }
 // Align intraday candles to the NSE session open (09:15 IST), not UTC hour boundaries.
-// This keeps 5M/15M bars correct and makes the 1H bar run 09:15–10:15, 10:15–11:15, etc.
+// This keeps 5M/15M bars correct and makes the 1H bar run 09:15â€“10:15, 10:15â€“11:15, etc.
 function bucketStart(ts, minutes){
   const stamp=ts instanceof Date?ts.getTime():new Date(ts).getTime();
   if(!Number.isFinite(stamp)) return NaN;
@@ -1779,9 +1831,12 @@ function fiveMinuteVolumeBenchmark(rows){
   };
   if(candleCount<11) return {...diagnostics,ratio10d:null,source:null,benchmarkDays:0,reason:'Not enough completed futures candles were returned.'};
   if(!(Number(last.v)>0)) return {...diagnostics,ratio10d:null,source:null,benchmarkDays:0,reason:'Latest completed futures candle has no verified positive volume.'};
-  const ageMinutes=(Date.now()-Date.parse(last.t))/60000;
+  // Broker timestamps identify the START of a five-minute candle. Measure freshness
+  // from its scheduled close; otherwise a valid 09:55-10:00 candle appears 10 minutes
+  // old at 10:05 and is rejected even though it closed only five minutes ago.
+  const ageMinutes=(Date.now()-(Date.parse(last.t)+5*60_000))/60000;
   if(!Number.isFinite(ageMinutes)||ageMinutes< -1||ageMinutes>10)
-    return {...diagnostics,ratio10d:null,source:null,benchmarkDays:0,reason:'Latest futures-volume candle is not fresh (must be within 10 minutes).'};
+    return {...diagnostics,ratio10d:null,source:null,benchmarkDays:0,reason:'Latest completed futures-volume candle is older than 10 minutes after its interval close.'};
   const lastTime=Date.parse(last.t), lastDay=istDayKey(last.t), slotMinute=minuteOfDayIST(last.t);
   const before=chronological.filter(x=>Date.parse(x.t)<lastTime);
   const priorDays=[...new Set(before.map(x=>istDayKey(x.t)).filter(d=>d&&d!==lastDay))].slice(-10);
@@ -1808,9 +1863,9 @@ function verifiedFuturesSessionVWAP(rows){
     .slice().sort((a,b)=>Date.parse(a.t)-Date.parse(b.t));
   const last=chronological.at(-1)||null;
   if(!last) return {vwap:null,vwapBars:0,lastPrice:null,lastCandleTime:null,lastVolume:null,vwapDay:null,vwapReason:'No futures candles were returned.'};
-  const ageMinutes=(Date.now()-Date.parse(last.t))/60000;
+  const ageMinutes=(Date.now()-(Date.parse(last.t)+5*60_000))/60000;
   if(!(Number(last.v)>0)||!Number.isFinite(ageMinutes)||ageMinutes< -1||ageMinutes>10)
-    return {vwap:null,vwapBars:0,lastPrice:Number(last.c),lastCandleTime:last.t,lastVolume:Number(last.v),vwapDay:istDayKey(last.t),vwapReason:'Latest futures candle is untraded or older than 10 minutes.'};
+    return {vwap:null,vwapBars:0,lastPrice:Number(last.c),lastCandleTime:last.t,lastVolume:Number(last.v),vwapDay:istDayKey(last.t),vwapReason:'Latest completed futures candle is untraded or older than 10 minutes after close.'};
   const day=istDayKey(last.t);
   const session=chronological.filter(x=>istDayKey(x.t)===day&&Number(x.v)>0);
   if(session.length<3) return {vwap:null,vwapBars:session.length,lastPrice:Number(last.c),lastCandleTime:last.t,lastVolume:Number(last.v),vwapDay:day,vwapReason:'At least three positive-volume candles are required for a session VWAP.'};
@@ -1871,30 +1926,42 @@ async function loadFuturesVolume(symbol){
       const primaryErrors=[...fetchErrors];
       const angelRateRejected=fetchErrors.some(e=>/HTTP 403|HTTP 429|Access denied|rate.?limit|exceeding access rate/i.test(String(e)));
       const upstoxFuturesConfig=upstoxConfigStatus({symbol:key,role:'futures'});
-      let volumeProvider='ANGEL', upstoxFuturesKey='';
-      // If Angel One history is blocked or yielded too few futures samples, use a separately
-      // authenticated Upstox front-month futures key when configured. Never substitute index volume.
-      if((angelRateRejected||rows.length<100)&&upstoxFuturesConfig.configured){
+      let volumeProvider='ANGEL', upstoxFuturesKey='', upstoxFuturesInstrument=null;
+      // Assess the completed primary history against the actual volume benchmark and session VWAP.
+      // Row count alone is insufficient: a large partial response may still be unverifiable.
+      const angelCompleted=dropIncompleteCandle(rows,5);
+      const angelBenchmark=fiveMinuteVolumeBenchmark(angelCompleted);
+      const angelSession=verifiedFuturesSessionVWAP(angelCompleted);
+      const needUpstoxFutures=shouldUseUpstoxFuturesFallback({
+        rateRejected:angelRateRejected,
+        rowCount:angelCompleted.length,
+        benchmarkRatio10d:angelBenchmark.ratio10d,
+        sessionVwap:angelSession.vwap
+      });
+      // Use only independently sourced front-month futures. Never substitute index candles/volume.
+      if(needUpstoxFutures&&upstoxFuturesConfig.configured){
         const alternate=await fetchUpstoxHistoricalCandles({symbol:key,role:'futures',fromDate:start,toDate:end,intervalMinutes:5});
-        if(alternate.ok){rows=alternate.rows;fetchErrors.length=0;volumeProvider='UPSTOX';upstoxFuturesKey=alternate.instrumentKey;}
+        if(alternate.ok){rows=alternate.rows;fetchErrors.length=0;if(alternate.intradayError)fetchErrors.push('Upstox intraday: '+alternate.intradayError);volumeProvider='UPSTOX';upstoxFuturesKey=alternate.instrumentKey;upstoxFuturesInstrument=alternate.resolvedInstrument||null;}
         else fetchErrors.push('Upstox futures fallback: '+alternate.error);
       }
       rows=[...new Map(rows.map(x=>[x.t,x])).values()].sort((a,b)=>Date.parse(a.t)-Date.parse(b.t));
       const completed=dropIncompleteCandle(rows,5);
       const result=fiveMinuteVolumeBenchmark(completed);
       const session=verifiedFuturesSessionVWAP(completed);
-      result.source=result.ratio10d!=null?(volumeProvider==='UPSTOX'?'UPSTOX FUTURES 5M • '+upstoxFuturesKey:'ANGEL NFO FUTURES 5M • '+String(fut.symbol)):null;
+      result.source=result.ratio10d!=null?(volumeProvider==='UPSTOX'?'UPSTOX FUTURES 5M â€¢ '+upstoxFuturesKey:'ANGEL NFO FUTURES 5M â€¢ '+String(fut.symbol)):null;
       result.provider=volumeProvider;
-      result.contract=volumeProvider==='UPSTOX'?upstoxFuturesKey:String(fut.symbol||'');
-      result.expiry=volumeProvider==='UPSTOX'?'':String(fut.expiry||'');
+      result.contract=volumeProvider==='UPSTOX'?(upstoxFuturesInstrument?.tradingSymbol||upstoxFuturesKey):String(fut.symbol||'');
+      result.expiry=volumeProvider==='UPSTOX'?String(upstoxFuturesInstrument?.expiry||''):String(fut.expiry||'');
       result.token=volumeProvider==='UPSTOX'?'':String(fut.token||'');
       result.fetchErrors=fetchErrors.slice(0,4);
       result.primaryFetchErrors=primaryErrors.slice(0,3);
       if(fetchErrors.some(e=>/HTTP 403|HTTP 429|Too many requests|Access denied|rate limit/i.test(String(e)))){
         result.reason='Angel One historical candles were rejected with HTTP 403/429 (access-rate rejection). Live quotes/WebSocket may still work, but historical futures volume and VWAP cannot be verified until the provider returns fresh candles.';
+      }else if(fetchErrors.some(e=>String(e).startsWith('Upstox intraday:')) && (!result.ratio10d || session.vwap==null)){
+        result.reason='Current-session Upstox futures candles could not be verified: '+fetchErrors.find(e=>String(e).startsWith('Upstox intraday:'));
       }
       result.vwap=session.vwap;
-      result.vwapSource=session.vwap!=null?(volumeProvider==='UPSTOX'?'UPSTOX FUTURES SESSION VWAP • '+upstoxFuturesKey:'ANGEL NFO FUTURES SESSION VWAP • '+String(fut.symbol)):null;
+      result.vwapSource=session.vwap!=null?(volumeProvider==='UPSTOX'?'UPSTOX FUTURES SESSION VWAP â€¢ '+upstoxFuturesKey:'ANGEL NFO FUTURES SESSION VWAP â€¢ '+String(fut.symbol)):null;
       result.vwapBars=session.vwapBars;
       result.futuresLast=session.lastPrice;
       result.vwapLastCandleTime=session.lastCandleTime;
@@ -1955,7 +2022,7 @@ app.get('/api/chart/candles',async(req,res)=>{
   }
 });
 
-// PHASE 10 — advanced prediction, confirmation and transparent historical target-hit analysis.
+// PHASE 10 â€” advanced prediction, confirmation and transparent historical target-hit analysis.
 app.get('/api/phase10/prediction',async(req,res)=>{
   const symbol=String(req.query.symbol||'NIFTY').toUpperCase();
   const marketExchange=indexFeedMeta(symbol).exchange;
@@ -2066,9 +2133,12 @@ app.get('/api/phase10/prediction',async(req,res)=>{
       m5.summary.vwapVerified=false;
       m5.summary.vwapSource=null;
     }
-    const prediction=buildPrediction({h1:h1.summary,m15:m15.summary,m5:m5.summary,rows5:m5.rows,news:ns,global:gs,events:es,options:opt,marketOpen,backtest:historical,vix:Number.isFinite(vix)?vix:null,oi:opt});
+    let prediction=buildPrediction({h1:h1.summary,m15:m15.summary,m5:m5.summary,rows5:m5.rows,news:ns,global:gs,events:es,options:opt,marketOpen,backtest:historical,vix:Number.isFinite(vix)?vix:null,oi:opt});
     prediction.vwapVerified=!!m5.summary.vwapVerified;
     prediction.vwapSource=m5.summary.vwapSource||null;
+    // Keep directional setup confidence separate from the final contract-safety score.
+    const directionalConfidence=Number(prediction.modelConfidence)||0;
+    prediction.directionalConfidence=directionalConfidence;
     prediction.volumeBenchmark={
       ratio10d:futuresVol?.ratio10d??null,source:futuresVol?.source??null,
       benchmarkDays:futuresVol?.benchmarkDays??0,candles:futuresVol?.candles??0,
@@ -2077,12 +2147,43 @@ app.get('/api/phase10/prediction',async(req,res)=>{
       contract:futuresVol?.contract??null,expiry:futuresVol?.expiry??null,
       reason:futuresVol?.reason??null,fetchErrors:futuresVol?.fetchErrors??[]
     };
-    let optionPlan={available:false,reason:'Wait until model confidence reaches 78% for live CE/PE contract selection.'};
-    if(prediction.opportunityEligible && prediction.finalPlan?.available){
+    let optionPlan={available:false,reason:'Waiting for a directional setup and all non-Greek safety confirmations.'};
+    if(prediction.contractScanEligible && prediction.candidatePlan?.available){
       const optionAction=prediction.prediction==='BULLISH'?'CALL':prediction.prediction==='BEARISH'?'PUT':'';
-      optionPlan=await boundedFeed(findBuyableOptionPlan(symbol,optionAction,prediction.finalPlan.entry,prediction.finalPlan.sl,prediction.finalPlan.target1,prediction.finalPlan.target2),{available:false,reason:'Option contract scan exceeded its response deadline; no trade.'},'option-plan',3000);
+      // Search for the actual executable contract using underlying levels even if the
+      // arbitrary ATM Greek snapshot is unsafe. The selected contract must pass its own
+      // live quote, liquidity, expiry, premium and Delta/Theta filters before approval.
+      optionPlan=await boundedFeed(findBuyableOptionPlan(symbol,optionAction,prediction.candidatePlan.entry,prediction.candidatePlan.sl,prediction.candidatePlan.target1,prediction.candidatePlan.target2),{available:false,reason:'Option contract scan exceeded its response deadline; no trade.'},'option-plan',20000);
       if(!optionPlan.available) optionPlan={...optionPlan,threshold:78,reason:optionPlan.reason||'No suitable live contract passed the premium/Greek/liquidity filters.'};
+      if(optionPlan.available){
+        const selectedDelta=optionPlan.optionType==='PE'?-Math.abs(Number(optionPlan.delta)):Math.abs(Number(optionPlan.delta));
+        const selectedTheta=-Math.abs(Number(optionPlan.theta));
+        const selectedGreeks={name:symbol,expiry:optionPlan.expiry,strike:Number(optionPlan.strike),optionType:optionPlan.optionType,
+          delta:selectedDelta,theta:selectedTheta,gamma:null,vega:null,iv:optionPlan.iv??null,tradeVolume:optionPlan.volume??null};
+        const selectedGreekStatus=optionPlan.greekStatus||'WAIT';
+        const selectedGreekMessage=selectedGreekStatus==='PASS'
+          ? 'Selected live contract passed quote, liquidity and Delta/Theta safeguards.'
+          : selectedGreekStatus==='CAUTION'
+            ? 'Candidate only: selected contract Theta is 6–10; do not trade unless all safety conditions clear.'
+            : 'NO TRADE: selected contract Theta is too high; it is displayed only as a risk-blocked candidate.';
+        opt={...opt,delta:selectedDelta,theta:selectedTheta,greeks:selectedGreeks,
+          greekRisk:{status:selectedGreekStatus,message:selectedGreekMessage}};
+        const verifiedSelection=buildPrediction({h1:h1.summary,m15:m15.summary,m5:m5.summary,rows5:m5.rows,
+          news:ns,global:gs,events:es,options:opt,marketOpen,backtest:historical,vix:Number.isFinite(vix)?vix:null,oi:opt});
+        Object.assign(prediction,verifiedSelection);
+        prediction.vwapVerified=!!m5.summary.vwapVerified;
+        prediction.vwapSource=m5.summary.vwapSource||null;
+      }else{
+        prediction.noTradeReasons=[...new Set([...(prediction.noTradeReasons||[]),`No Trade: a specific live CE/PE contract did not pass verification (${optionPlan.reason}).`])];
+        prediction.reasoning=prediction.noTradeReasons.join(' • ');
+      }
     }
+    optionPlan.threshold=78;
+    optionPlan.directionalConfidence=directionalConfidence;
+    const contractDisplayConfidence=optionPlan.candidateOnly===true?directionalConfidence:Number(prediction.modelConfidence??directionalConfidence)||0;
+    optionPlan.displayEligible=contractDisplayConfidence>=78&&optionPlan.available===true;
+    // This endpoint suggests/analyses contracts only; it never unlocks order placement.
+    optionPlan.tradeReady=false;
     prediction.optionPlan=optionPlan;
     const freshExchangeTick=freshIndexTick(symbol);
     prediction.exchangeTickVerified=Boolean(freshExchangeTick);
@@ -2185,19 +2286,43 @@ app.get("/api/analyze",async(req,res)=>{
   let newsItems=[], global={}, eventItems=[], md=null;
   try{ [newsItems,global,eventItems,md]=await Promise.all([news(symbol),globalData(),events(),market(symbol)]); packs.md=md||{}; }catch(e){ packs.fusionError=e.message; }
   const newsStrat=analyzeNews(newsItems),globalStrat=analyzeGlobal(global),eventStrat=analyzeEvents(eventItems);
-  const exchangeTickVerified=!!getLatestTicks().find(x=>isFreshExchangeTick(x?.data));
+  const exchangeTickVerified=Boolean(freshIndexTick(symbol));
+  const lastCandleAt=packs.m5?.rows?.at?.(-1)?.t||null;
+  const candleStamp=lastCandleAt?Date.parse(lastCandleAt):NaN;
+  // Chart candle timestamps represent the interval start; measure age from the 5-minute close.
+  const candleAgeMinutes=Number.isFinite(candleStamp)?Number(((Date.now()-(candleStamp+5*60_000))/60000).toFixed(1)):null;
+  const baseCandleSource=String(candleCache.get(symbol)?.baseSource||s5?.candleSource||'UNKNOWN').toUpperCase();
+  const candleSourceVerified=((baseCandleSource.startsWith('ANGEL')&&!baseCandleSource.includes('YAHOO')&&!baseCandleSource.includes('STALE CACHE'))||baseCandleSource==='UPSTOX_HISTORICAL');
+  const candlesFresh=candleAgeMinutes!==null&&candleAgeMinutes>=-0.25&&candleAgeMinutes<=10;
+  // Cached candles alone are not a live market feed: require a fresh index tick and fresh, authenticated candles.
+  h.market=Boolean(marketSession()&&angelStatus().connected&&exchangeTickVerified&&candlesFresh&&candleSourceVerified);
   h.exchangeTick=exchangeTickVerified;
+  h.candlesFresh=candlesFresh;
+  h.candleSourceVerified=candleSourceVerified;
+  h.candleAgeMinutes=candleAgeMinutes;
   const vixRaw=md?.VIX?.ltp;
     const vix=vixRaw==null||vixRaw===''?NaN:Number(vixRaw);
   const hasVerifiedVolume=!!s5?.volumeSource&&s5?.volumeRatio10d!=null&&Number.isFinite(Number(s5.volumeRatio10d));
   const volumeRatio10d=hasVerifiedVolume?Number(s5.volumeRatio10d):NaN;
   h.volume=hasVerifiedVolume;
+  const pcrRaw=opt?.pcr;
+  const pcrNum=pcrRaw==null||pcrRaw===''?NaN:Number(pcrRaw);
+  const ceOiRaw=opt?.ceoi??opt?.cedoi, peOiRaw=opt?.peoi??opt?.pedoi;
+  const ceOiNum=ceOiRaw==null||ceOiRaw===''?NaN:Number(ceOiRaw);
+  const peOiNum=peOiRaw==null||peOiRaw===''?NaN:Number(peOiRaw);
+  const optionOiVerified=Number.isFinite(ceOiNum)&&Number.isFinite(peOiNum)&&ceOiNum>=0&&peOiNum>=0&&(ceOiNum>0||peOiNum>0);
+  const optionFlowVerified=Boolean(opt?.connected&&((Number.isFinite(pcrNum)&&pcrNum>0)||optionOiVerified));
+  h.options=optionFlowVerified;
+  h.optionFlowVerified=optionFlowVerified;
   const noTradeReasons=[];
   if(marketSession() && !exchangeTickVerified) noTradeReasons.push('No Trade: fresh exchange-timestamped WebSocket tick is unavailable.');
+  if(!candlesFresh) noTradeReasons.push('No Trade: latest completed 5-minute candle is stale or unavailable.');
+  else if(!candleSourceVerified) noTradeReasons.push('No Trade: technical candles are from an unverified, fallback, or stale source.');
   if(!Number.isFinite(vix)) noTradeReasons.push('No Trade: India VIX is not verified live.'); else if(vix<12||vix>22) noTradeReasons.push('No Trade: Market is too slow or too volatile.');
+  if(!optionFlowVerified) noTradeReasons.push('No Trade: live option-chain PCR/OI values are unavailable or unverified.');
   if(!greeksVerified) noTradeReasons.push('No Trade: live option Theta/Delta is not verified.');
   else if(greekRisk.status!=='PASS') noTradeReasons.push('No Trade: selected option Theta/Delta did not pass the safety filter.');
-  if(Number.isFinite(s5?.adx) && s5.adx<20) noTradeReasons.push('No Trade: ADX below 20 — market is choppy/sideways.');
+  if(Number.isFinite(s5?.adx) && s5.adx<20) noTradeReasons.push('No Trade: ADX below 20 â€” market is choppy/sideways.');
   if(!hasVerifiedVolume) noTradeReasons.push('No Trade: verified 10-day futures-volume benchmark is unavailable.');
   else if(volumeRatio10d<1.5) noTradeReasons.push(`No Trade: breakout volume ${volumeRatio10d.toFixed(2)}x is below the 1.5x 10-day requirement.`);
   if(!eventStrat.connected) noTradeReasons.push('No Trade: economic-event calendar is not verified live.');
@@ -2205,26 +2330,35 @@ app.get("/api/analyze",async(req,res)=>{
   else if(eventStrat.eventDayBlock||eventStrat.hardBlock) noTradeReasons.push(eventStrat.reason);
   let action='NO TRADE',reason='Live Angel One connection is required before indicator analysis can run.',score=0,confidence='LOCKED';
   let trend=s1?.trend||'WAIT',setup=s15?.trend||'WAIT',trigger=s5?.candle||'WAIT';
-  const bullishVotes=[trend==='BULLISH',setup==='BULLISH',s5?.rsi>50,s5?.macd?.hist>0,s5?.last>s5?.vwap,s5?.adx>=20].filter(Boolean).length;
-  const bearishVotes=[trend==='BEARISH',setup==='BEARISH',s5?.rsi<50,s5?.macd?.hist<0,s5?.last<s5?.vwap,s5?.adx>=20].filter(Boolean).length;
+  const bullishVotes=[trend==='BULLISH',setup==='BULLISH',['BULLISH CANDLE','BULLISH ENGULFING','HAMMER'].includes(String(trigger||'')),s5?.rsi>50,s5?.macd?.hist>0,s5?.last!=null&&s5?.vwap!=null&&s5.last>s5.vwap].filter(Boolean).length;
+  const bearishVotes=[trend==='BEARISH',setup==='BEARISH',['BEARISH CANDLE','BEARISH ENGULFING','SHOOTING STAR'].includes(String(trigger||'')),s5?.rsi<50,s5?.macd?.hist<0,s5?.last!=null&&s5?.vwap!=null&&s5.last<s5.vwap].filter(Boolean).length;
   const voteDenom=Math.max(1,bullishVotes+bearishVotes);
   const techSigned = h.market ? Number((((bullishVotes-bearishVotes)/Math.max(6,voteDenom))*100).toFixed(1)) : 0;
-  const fused=fuse({technicalScore:techSigned,newsScore:newsStrat.score,globalScore:globalStrat.score,eventRisk:eventStrat.hardBlock,marketOpen:marketSession(),feeds:{market:h.market,options:h.options,news:newsStrat.connected,global:globalStrat.connected,eventSafe:eventStrat.eventSafe}});
+  const fused=fuse({technicalScore:techSigned,newsScore:newsStrat.score,globalScore:globalStrat.score,eventRisk:eventStrat.hardBlock,marketOpen:marketSession(),feeds:{market:h.market,options:h.options,news:newsStrat.connected,global:globalStrat.connected,eventSafe:eventStrat.eventSafe,eventDayBlock:eventStrat.eventDayBlock}});
+  fused.technicalScore=techSigned; fused.newsScore=newsStrat.score; fused.globalScore=globalStrat.score;
   score=Math.round(Math.abs(fused.score)); confidence=h.market?(score>=67?'SETUP':score>=45?'WATCH':'WAIT'):'LOCKED';
-  if(h.market) reason=`Technical confluence ${Math.round(Math.abs(techSigned))} • News ${newsStrat.bias} • Global ${globalStrat.bias}. ${eventStrat.reason}`;
-  const complete=marketSession()&&exchangeTickVerified&&h.market&&h.options&&hasVerifiedVolume&&greeksVerified&&greekRisk.status==='PASS'&&newsStrat.connected&&globalStrat.connected&&eventStrat.eventSafe===true&&!eventStrat.unverifiedHighImpact&&!eventStrat.hardBlock&&!eventStrat.eventDayBlock;
+  if(h.market) reason=`Technical confluence ${Math.round(Math.abs(techSigned))} â€¢ News ${newsStrat.bias} â€¢ Global ${globalStrat.bias}. ${eventStrat.reason}`;
+  const complete=marketSession()&&exchangeTickVerified&&h.market&&optionFlowVerified&&hasVerifiedVolume&&greeksVerified&&greekRisk.status==='PASS'&&newsStrat.connected&&globalStrat.connected&&eventStrat.eventSafe===true&&!eventStrat.unverifiedHighImpact&&!eventStrat.hardBlock&&!eventStrat.eventDayBlock&&Number.isFinite(vix)&&vix>=12&&vix<=22;
+  fused.hardGate=!complete||noTradeReasons.length>0;
   if(complete && score>=67 && noTradeReasons.length===0){action=fused.direction==='BULLISH'?'CALL':fused.direction==='BEARISH'?'PUT':'NO TRADE';}
-  else {action='NO TRADE'; if(noTradeReasons.length) reason=noTradeReasons.join(' • '); else if(!marketSession()) reason='Exchange session is closed. No live trade is permitted.'; else if(!eventStrat.eventSafe) reason=eventStrat.reason; else if(!greeksVerified||greekRisk.status!=='PASS') reason=greekRisk.message; else if(!newsStrat.connected||!globalStrat.connected) reason='News/global feeds are not verified fresh. Final decision stays locked.'; else if(!h.options) reason='Option positioning feed is not verified. Final options decision stays locked.';}
-  const last=s5?.last||s15?.last||s1?.last; const atr=s5?.atr; const levels={r2:s15?.last&&s15?.atr?(s15.last+s15.atr*2).toFixed(2):'—',r1:s15?.last&&s15?.atr?(s15.last+s15.atr).toFixed(2):'—',vwap:s15?.vwap?.toFixed?.(2)||'—',s1:s15?.last&&s15?.atr?(s15.last-s15.atr).toFixed(2):'—',s2:s15?.last&&s15?.atr?(s15.last-s15.atr*2).toFixed(2):'—'};
+  else {action='NO TRADE'; if(noTradeReasons.length) reason=noTradeReasons.join(' â€¢ '); else if(!marketSession()) reason='Exchange session is closed. No live trade is permitted.'; else if(!eventStrat.eventSafe) reason=eventStrat.reason; else if(!greeksVerified||greekRisk.status!=='PASS') reason=greekRisk.message; else if(!newsStrat.connected||!globalStrat.connected) reason='News/global feeds are not verified fresh. Final decision stays locked.'; else if(!h.options) reason='Option positioning feed is not verified. Final options decision stays locked.';}
+  const last=s5?.last||s15?.last||s1?.last; const atr=s5?.atr; const levels={r2:s15?.last&&s15?.atr?(s15.last+s15.atr*2).toFixed(2):'â€”',r1:s15?.last&&s15?.atr?(s15.last+s15.atr).toFixed(2):'â€”',vwap:s15?.vwap?.toFixed?.(2)||'â€”',s1:s15?.last&&s15?.atr?(s15.last-s15.atr).toFixed(2):'â€”',s2:s15?.last&&s15?.atr?(s15.last-s15.atr*2).toFixed(2):'â€”'};
   const bp=action==='CALL'?{direction:'CALL',strike:'',entry:last||'',sl:atr&&last?(last-atr*1.2).toFixed(2):'',t1:atr&&last?(last+atr*1.5).toFixed(2):'',t2:atr&&last?(last+atr*2.5).toFixed(2):''}:action==='PUT'?{direction:'PUT',strike:'',entry:last||'',sl:atr&&last?(last+atr*1.2).toFixed(2):'',t1:atr&&last?(last-atr*1.5).toFixed(2):'',t2:atr&&last?(last-atr*2.5).toFixed(2):''}:{direction:'CALL',strike:'',entry:'',sl:'',t1:'',t2:''};
-  res.json({health:{...h,news:newsStrat.connected,global:globalStrat.connected},marketData:md||{},decision:{action,score,confidence,rr:action==='CALL'||action==='PUT'?'1:2+':'—',reason,greeks:selectedGreek?{strike:selectedGreek.strike,optionType:selectedGreek.optionType,delta:selectedGreek.delta,theta:selectedGreek.theta,iv:selectedGreek.iv}:null,greekRisk,trend1h:trend,setup15m:setup,trigger5m:trigger,ema:s5?`20 ${s5.ema20?.toFixed(2)||'—'} / 50 ${s5.ema50?.toFixed(2)||'—'} / 200 ${s5.ema200?.toFixed(2)||'—'}`:'WAIT',rsi:s5?.rsi?.toFixed?.(1)||'—',macd:s5?`${s5.macd?.hist>0?'BULLISH':'BEARISH'} ${s5.macd?.hist?.toFixed?.(2)||'—'}`:'WAIT',adx:s5?.adx?.toFixed?.(1)||'—',vwap:s5?.vwap?.toFixed?.(2)||'—',priceAction:s5?.candle||'WAIT',volume:hasVerifiedVolume?'LIVE':'WAIT',volumeSource:hasVerifiedVolume?s5.volumeSource:null,atr:s5?.atr?.toFixed?.(2)||'—',momentum:s5?.rsi>50?'BULLISH':s5?.rsi<50?'BEARISH':'WAIT',options:h.options?((opt.resistance&&opt.support)?`LIVE • R ${opt.resistance} / S ${opt.support}`:'LIVE'):'WAIT',news:newsStrat.bias,global:globalStrat.bias,event:!eventStrat.connected?'UNKNOWN':(eventStrat.eventDayBlock||eventStrat.hardBlock||eventStrat.unverifiedHighImpact)?'HIGH RISK':eventStrat.watch?'CAUTION':'SAFE',levels,blueprint:bp,newsStrategy:newsStrat,globalStrategy:globalStrat,eventStrategy:eventStrat,vix:Number.isFinite(vix)?vix:null,volumeRatio10d:Number.isFinite(volumeRatio10d)?volumeRatio10d:null,noTradeReasons,oi:{resistance:opt?.resistance??null,support:opt?.support??null,ceMaxOi:opt?.ceMaxOi??null,peMaxOi:opt?.peMaxOi??null,pcr:opt?.pcr??null},fusion:{score:fused.score,direction:fused.direction,hardGate:fused.hardGate}},candles:s5?.rows||null,multiTf:{h1:s1||null,m15:s15||null,m5:s5||null}});
+  res.json({health:{...h,news:newsStrat.connected,global:globalStrat.connected},marketData:md||{},decision:{action,score,confidence,rr:action==='CALL'||action==='PUT'?'1:2+':'â€”',reason,greeks:selectedGreek?{strike:selectedGreek.strike,optionType:selectedGreek.optionType,delta:selectedGreek.delta,theta:selectedGreek.theta,iv:selectedGreek.iv}:null,greekRisk,trend1h:trend,setup15m:setup,trigger5m:trigger,ema:s5?`20 ${s5.ema20?.toFixed(2)||'â€”'} / 50 ${s5.ema50?.toFixed(2)||'â€”'} / 200 ${s5.ema200?.toFixed(2)||'â€”'}`:'WAIT',rsi:s5?.rsi?.toFixed?.(1)||'â€”',macd:s5?`${s5.macd?.hist>0?'BULLISH':'BEARISH'} ${s5.macd?.hist?.toFixed?.(2)||'â€”'}`:'WAIT',adx:s5?.adx?.toFixed?.(1)||'â€”',vwap:s5?.vwap?.toFixed?.(2)||'â€”',priceAction:s5?.candle||'WAIT',volume:hasVerifiedVolume?'LIVE':'WAIT',volumeSource:hasVerifiedVolume?s5.volumeSource:null,atr:s5?.atr?.toFixed?.(2)||'â€”',momentum:s5?.rsi>50?'BULLISH':s5?.rsi<50?'BEARISH':'WAIT',options:h.options?((opt.resistance&&opt.support)?`LIVE â€¢ R ${opt.resistance} / S ${opt.support}`:'LIVE'):'WAIT',news:newsStrat.bias,global:globalStrat.bias,event:!eventStrat.connected?'UNKNOWN':(eventStrat.eventDayBlock||eventStrat.hardBlock||eventStrat.unverifiedHighImpact)?'HIGH RISK':eventStrat.watch?'CAUTION':'SAFE',levels,blueprint:bp,newsStrategy:newsStrat,globalStrategy:globalStrat,eventStrategy:eventStrat,vix:Number.isFinite(vix)?vix:null,volumeRatio10d:Number.isFinite(volumeRatio10d)?volumeRatio10d:null,noTradeReasons,oi:{resistance:opt?.resistance??null,support:opt?.support??null,ceMaxOi:opt?.ceMaxOi??null,peMaxOi:opt?.peMaxOi??null,pcr:opt?.pcr??null},fusion:{score:fused.score,direction:fused.direction,hardGate:fused.hardGate,technicalScore:fused.technicalScore,newsScore:fused.newsScore,globalScore:fused.globalScore}},candles:s5?.rows||null,multiTf:{h1:s1||null,m15:s15||null,m5:s5||null}});
 });
 
 app.post("/api/order",(req,res)=>res.status(423).json({ok:false,error:"USE_PHASE5_PREVIEW",message:"Phase 5 uses /api/order/preview then explicit /api/order/execute confirmation."}));
 
 app.get("*",(req,res)=>res.sendFile(path.join(__dirname,"public","index.html")));
 const HOST = String(process.env.HOST || "0.0.0.0");
-const server=app.listen(PORT,HOST,()=>console.log(`PARTHAVI TRADE DESK PRO on http://${HOST}:${PORT}`));
+const server=app.listen(PORT,HOST,()=>{
+  console.log(`PARTHAVI TRADE DESK PRO on http://${HOST}:${PORT}`);
+  void restoreAngelSessionFromVault().then(result=>{
+    if(result.restored) console.log('[ANGEL_AUTH] secure saved session restored; live order execution remains locked.');
+    else if(result.reason==='NO_STORED_SESSION') console.log('[ANGEL_AUTH] no saved session yet; connect once in the app to enable secure restart recovery.');
+    else if(result.reason!=='UNSUPPORTED_PLATFORM') console.warn('[ANGEL_AUTH] startup restore not completed; reason='+String(result.reason||'UNKNOWN'));
+  }).catch(()=>console.warn('[ANGEL_AUTH] startup restore failed; no credentials were logged.'));
+});
 server.requestTimeout=30000;
 server.headersTimeout=35000;
 server.keepAliveTimeout=5000;

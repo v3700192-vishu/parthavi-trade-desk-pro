@@ -4,6 +4,8 @@ import { createReadStream, statSync } from "node:fs";
 import { Readable } from "node:stream";
 import { exchangeTimestampMs, isFreshExchangeTick } from "./marketFreshness.js";
 import { recordLiveIndexTick } from "./liveIndexCandles.js";
+import { saveSecureRefreshToken, loadSecureRefreshToken, deleteSecureRefreshToken, hasSecureRefreshToken,
+  saveSecureFeedToken, loadSecureFeedToken, deleteSecureFeedToken, hasSecureFeedToken } from "./angelSessionVault.js";
 
 const { SmartAPI, WebSocketV2 } = SmartApiPackage;
 
@@ -58,6 +60,9 @@ export function angelStatus(){
     clientCode:session.clientCode,
     loginAt:session.loginAt,
     websocket:!!ws && wsConnected,
+    // Report presence only; never return the credential itself.
+    refreshTokenStored:Boolean(session.refreshToken)||hasSecureRefreshToken(),
+    feedTokenStored:Boolean(session.feedToken)||hasSecureFeedToken(),
     tickCount:latestTicks.size,
     lastTickAt,
     websocketError:wsError
@@ -78,12 +83,61 @@ export async function loginAngel({clientCode, pin, totp}){
   const data = await api.generateSession(cc, pin, totp);
   if(!data?.status) throw new Error(data?.message || "Angel One login failed");
   session = {connected:true, clientCode:cc, loginAt:new Date().toISOString(), jwtToken:data.data?.jwtToken||null, refreshToken:data.data?.refreshToken||null, feedToken:data.data?.feedToken||null, profile:null};
+  if(session.refreshToken){try{saveSecureRefreshToken(session.refreshToken);}catch{console.warn('[ANGEL_AUTH] secure refresh-token vault save failed; credentials were not logged.');}}
+  if(session.feedToken){try{saveSecureFeedToken(session.feedToken);}catch{console.warn('[ANGEL_AUTH] secure feed-token vault save failed; credentials were not logged.');}}
   startConnectionGuards();
   try { session.profile = await api.getProfile(); } catch {}
   // Do not block REST login on the streaming socket. Angel One login succeeds first;
   // WebSocket connection is established in the background and can retry independently.
   void connectMarketWebSocket().catch(e=>{ wsError=e?.message || "WebSocket connection failed"; scheduleReconnect(); });
   return {connected:true, clientCode:cc, loginAt:session.loginAt, profile:session.profile, websocket:angelStatus().websocket, websocketError:wsError};
+}
+
+export async function restoreAngelSessionFromVault(){
+  if(process.platform!=='win32') return {restored:false,reason:'UNSUPPORTED_PLATFORM'};
+  let savedToken=null,savedFeedToken=null;
+  try{savedToken=loadSecureRefreshToken();savedFeedToken=loadSecureFeedToken();}catch{
+    console.warn('[ANGEL_AUTH] secure session vault could not be decrypted for this Windows user.');
+    return {restored:false,reason:'VAULT_UNAVAILABLE'};
+  }
+  if(!savedToken) return {restored:false,reason:'NO_STORED_SESSION'};
+  const apiKey=angelApiKey();
+  const cc=process.env.ANGEL_CLIENT_CODE||process.env.ANGELONE_CLIENT_CODE;
+  if(!apiKey||!cc) return {restored:false,reason:'SERVER_CREDENTIALS_UNAVAILABLE'};
+  try{
+    api=new SmartAPI({api_key:apiKey});
+    const out=await api.generateToken(savedToken);
+    if(!out?.status||!out?.data?.jwtToken) throw new Error('REFRESH_REJECTED');
+    const refreshedToken=out.data.refreshToken||savedToken;
+    try{saveSecureRefreshToken(refreshedToken);}catch{console.warn('[ANGEL_AUTH] refreshed session token could not be persisted securely.');}
+    // Angel SmartAPI's refresh-token response may omit feedToken. Reuse only a feed
+    // token protected by the same Windows-user DPAPI vault; otherwise require one login.
+    const restoredFeedToken=out.data.feedToken||savedFeedToken;
+    if(!restoredFeedToken){api=null;return {restored:false,reason:'FEED_TOKEN_NOT_STORED'};}
+    session={connected:true,clientCode:cc,loginAt:new Date().toISOString(),
+      jwtToken:out.data.jwtToken,refreshToken:out.data.refreshToken||savedToken,
+      feedToken:restoredFeedToken,profile:null};
+    try{api.setAccessToken?.(session.jwtToken);}catch{}
+    try{api.setRefreshToken?.(session.refreshToken);}catch{}
+    try{api.setFeedToken?.(session.feedToken);}catch{}
+    try{session.profile=await api.getProfile();}catch{}
+    try{saveSecureRefreshToken(session.refreshToken);}catch{
+      console.warn('[ANGEL_AUTH] rotated session token could not be persisted to the secure vault.');
+    }
+    try{saveSecureFeedToken(session.feedToken);}catch{
+      console.warn('[ANGEL_AUTH] feed token could not be persisted to the secure vault.');
+    }
+    startConnectionGuards();
+    void connectMarketWebSocket().catch(e=>{wsError=e?.message||'WebSocket connection failed';scheduleReconnect();});
+    console.log('[ANGEL_AUTH] saved session restored; WebSocket reconnect started.');
+    return {restored:true,connected:true};
+  }catch{
+    api=null;
+    session={connected:false,clientCode:null,loginAt:null,jwtToken:null,refreshToken:null,feedToken:null,profile:null};
+    wsConnected=false;
+    console.warn('[ANGEL_AUTH] saved-session restore failed; manual login may be required.');
+    return {restored:false,reason:'REFRESH_FAILED'};
+  }
 }
 
 export async function logoutAngel(){
@@ -94,6 +148,8 @@ export async function logoutAngel(){
   if(ws){ try{ws.close?.()}catch{}; try{ws.closeConnection?.()}catch{}; ws=null; }
   wsConnected=false; wsConnectBusy=false; wsError=null; lastTickAt=null;
   reconnectDelayMs=5000;
+  try{deleteSecureRefreshToken();}catch{console.warn('[ANGEL_AUTH] secure refresh-token vault could not be cleared during logout.');}
+  try{deleteSecureFeedToken();}catch{console.warn('[ANGEL_AUTH] secure feed-token vault could not be cleared during logout.');}
   api=null; session={connected:false,clientCode:null,loginAt:null,jwtToken:null,refreshToken:null,feedToken:null,profile:null}; latestTicks.clear(); tickWindows.clear(); subscribedTokens.clear();
   wsConnectBusy=false;
   return angelStatus();
@@ -574,12 +630,32 @@ async function loadUnderlyingMaster(underlying){
   return (all.get(key)||[]).filter(x=>/(?:CE|PE)$/i.test(String(x.symbol||'')));
 }
 
-function lightExpiryTimestamp(value){
+function lightExpiryParts(value){
   const m=String(value||'').trim().toUpperCase().match(/^(\d{1,2})([A-Z]{3})(\d{4})$/);
-  if(!m) return Number.NaN;
+  if(!m) return null;
   const months={JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11};
-  const month=months[m[2]];
-  return month==null?Number.NaN:new Date(Number(m[3]),month,Number(m[1]),23,59,59,999).getTime();
+  const month=months[m[2]], day=Number(m[1]), year=Number(m[3]);
+  if(month==null||!Number.isInteger(day)||!Number.isInteger(year)) return null;
+  const check=new Date(Date.UTC(year,month,day));
+  if(check.getUTCFullYear()!==year||check.getUTCMonth()!==month||check.getUTCDate()!==day) return null;
+  return {year,month,day};
+}
+function lightExpiryTimestamp(value){
+  const p=lightExpiryParts(value);
+  // Keep deterministic UTC sorting; expiry-day validity below uses India-local calendar date.
+  return p?Date.UTC(p.year,p.month,p.day):Number.NaN;
+}
+function istCalendarDayKey(value){
+  const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(value));
+  const map=Object.fromEntries(parts.map(x=>[x.type,x.value]));
+  return map.year&&map.month&&map.day?`${map.year}-${map.month}-${map.day}`:null;
+}
+export function isLightExpiryCurrentOrFuture(value,now=Date.now()){
+  const p=lightExpiryParts(value);
+  if(!p) return false;
+  const expiryKey=`${p.year}-${String(p.month+1).padStart(2,'0')}-${String(p.day).padStart(2,'0')}`;
+  const todayKey=istCalendarDayKey(now);
+  return !!todayKey&&expiryKey>=todayKey;
 }
 
 export async function findLightContracts({underlying='',expiry='',optionType='',strike='',query='',exchange='NSE'}={}){
@@ -593,6 +669,8 @@ export async function findLightContracts({underlying='',expiry='',optionType='',
     const seg=String(x.exch_seg||x.exchange||'').toUpperCase();
     const segOk=ex==='BSE'?['BFO','BSE_FO'].includes(seg):['NFO','NSE_FO'].includes(seg);
     if(!segOk||!/(?:CE|PE)$/.test(sym)) return false;
+    // Never surface expired options, even when the caller did not specify an expiry.
+    if(!isLightExpiryCurrentOrFuture(x.expiry)) return false;
     if(expiry && String(x.expiry||'').toUpperCase()!==String(expiry).toUpperCase()) return false;
     if(ot && !sym.endsWith(ot)) return false;
     if(st!==null && Number(x.strike)/100!==st && Number(x.strike)!==st) return false;
@@ -608,7 +686,9 @@ export async function findLightFutures({underlying='',expiry='',query=''}={}){
   const key=normalizeUnderlyingName(underlying||query);
   const all=await loadSharedIndexMaster();
   const items=(all.get(key)||[]).filter(x=>String(x.instrumenttype||'').toUpperCase()==='FUTIDX');
-  return items.filter(x=>!expiry||String(x.expiry||'').toUpperCase()===String(expiry).toUpperCase()).slice(0,100);
+  return items.filter(x=>isLightExpiryCurrentOrFuture(x.expiry)&&(!expiry||String(x.expiry||'').toUpperCase()===String(expiry).toUpperCase()))
+    .sort((a,b)=>lightExpiryTimestamp(a.expiry)-lightExpiryTimestamp(b.expiry)||String(a.symbol||'').localeCompare(String(b.symbol||'')))
+    .slice(0,100);
 }
 
 export async function loadMaster(force=false){
@@ -717,8 +797,7 @@ function jwtExpiryMs(token){
     const part=String(token||'').split('.')[1];
     if(!part) return 0;
     const json=JSON.parse(Buffer.from(part.replace(/-/g,'+').replace(/_/g,'/'),'base64').toString('utf8'));
-    const exp=Number(json?.exp||0);
-    return exp>0?exp*1000:0;
+    const exp=Number(json?.exp||0);    return exp>0?exp*1000:0;
   }catch{return 0;}
 }
 function marketHoursNow(){
@@ -742,12 +821,15 @@ async function refreshSessionTokens(){
       const out=api && typeof api.generateToken==='function'
         ? await api.generateToken(session.refreshToken)
         : null;
-      if(!out?.status || !out?.data?.jwtToken || !out?.data?.feedToken){
-        throw new Error(out?.message||'Angel One token refresh failed');
+      const refreshedFeedToken=out?.data?.feedToken||session.feedToken||loadSecureFeedToken();
+      if(!out?.status || !out?.data?.jwtToken || !refreshedFeedToken){
+        throw new Error(out?.message||'Angel One token refresh failed or secure feed token is unavailable');
       }
       session.jwtToken=out.data.jwtToken;
       session.refreshToken=out.data.refreshToken||session.refreshToken;
-      session.feedToken=out.data.feedToken;
+      session.feedToken=refreshedFeedToken;
+      try{saveSecureRefreshToken(session.refreshToken);}catch{console.warn('[ANGEL_AUTH] rotated session token could not be persisted to the secure vault.');}
+      try{saveSecureFeedToken(session.feedToken);}catch{console.warn('[ANGEL_AUTH] rotated feed token could not be persisted to the secure vault.');}
       try{ api?.setAccessToken?.(session.jwtToken); }catch{}
       try{ api?.setRefreshToken?.(session.refreshToken); }catch{}
       try{ api?.setFeedToken?.(session.feedToken); }catch{}

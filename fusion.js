@@ -160,6 +160,7 @@ function analyzeEvents(raw){
     label:String(x.label||x.title||x.name||'Event'),
     time:x.time||x.datetime||x.timestamp||x.start||'',
     risk:String(x.risk||x.impact||x.importance||'WATCH').toUpperCase(),
+    country:String(x.country||x.currency||x.region||'').trim().toUpperCase(),
     source:String(x.source||''),
     url:String(x.url||'')
   })).filter(x=>x.label);
@@ -182,7 +183,12 @@ function analyzeEvents(raw){
     const istTime=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date(t));
     const istClock=Object.fromEntries(istTime.map(p=>[p.type,p.value]));
     const eventMinute=Number(istClock.hour)*60+Number(istClock.minute);
-    if(eventDate && eventDate===today && eventMinute>=8*60+30 && eventMinute<=15*60+45) eventDayBlock=true;
+    // Only India-specific high-impact events block the entire NSE session.
+    // Global events (e.g. UK GDP released during Indian trading hours) should
+    // create a near-event caution/block, not suppress the whole NIFTY session.
+    const country=String(e.country||'').toUpperCase();
+    const indiaSpecific=['IN','IND','INDIA','INR'].includes(country) || /RBI|RESERVE BANK OF INDIA|UNION BUDGET|INDIA.{0,20}BUDGET|SEBI/.test(e.label.toUpperCase());
+    if(indiaSpecific && eventDate && eventDate===today && eventMinute>=8*60+30 && eventMinute<=15*60+45) eventDayBlock=true;
     if(mins>=0&&mins<=15) hardBlock=true;
     else if(mins>=0&&mins<=60) watch=true;
   }

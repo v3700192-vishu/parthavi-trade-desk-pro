@@ -98,10 +98,12 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
   const vr10=hasVerifiedVolume?verifiedVolumeRatio:null;
   const latestBarTime=rows5?.at?.(-1)?.t;
   const parsedLatestBarTime=latestBarTime==null||latestBarTime===''?NaN:new Date(latestBarTime).getTime();
-  const rawCandleAge=Number.isFinite(parsedLatestBarTime)?(Date.now()-parsedLatestBarTime)/60000:NaN;
-  // Allow at most 15 seconds of clock skew; a candle timestamp materially in the future is invalid, not fresh.
-  const futureCandleTimestamp=Number.isFinite(rawCandleAge)&&rawCandleAge < -0.25;
-  const candleAgeMinutes=Number.isFinite(rawCandleAge)&&rawCandleAge>=-0.25?Number(Math.max(0,rawCandleAge).toFixed(1)):null;
+  const rawCandleStartAge=Number.isFinite(parsedLatestBarTime)?(Date.now()-parsedLatestBarTime)/60000:NaN;
+  // Providers timestamp five-minute bars at their OPEN. Check future skew against the raw
+  // timestamp, but measure staleness from the scheduled close of the completed candle.
+  const futureCandleTimestamp=Number.isFinite(rawCandleStartAge)&&rawCandleStartAge < -0.25;
+  const rawCandleAge=Number.isFinite(rawCandleStartAge)&&!futureCandleTimestamp?rawCandleStartAge-5:NaN;
+  const candleAgeMinutes=Number.isFinite(rawCandleAge)?Number(Math.max(0,rawCandleAge).toFixed(1)):null;
   const candlesFresh=candleAgeMinutes!=null&&candleAgeMinutes<=10&&!futureCandleTimestamp;
   const candleSource=String(m5?.candleSource||'UNKNOWN').toUpperCase();
   // Angel One is primary; a separately authenticated Upstox V3 candle feed is an accepted
@@ -166,6 +168,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
   else if(events?.unverifiedTimes||events?.unverifiedHighImpact) noTradeReasons.push('No Trade: one or more economic-event timestamps are unverified.');
   else if(events?.eventDayBlock) noTradeReasons.push('No Trade: high-impact event day gate is active.');
   else if(events?.hardBlock) noTradeReasons.push('No Trade: high-impact event window is active.');
+  else if(events?.watch) noTradeReasons.push('No Trade: high-impact event is inside the caution window; wait until the event-risk window clears.');
 
   score=Number(clamp(score,-100,100).toFixed(1));
   const prediction=score>=20?'BULLISH':score<=-20?'BEARISH':'NEUTRAL';
@@ -252,6 +255,17 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
     ? candidatePlan
     : {...finalTradePlan('NEUTRAL',null,null),reason:'Entry plan withheld because live feeds or confirmation gates are incomplete.'};
   const opportunityEligible=prediction!=='NEUTRAL' && modelConfidence>=opportunityConfidenceThreshold && !hardSafetyBlock && !hardNoTrade && marketOpen && plan.available;
+  // Option scanning must not be gated by Greeks from one arbitrary ATM contract.
+  // If every non-Greek confirmation is verified, let the contract selector find a
+  // specific liquid CE/PE whose own Greeks pass; re-run this model with that contract.
+  // Scan candidates from the WATCH tier so selected-contract Greeks can complete the
+  // confidence calculation. This flag only permits analysis; event, trigger, Greek,
+  // confidence>=78, and final execution gates still decide whether anything is recommended.
+  const contractScanEligible=prediction!=='NEUTRAL' && modelConfidence>=70 &&
+    marketOpen && candidatePlan.available && candlesVerified && hasVerifiedVolume && hasVix && Number(vix)>=12 && Number(vix)<=22 &&
+    newsVerified && globalVerified && optionFlowVerified && events?.connected && !events?.unverifiedTimes && !events?.unverifiedHighImpact &&
+    !events?.hardBlock && !events?.eventDayBlock &&
+    required.filter(k=>!['greeks','trigger','eventSafe'].includes(k)).every(k=>confirmations[k]);
   const reasoning = signalState==='CONFIRMED'
     ? `${prediction} structure aligns across 1H/15M/5M with ${confirmedCount}/${required.length} confirmation checks; VIX/ADX/volume/event filters passed and minimum RR is 1:2.`
     : signalState==='WATCH' && modelConfidence>=opportunityConfidenceThreshold
@@ -265,7 +279,8 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
           : `${prediction==='NEUTRAL'?'Directional edge is weak.':prediction+' setup detected, but confirmation is incomplete.'} ${confirmedCount}/${required.length} checks currently pass.`;
   return {
     prediction, action, watchAction, signalState, score,
-    modelConfidence, opportunityConfidenceThreshold, opportunityEligible,
+    modelConfidence, opportunityConfidenceThreshold, opportunityEligible, contractScanEligible,
+    candidatePlan,
     modelConfidenceBand:modelConfidence>=78?'OPTION OPPORTUNITY':modelConfidence>=70?'WATCH':'WEAK',
     confirmationPct, confirmedCount, confirmationTotal:required.length,
     confirmations, trend1h:h1d, setup15m:m15d, trigger5m:String(m5?.candle||'WAIT'),

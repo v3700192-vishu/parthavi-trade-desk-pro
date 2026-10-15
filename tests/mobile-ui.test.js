@@ -126,6 +126,26 @@ test("free advisor says RECOMMENDED only with a verified contract and every fina
   assert.equal(nodes.freeAdvisorEntry.textContent, "₹35.00");
 });
 
+test("78% directional confidence can display a risk-blocked contract candidate only as NO TRADE", () => {
+  const candidate = renderFreeAdvisorForTest({
+    signalState: "NO TRADE", action: "NO TRADE", prediction: "BULLISH",
+    directionalConfidence: 80, modelConfidence: 72, confirmationPct: 73, exchangeTickVerified: true,
+    optionPlan: { available: true, candidateOnly: true, greekStatus: "NO TRADE", contract: "NIFTY19OCT2623050CE", optionType: "CE", strike: 23050, expiry: "19OCT2026", lotSize: 65, entry: 74.45, stopLoss: 60, target1: 103.35, target2: 110.58 },
+    noTradeReasons: ["Theta exceeds the configured safety limit."]
+  }, { health: { marketOpen: true } });
+  assert.match(candidate.freeAdvisorDecision.textContent, /NO TRADE • CONTRACT CANDIDATE/);
+  assert.equal(candidate.freeAdvisorContract.textContent, "NIFTY19OCT2623050CE");
+  assert.match(candidate.freeAdvisorContractMeta.textContent, /ANALYSIS ONLY • NO TRADE/);
+  assert.doesNotMatch(candidate.freeAdvisorDecision.textContent, /RECOMMENDED/);
+
+  const underThreshold = renderFreeAdvisorForTest({
+    signalState: "NO TRADE", action: "NO TRADE", prediction: "BULLISH",
+    directionalConfidence: 77, modelConfidence: 72, confirmationPct: 73, exchangeTickVerified: true,
+    optionPlan: { available: true, candidateOnly: true, greekStatus: "NO TRADE", contract: "NIFTY19OCT2623050CE", entry: 74.45 }
+  }, { health: { marketOpen: true } });
+  assert.equal(underThreshold.freeAdvisorContract.textContent, "—");
+});
+
 test("free advisor blocks a confirmed direction when the exchange tick or final gate is missing", () => {
   const nodes = renderFreeAdvisorForTest({
     signalState: "CONFIRMED", action: "CALL", prediction: "BULLISH",
@@ -176,7 +196,7 @@ test("chart reports stale candle fallback and preserves selected historical day 
 });
 
 test("service-worker cache version is bumped and never caches live API responses", () => {
-  assert.match(serviceWorker, /const CACHE='ptd-shell-v17'/);
+  assert.match(serviceWorker, /const CACHE='ptd-shell-v19'/);
   assert.match(serviceWorker, /prediction-report\.html/);
   assert.match(serviceWorker, /if\(u\.pathname\.startsWith\('\/api\/'\)\) return/);
   assert.doesNotMatch(serviceWorker, /const CACHE='ptd-shell-v[345678]'/);
@@ -219,6 +239,8 @@ test("Data Health distinguishes feed connectivity from live readiness gates", ()
   assert.match(html, /HISTORICAL_PROVIDER_HEALTH_V1/);
   assert.match(html, /\/api\/data-health\?symbol=/);
   assert.match(html, /__updatedAt:Date\.now\(\)/);
+  assert.match(html, /backupVerified=indexCfg\.configured===true&&futCfg\.configured===true&&indexBackupVerified&&futuresBackupVerified/);
+  assert.match(html, /CONFIGURED — NOT VERIFIED/);
   assert.match(block, /gateText\s*=\s*\(ok\)\s*=>\s*ok\s*\?\s*'ON'\s*:\s*'OFF'/);
   assert.match(block, /priceVerified=!!h\.market&&tickVerified/);
   assert.match(block, /marketGate=priceVerified&&volumeVerified/);
@@ -227,4 +249,56 @@ test("Data Health distinguishes feed connectivity from live readiness gates", ()
     assert.ok(block.includes(`setGate('${id}'`), `missing render state for ${id}`);
   }
   assert.doesNotMatch(block, /setGate\('[^']+',!!h\.[a-zA-Z]+,'ON'\)/);
+});
+
+test("Global Risk ticker uses verified API state and refreshes instead of staying at WAIT", async () => {
+  assert.match(html, /id="globalRisk" class="wait">WAIT<\/strong>/);
+  assert.match(html, /id="GLOBAL_RISK_LIVE_BINDING_V1"/);
+  assert.match(html, /fetch\('\/api\/global\?ts='\+Date\.now\(\)/);
+  assert.match(html, /payload\.connected!==true\|\|strategy\.connected!==true\|\|freshInputs<1/);
+  assert.match(html, /allowed=\['RISK-ON','RISK-OFF','MIXED'\]/);
+  assert.match(html, /setInterval\(refreshGlobalRisk,15000\)/);
+  assert.match(html, /Global-risk response is older than 2 minutes/);
+  assert.match(html, /Secondary risk modifier only; not a standalone CALL\/PUT signal/);
+
+  let payload = {
+    connected: true,
+    strategy: { connected: true, freshInputs: 8, liveInputs: 6, delayedInputs: 2, bias: "RISK-OFF", score: -21.6, reason: "Fresh inputs available." },
+    checkedAt: new Date().toISOString()
+  };
+  const el = {
+    textContent: "WAIT", className: "wait", style: {}, dataset: {}, attrs: {},
+    setAttribute(name, value) { this.attrs[name] = value; }
+  };
+  const intervals = [];
+  const document = {
+    hidden: false, readyState: "complete",
+    getElementById(id) { return id === "globalRisk" ? el : null; },
+    addEventListener() {}
+  };
+  const context = {
+    document, window: {}, Date, Number, String, Math,
+    AbortSignal: { timeout: () => ({}) },
+    fetch: async (url) => {
+      assert.match(url, /\/api\/global\?ts=/);
+      return { ok: true, json: async () => payload };
+    },
+    setInterval(fn, ms) { intervals.push(ms); return intervals.length; }
+  };
+  const inline = html.match(/<script id="GLOBAL_RISK_LIVE_BINDING_V1">([\s\S]*?)<\/script>/)?.[1];
+  assert.ok(inline, "live global-risk updater script is present");
+  vm.runInNewContext(inline, context);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(el.textContent, "RISK-OFF -21.6");
+  assert.equal(el.dataset.globalRiskState, "RISK-OFF");
+  assert.match(el.title, /Fresh inputs: 8/);
+  assert.ok(intervals.includes(15000), "risk state refreshes every 15 seconds");
+
+  payload = {
+    connected: false,
+    strategy: { connected: false, freshInputs: 0, bias: "WAIT", score: 0, reason: "No fresh verified global inputs." }
+  };
+  await context.window.refreshGlobalRisk();
+  assert.equal(el.textContent, "WAIT");
+  assert.match(el.title, /No fresh verified global inputs/);
 });
