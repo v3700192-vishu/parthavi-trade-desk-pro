@@ -244,7 +244,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
     (hasVix && (Number(vix)<12 || Number(vix)>22)) ||
     (hasGreeks && (theta>=10 || delta<0.20));
   const watchEligible=prediction!=='NEUTRAL' && confirmedCount>=6 && !hardSafetyBlock;
-  const eliteSetup=prediction!=='NEUTRAL' && confirmedCount>=9 && confirmationPct>=80 && modelConfidence>=80 && !hardNoTrade && feedComplete && !hardSafetyBlock;
+  const eliteSetup=prediction!=='NEUTRAL' && confirmedCount>=9 && confirmationPct>=80 && modelConfidence>=80 && confirmations.trigger && confirmations.momentum && confirmations.options && !hardNoTrade && feedComplete && !hardSafetyBlock;
   const signalState=(!marketOpen||events?.hardBlock||events?.eventDayBlock)?'NO TRADE':(eliteSetup?'CONFIRMED':(watchEligible?'WATCH':'NO TRADE'));
   const action=signalState==='CONFIRMED'?(prediction==='BULLISH'?'CALL':'PUT'):'NO TRADE';
   const watchAction=watchEligible?(prediction==='BULLISH'?'CE WATCH':'PE WATCH'):'NO TRADE';
@@ -258,14 +258,14 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
   // Option scanning must not be gated by Greeks from one arbitrary ATM contract.
   // If every non-Greek confirmation is verified, let the contract selector find a
   // specific liquid CE/PE whose own Greeks pass; re-run this model with that contract.
-  // Scan candidates from the WATCH tier so selected-contract Greeks can complete the
-  // confidence calculation. This flag only permits analysis; event, trigger, Greek,
-  // confidence>=80, and final execution gates still decide whether anything is recommended.
+  // Scan candidates from the 70% directional tier. Momentum or options directional alignment
+  // may be missing even while feeds are valid; the scanner checks each contract's own live quote,
+  // OI, volume, premium and Greeks. This permits analysis only, never a recommendation or order.
   const contractScanEligible=prediction!=='NEUTRAL' && modelConfidence>=70 &&
     marketOpen && candidatePlan.available && candlesVerified && hasVerifiedVolume && hasVix && Number(vix)>=12 && Number(vix)<=22 &&
     newsVerified && globalVerified && optionFlowVerified && events?.connected && !events?.unverifiedTimes && !events?.unverifiedHighImpact &&
     !events?.hardBlock && !events?.eventDayBlock &&
-    required.filter(k=>!['greeks','trigger','eventSafe'].includes(k)).every(k=>confirmations[k]);
+    required.filter(k=>!['greeks','trigger','eventSafe','momentum','options'].includes(k)).every(k=>confirmations[k]);
   const reasoning = signalState==='CONFIRMED'
     ? `${prediction} structure aligns across 1H/15M/5M with ${confirmedCount}/${required.length} confirmation checks; VIX/ADX/volume/event filters passed and minimum RR is 1:2.`
     : signalState==='WATCH' && modelConfidence>=opportunityConfidenceThreshold

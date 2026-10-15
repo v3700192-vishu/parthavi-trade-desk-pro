@@ -119,20 +119,22 @@ test("unsafe ATM Greeks allow a scan for a separately verified contract, but nev
     h1: { trend: "BULLISH", last: 101, ema20: 100, ema50: 99 },
     m15: { trend: "BULLISH", last: 101, ema20: 100, ema50: 99 },
     m5: { trend: "BULLISH", candle: "BULLISH CANDLE", candleSource: "ANGEL", last: 101, ema20: 100, ema50: 99,
-      rsi: 60, macd: { hist: 1 }, adx: 25, atr: 2, vwap: 100,
+      rsi: 48, macd: { hist: -1 }, adx: 25, atr: 2, vwap: 100,
       volumeRatio10d: 1.6, volumeSource: "NIFTY FUTURES 5M test fixture" },
     rows5: [{ t: new Date(Date.now() - 5 * 60_000).toISOString(), o: 100, h: 102, l: 99, c: 101, v: 100 }],
     marketOpen: true,
     vix: 15,
     news: { connected: true, freshCount: 5, bias: "BULLISH" },
     global: { connected: true, freshInputs: 4, bias: "RISK-ON" },
-    options: { connected: true, pcr: 1.1, ceoi: 100, peoi: 110, theta: -14, delta: 0.5 },
+    options: { connected: true, pcr: 0.8, ceoi: 120, peoi: 100, theta: -14, delta: 0.5 },
     events: { connected: true, eventSafe: true }
   };
   const waiting = buildPrediction(input);
   assert.equal(waiting.action, "NO TRADE");
   assert.equal(waiting.confirmations.greeks, false);
-  assert.equal(waiting.contractScanEligible, true);
+  assert.equal(waiting.contractScanEligible, true, "verified feeds must permit candidate scanning even if momentum and option-direction alignment are false");
+  assert.equal(waiting.confirmations.momentum, false);
+  assert.equal(waiting.confirmations.options, false);
   assert.equal(waiting.tradeFinder.watchThreshold, 70);
   assert.equal(waiting.tradeFinder.contractThreshold, 80);
   assert.equal(waiting.opportunityConfidenceThreshold, 80);
@@ -144,8 +146,8 @@ test("unsafe ATM Greeks allow a scan for a separately verified contract, but nev
       greekRisk: { status: "PASS", message: "Selected live contract passed safeguards." } }
   });
   assert.equal(selected.confirmations.greeks, true);
-  assert.equal(selected.signalState, "CONFIRMED");
-  assert.equal(selected.action, "CALL");
+  assert.equal(selected.signalState, "WATCH", "a verified contract must not bypass opposing momentum/options confirmations");
+  assert.equal(selected.action, "NO TRADE");
   assert.equal(selected.finalPlan.available, true);
 });
 
