@@ -2194,7 +2194,7 @@ app.get('/api/phase10/prediction',async(req,res)=>{
     }
     optionPlan.threshold=70;
     optionPlan.directionalConfidence=directionalConfidence;
-    const contractDisplayConfidence=optionPlan.candidateOnly===true?directionalConfidence:Number(prediction.modelConfidence??directionalConfidence)||0;
+    const contractDisplayConfidence=directionalConfidence;
     optionPlan.displayEligible=contractDisplayConfidence>=70&&optionPlan.available===true;
     // This endpoint suggests/analyses contracts only; it never unlocks order placement.
     optionPlan.tradeReady=false;
@@ -2212,6 +2212,25 @@ app.get('/api/phase10/prediction',async(req,res)=>{
       prediction.reasoning='No Trade: fresh exchange-timestamped market data is missing; live entry is locked.';
       prediction.optionPlan={available:false,reason:'No Trade: fresh exchange-timestamped market data is required.'};
     }
+    prediction.finalPlanThreshold=70;
+    prediction.advisorThreshold=80;
+    prediction.commandCenterThreshold=90;
+    prediction.advisorEligible=Boolean(
+      prediction.advisorMomentumExceptionEligible===true &&
+      optionPlan.available===true && optionPlan.candidateOnly!==true && optionPlan.greekStatus==='PASS' &&
+      prediction.exchangeTickVerified===true && prediction.feedComplete===true &&
+      prediction.confirmations?.trigger===true && prediction.confirmations?.options===true &&
+      (prediction.noTradeReasons||[]).length===0
+    );
+    const ptdRequiredConfirmationKeys=['trend','setup','trigger','momentum','volume','strength','options','greeks','news','global','eventSafe'];
+    const ptdAllConfirmationsPass=ptdRequiredConfirmationKeys.every(k=>prediction.confirmations?.[k]===true);
+    prediction.commandCenterEligible=Boolean(
+      prediction.signalState==='CONFIRMED' && ['CALL','PUT'].includes(String(prediction.action||'')) &&
+      Number(prediction.modelConfidence)>=90 && Number(prediction.confirmationPct)===100 && ptdAllConfirmationsPass &&
+      prediction.feedComplete===true && prediction.exchangeTickVerified===true && prediction.eventSafe===true &&
+      optionPlan.available===true && optionPlan.candidateOnly!==true && optionPlan.greekStatus==='PASS' &&
+      (prediction.noTradeReasons||[]).length===0
+    );
     const candleConnected=Array.isArray(m5.rows)&&m5.rows.length>0;
     const checkedAt=nowISO();
     try{

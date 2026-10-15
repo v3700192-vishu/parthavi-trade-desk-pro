@@ -2057,7 +2057,7 @@ const ptdPredictionNotice={key:null,booted:false}; window.__notifyAlways=('Notif
 function announcePrediction(p){
   const pred=String(p?.prediction||'NO TRADE').toUpperCase(), act=String(p?.action||'NO TRADE').toUpperCase(), state=String(p?.signalState||'LOCKED').toUpperCase();
   const displayAct=state==='WATCH'?(p?.watchAction||(pred==='BULLISH'?'CE WATCH':pred==='BEARISH'?'PE WATCH':'NO TRADE')):act;
-  const contractReady=!!p?.optionPlan?.available && p?.optionPlan?.candidateOnly!==true && String(p?.signalState||'').toUpperCase()==='CONFIRMED' && ['CALL','PUT'].includes(String(p?.action||'').toUpperCase()) && Number(p?.modelConfidence)>=80 && Number(p?.confirmationPct)>=80 && p?.feedComplete===true && p?.exchangeTickVerified===true;
+  const contractReady=p?.commandCenterEligible===true && !!p?.optionPlan?.available && p?.optionPlan?.candidateOnly!==true && String(p?.signalState||'').toUpperCase()==='CONFIRMED' && ['CALL','PUT'].includes(String(p?.action||'').toUpperCase()) && Number(p?.modelConfidence)>=90 && Number(p?.confirmationPct)===100 && p?.feedComplete===true && p?.exchangeTickVerified===true;
   const key=pred+'|'+act+'|'+state+'|'+(contractReady?'CONTRACT_READY':'');
   if(!ptdPredictionNotice.booted){ptdPredictionNotice.booted=true;ptdPredictionNotice.key=key;return}
   if(!key||key===ptdPredictionNotice.key)return;
@@ -2107,7 +2107,7 @@ async function loadRiskSizing(p){
   const state=$('riskGreekState'), budget=$('riskBudgetLive');
   try{const rs=await getJSON('/api/risk/status'); budget.textContent=money(rs.riskBudgetRupees||1000);}catch{}
   const plan=p?.optionPlan||{};
-  const usable=!!plan.available && p?.signalState==='CONFIRMED' && p?.action!=='NO TRADE';
+  const usable=!!plan.available && (p?.commandCenterEligible===true||p?.advisorEligible===true);
   if(!usable){
     state.textContent=p?.signalState==='CONFIRMED'?'OPTION WAIT':'WAIT';
     $('riskLots').textContent='—'; $('riskQty').textContent='—'; $('riskUsed').textContent='—';
@@ -2172,7 +2172,9 @@ function stccIsOpposite(a,b){return (a==='CALL'&&b==='PUT')||(a==='PUT'&&b==='CA
 function stccCurrentPlan(p){
   const plan=p?.optionPlan||{};
   const action=String(p?.action||'NO TRADE').toUpperCase();
-  const usable=p?.signalState==='CONFIRMED' && !!plan.available && action!=='NO TRADE' && Number(p?.modelConfidence)>=PTD_COMMAND_CENTER_CONFIDENCE && Number(p?.confirmationPct)>=80;
+  const required=['trend','setup','trigger','momentum','volume','strength','options','greeks','news','global','eventSafe'];
+  const allConfirmationsPass=required.every(k=>p?.confirmations?.[k]===true);
+  const usable=p?.commandCenterEligible===true && p?.signalState==='CONFIRMED' && ['CALL','PUT'].includes(action) && !!plan.available && plan.candidateOnly!==true && plan.greekStatus==='PASS' && Number(p?.modelConfidence)>=PTD_COMMAND_CENTER_CONFIDENCE && Number(p?.confirmationPct)===100 && allConfirmationsPass && p?.feedComplete===true && p?.exchangeTickVerified===true && p?.eventSafe===true && (p?.noTradeReasons||[]).length===0;
   if(!usable)return null;
   return {
     symbol,
@@ -2341,15 +2343,16 @@ function renderFreeAdvisor(p,resp={}){
   const direction=String(p?.prediction||'NEUTRAL').toUpperCase();
   const reasons=Array.isArray(p?.noTradeReasons)?p.noTradeReasons.filter(Boolean):[];
   const marketClosed=resp?.mode==='OFF_SESSION_FAST_PATH'||resp?.health?.marketOpen===false||p?.marketOpen===false;
-  const strictConfirmed=!marketClosed&&state==='CONFIRMED'&&['CALL','PUT'].includes(action)&&plan.available===true&&plan.candidateOnly!==true
+  const strictConfirmed=!marketClosed&&p?.commandCenterEligible===true&&state==='CONFIRMED'&&['CALL','PUT'].includes(action)&&plan.available===true&&plan.candidateOnly!==true
     &&p?.exchangeTickVerified===true&&p?.feedComplete===true
-    &&Number(p?.modelConfidence)>=PTD_ADVISOR_CONFIDENCE&&Number(p?.confirmationPct)>=80;
+    &&Number(p?.modelConfidence)>=PTD_COMMAND_CENTER_CONFIDENCE&&Number(p?.confirmationPct)===100;
   const directionalConfidence=Number(p?.directionalConfidence??p?.modelConfidence)||0;
   const optionConfidence=directionalConfidence;
-  const watchOnly=!strictConfirmed&&!marketClosed&&state==='WATCH'&&plan.candidateOnly!==true&&optionConfidence>=PTD_ADVISOR_CONFIDENCE;
+  const advisorMomentumException=!strictConfirmed&&!marketClosed&&p?.advisorEligible===true&&plan.available===true&&plan.candidateOnly!==true&&plan.greekStatus==='PASS'&&optionConfidence>=PTD_ADVISOR_CONFIDENCE;
+  const watchOnly=!strictConfirmed&&!advisorMomentumException&&!marketClosed&&state==='WATCH'&&plan.candidateOnly!==true&&optionConfidence>=PTD_ADVISOR_CONFIDENCE;
   const gatedConfirmation=!strictConfirmed&&!marketClosed&&state==='CONFIRMED';
-  const candidatePreview=!strictConfirmed&&!marketClosed&&p?.exchangeTickVerified===true&&plan.available===true&&optionConfidence>=PTD_ADVISOR_CONFIDENCE&&(plan.candidateOnly===true||state!=='WATCH');
-  const hasCandidate=plan.available===true&&(strictConfirmed||watchOnly||candidatePreview);
+  const candidatePreview=!strictConfirmed&&!advisorMomentumException&&!marketClosed&&p?.exchangeTickVerified===true&&plan.available===true&&optionConfidence>=PTD_ADVISOR_CONFIDENCE&&(plan.candidateOnly===true||state!=='WATCH');
+  const hasCandidate=plan.available===true&&(strictConfirmed||advisorMomentumException||watchOnly||candidatePreview);
   const decision=$('freeAdvisorDecision');
   const reason=$('freeAdvisorReason');
   const stateBadge=$('freeAdvisorState');
@@ -2369,6 +2372,12 @@ function renderFreeAdvisor(p,resp={}){
     reason.textContent='NSE is closed. Historical or cached values are for context only; wait for the next market session and fresh exchange-time-stamped data.';
     stateBadge.textContent='MARKET CLOSED';stateBadge.className='badge danger';
     status.textContent='OFF SESSION';status.className='stcc-badge neutral';
+  }else if(advisorMomentumException){
+    decision.textContent='RECOMMENDED - '+String(plan.contract||'VERIFIED OPTION')+' - 80% AI ADVISER';
+    decision.className='stcc-decision bullish';
+    reason.textContent='80% AI Adviser tier: the live contract, premium, liquidity, Delta/Theta, 5M trigger, option-flow, news, global-risk, VIX and event checks passed. Only momentum confirmation is missing. This Adviser recommendation does not qualify for the 90% Command Center and does not place an order.';
+    stateBadge.textContent='80% ADVISER - MOMENTUM EXCEPTION';stateBadge.className='badge warn';
+    status.textContent='READY TO REVIEW - NOT EXECUTED';status.className='stcc-badge bullish';
   }else if(watchOnly){
     decision.textContent='WAIT • CANDIDATE ONLY';
     decision.className='stcc-decision neutral';

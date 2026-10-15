@@ -96,9 +96,9 @@ test("free smart advisor gives a buy recommendation only when every final live g
   assert.match(html, /id="freeSmartAdvisor"/);
   assert.match(html, /id="freeAdvisorDecision"/);
   assert.match(html, /function renderFreeAdvisor\(p,resp=\{\}\)/);
-  assert.match(html, /const strictConfirmed=!marketClosed&&state==='CONFIRMED'/);
+  assert.match(html, /const strictConfirmed=!marketClosed&&p\?\.commandCenterEligible===true&&state==='CONFIRMED'/);
   assert.match(html, /p\?\.exchangeTickVerified===true&&p\?\.feedComplete===true/);
-  assert.match(html, /Number\(p\?\.modelConfidence\)>=PTD_ADVISOR_CONFIDENCE&&Number\(p\?\.confirmationPct\)>=80/);
+  assert.match(html, /Number\(p\?\.modelConfidence\)>=PTD_COMMAND_CENTER_CONFIDENCE/);
   assert.match(html, /NO TRADE • MARKET CLOSED/);
   assert.match(html, /WAIT • CANDIDATE ONLY/);
   assert.match(html, /NO TRADE • FINAL GATE FAILED/);
@@ -109,7 +109,7 @@ const freeAdvisorSource = html.match(/function renderFreeAdvisor\(p,resp=\{\}\)\
 function renderFreeAdvisorForTest(prediction, response = {}) {
   const ids = ["freeAdvisorDecision","freeAdvisorReason","freeAdvisorState","freeAdvisorBadge","freeAdvisorContract","freeAdvisorContractMeta","freeAdvisorEntry","freeAdvisorSL","freeAdvisorT1","freeAdvisorT2","freeAdvisorConfidence","freeAdvisorChecks"];
   const nodes = Object.fromEntries(ids.map(id => [id, { textContent: "", className: "" }]));
-  const render = vm.runInNewContext(freeAdvisorSource + "\nrenderFreeAdvisor", { $: id => nodes[id], PTD_ADVISOR_CONFIDENCE: 80 });
+  const render = vm.runInNewContext(freeAdvisorSource + "\nrenderFreeAdvisor", { $: id => nodes[id], PTD_ADVISOR_CONFIDENCE: 80, PTD_COMMAND_CENTER_CONFIDENCE: 90 });
   render(prediction, response);
   return nodes;
 }
@@ -121,6 +121,10 @@ test("candidate contract scanner is single-flight, parallelizes independent quot
   assert.ok(server.includes("Promise.all([quoteInstruments(contracts),liveOptionGreeks(symbol,scanExpiry)])"));
   assert.ok(server.includes(")].slice(0,2);"));
   assert.ok(server.includes("boundedFeed(findBuyableOptionPlanCoalesced"));
+  assert.ok(server.includes("const contractDisplayConfidence=directionalConfidence;"));
+  assert.ok(server.includes("prediction.finalPlanThreshold=70;"));
+  assert.ok(server.includes("prediction.advisorEligible=Boolean("));
+  assert.ok(server.includes("prediction.commandCenterEligible=Boolean("));
 });
 test("staged contract visibility thresholds are distinct and the Command Center requires 90% plus confirmation", () => {
   assert.ok(html.includes("const PTD_FINAL_PLAN_CONFIDENCE=70;"));
@@ -129,8 +133,8 @@ test("staged contract visibility thresholds are distinct and the Command Center 
   assert.match(html, /const optionConfidence=directionalConfidence/);
   assert.match(html, /const finalPlanVisible=!!optionPlan\?\.available&&optionConfidence>=PTD_FINAL_PLAN_CONFIDENCE/);
   assert.match(html, /const optionVisible=!!optionPlan\?\.available&&optionConfidence>=PTD_ADVISOR_CONFIDENCE/);
-  assert.match(html, /Number\(p\?\.modelConfidence\)>=PTD_COMMAND_CENTER_CONFIDENCE && Number\(p\?\.confirmationPct\)>=80/);
-  assert.match(serviceWorker, /ptd-shell-v20/);
+  assert.match(html, /Number\(p\?\.modelConfidence\)>=PTD_COMMAND_CENTER_CONFIDENCE/);
+  assert.match(serviceWorker, /ptd-shell-v21/);
 });
 const stccCurrentPlanSource = html.match(/function stccCurrentPlan\(p\)\{[\s\S]*?\n\}/)?.[0] || "";
 function stccCurrentPlanForTest(prediction) {
@@ -139,15 +143,17 @@ function stccCurrentPlanForTest(prediction) {
   });
   return build(prediction);
 }
-test("Command Center surfaces a plan only at 90% final confidence and 80% confirmation", () => {
+test("Command Center surfaces a plan only at 90% final confidence and all 11 confirmations", () => {
   const plan = {
     signalState: "CONFIRMED", action: "CALL", prediction: "BULLISH",
-    optionPlan: { available: true, contract: "NIFTYTESTCE", optionType: "CE", strike: 23000, lotSize: 65, entry: 35, stopLoss: 30, target1: 45, target2: 47.5 },
-    modelConfidence: 89, confirmationPct: 90
+    optionPlan: { available: true, candidateOnly: false, greekStatus: "PASS", contract: "NIFTYTESTCE", optionType: "CE", strike: 23000, lotSize: 65, entry: 35, stopLoss: 30, target1: 45, target2: 47.5 },
+    modelConfidence: 89, confirmationPct: 100, commandCenterEligible: true, feedComplete: true, exchangeTickVerified: true, eventSafe: true, noTradeReasons: [],
+    confirmations: { trend:true, setup:true, trigger:true, momentum:true, volume:true, strength:true, options:true, greeks:true, news:true, global:true, eventSafe:true }
   };
   assert.equal(stccCurrentPlanForTest(plan), null, "89% must not show as a Command Center trade");
-  assert.ok(stccCurrentPlanForTest({ ...plan, modelConfidence: 90, confirmationPct: 79 }) === null, "confirmation below 80% must stay blocked");
-  assert.equal(stccCurrentPlanForTest({ ...plan, modelConfidence: 90, confirmationPct: 80 })?.contract, "NIFTYTESTCE");
+  assert.equal(stccCurrentPlanForTest({ ...plan, modelConfidence: 90, confirmationPct: 99 })?.contract||null, null, "one or more confirmations missing must stay blocked");
+  assert.equal(stccCurrentPlanForTest({ ...plan, modelConfidence: 90, confirmationPct: 100, confirmations: { ...plan.confirmations, momentum:false } })?.contract||null, null, "momentum must pass for the Command Center");
+  assert.equal(stccCurrentPlanForTest({ ...plan, modelConfidence: 90, confirmationPct: 100 })?.contract, "NIFTYTESTCE");
 });
 test("AI Adviser can show an 80% directional candidate even if final gates keep the score at NO TRADE", () => {
   const candidate = renderFreeAdvisorForTest({
@@ -159,15 +165,30 @@ test("AI Adviser can show an 80% directional candidate even if final gates keep 
   assert.match(candidate.freeAdvisorDecision.textContent, /NO TRADE • CONTRACT CANDIDATE/);
   assert.equal(candidate.freeAdvisorContract.textContent, "NIFTYTESTCE");
   assert.doesNotMatch(candidate.freeAdvisorDecision.textContent, /RECOMMENDED/);
-});test("free advisor says RECOMMENDED only with a verified contract and every final gate", () => {
+});test("80% AI Adviser recommendation requires server-approved momentum-only exception", () => {
+  const candidate = renderFreeAdvisorForTest({
+    signalState: "WATCH", action: "NO TRADE", prediction: "BULLISH",
+    directionalConfidence: 82, modelConfidence: 82, confirmationPct: 91,
+    advisorEligible: true, commandCenterEligible: false,
+    exchangeTickVerified: true, feedComplete: true, eventSafe: true,
+    confirmations: { trend:true, setup:true, trigger:true, momentum:false, volume:true, strength:true, options:true, greeks:true, news:true, global:true, eventSafe:true },
+    optionPlan: { available:true, candidateOnly:false, greekStatus:"PASS", contract:"NIFTYTESTCE", optionType:"CE", strike:23000, expiry:"19OCT2026", lotSize:65, entry:40, stopLoss:32, target1:56, target2:60 },
+    noTradeReasons: []
+  }, { health: { marketOpen: true } });
+  assert.match(candidate.freeAdvisorDecision.textContent, /RECOMMENDED.*80% AI ADVISER/);
+  assert.equal(candidate.freeAdvisorContract.textContent, "NIFTYTESTCE");
+  assert.match(candidate.freeAdvisorState.textContent, /MOMENTUM EXCEPTION/);
+});
+test("free advisor says RECOMMENDED only with a verified contract and every final gate", () => {
   const nodes = renderFreeAdvisorForTest({
     signalState: "CONFIRMED", action: "CALL", prediction: "BULLISH",
-    optionPlan: { available: true, contract: "NIFTY13OCT2622500CE", optionType: "CE", strike: 22500, expiry: "13OCT2026", lotSize: 65, entry: 35, stopLoss: 30, target1: 45, target2: 47.5 },
-    exchangeTickVerified: true, feedComplete: true, modelConfidence: 84, confirmationPct: 82,
-    reasoning: "All required checks passed."
+    optionPlan: { available: true, candidateOnly: false, greekStatus: "PASS", contract: "NIFTY19OCT2622500CE", optionType: "CE", strike: 22500, expiry: "19OCT2026", lotSize: 65, entry: 35, stopLoss: 30, target1: 45, target2: 47.5 },
+    commandCenterEligible: true, exchangeTickVerified: true, feedComplete: true, eventSafe: true, noTradeReasons: [],
+    confirmations: { trend:true, setup:true, trigger:true, momentum:true, volume:true, strength:true, options:true, greeks:true, news:true, global:true, eventSafe:true },
+    modelConfidence: 92, confirmationPct: 100, reasoning: "All eleven required checks passed."
   }, { health: { marketOpen: true } });
   assert.match(nodes.freeAdvisorDecision.textContent, /RECOMMENDED/);
-  assert.equal(nodes.freeAdvisorContract.textContent, "NIFTY13OCT2622500CE");
+  assert.equal(nodes.freeAdvisorContract.textContent, "NIFTY19OCT2622500CE");
   assert.equal(nodes.freeAdvisorEntry.textContent, "₹35.00");
 });
 
@@ -241,7 +262,7 @@ test("chart reports stale candle fallback and preserves selected historical day 
 });
 
 test("service-worker cache version is bumped and never caches live API responses", () => {
-  assert.match(serviceWorker, /const CACHE='ptd-shell-v20'/);
+  assert.match(serviceWorker, /const CACHE='ptd-shell-v21'/);
   assert.match(serviceWorker, /prediction-report\.html/);
   assert.match(serviceWorker, /if\(u\.pathname\.startsWith\('\/api\/'\)\) return/);
   assert.doesNotMatch(serviceWorker, /const CACHE='ptd-shell-v[345678]'/);

@@ -136,7 +136,9 @@ test("unsafe ATM Greeks allow a scan for a separately verified contract, but nev
   assert.equal(waiting.confirmations.momentum, false);
   assert.equal(waiting.confirmations.options, false);
   assert.equal(waiting.tradeFinder.watchThreshold, 70);
-  assert.equal(waiting.tradeFinder.contractThreshold, 80);
+  assert.equal(waiting.tradeFinder.contractThreshold, 70);
+  assert.equal(waiting.tradeFinder.advisorThreshold, 80);
+  assert.equal(waiting.tradeFinder.commandCenterThreshold, 90);
   assert.equal(waiting.opportunityConfidenceThreshold, 80);
   assert.equal(waiting.candidatePlan.available, true);
 
@@ -151,6 +153,31 @@ test("unsafe ATM Greeks allow a scan for a separately verified contract, but nev
   assert.equal(selected.finalPlan.available, true);
 });
 
+test("80% AI Adviser tier may omit only momentum while 90% confirmation remains unconfirmed", () => {
+  const input = {
+    h1: { trend: "BULLISH", last: 101, ema20: 100, ema50: 99 },
+    m15: { trend: "BULLISH", last: 101, ema20: 100, ema50: 99 },
+    m5: { trend: "BULLISH", candle: "BULLISH CANDLE", candleSource: "ANGEL", last: 101, ema20: 100, ema50: 99,
+      rsi: 58, macd: { hist: -1 }, adx: 28, atr: 2, vwap: 100,
+      volumeRatio10d: 1.8, volumeSource: "NIFTY FUTURES 5M test fixture" },
+    rows5: [{ t: new Date(Date.now() - 5 * 60_000).toISOString(), o: 100, h: 102, l: 99, c: 101, v: 100 }],
+    marketOpen: true, vix: 15,
+    news: { connected: true, freshCount: 5, bias: "BULLISH" },
+    global: { connected: true, freshInputs: 4, bias: "RISK-ON" },
+    options: { connected: true, pcr: 1.1, ceoi: 100, peoi: 120, theta: -4, delta: 0.5 },
+    events: { connected: true, eventSafe: true }
+  };
+  const p = buildPrediction(input);
+  assert.equal(p.confirmations.momentum, false);
+  assert.equal(p.confirmations.options, true);
+  assert.equal(p.confirmations.trigger, true);
+  assert.equal(p.advisorMomentumExceptionEligible, true);
+  assert.ok(p.modelConfidence >= 80);
+  assert.ok(p.confirmationPct >= 80 && p.confirmationPct < 100);
+  assert.equal(p.signalState, "WATCH", "missing momentum must prevent 90% Command Center confirmation");
+  assert.equal(p.action, "NO TRADE");
+  assert.equal(p.commandCenterEligible, undefined, "live contract and exchange tick must be verified by server before tier eligibility");
+});
 test("prediction returns NO TRADE when verified futures volume is missing", () => {
   const latestTime = new Date(Date.now() - 5 * 60_000).toISOString();
   const prediction = buildPrediction({

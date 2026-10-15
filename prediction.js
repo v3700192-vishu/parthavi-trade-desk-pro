@@ -244,7 +244,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
     (hasVix && (Number(vix)<12 || Number(vix)>22)) ||
     (hasGreeks && (theta>=10 || delta<0.20));
   const watchEligible=prediction!=='NEUTRAL' && confirmedCount>=6 && !hardSafetyBlock;
-  const eliteSetup=prediction!=='NEUTRAL' && confirmedCount>=9 && confirmationPct>=80 && modelConfidence>=80 && confirmations.trigger && confirmations.momentum && confirmations.options && !hardNoTrade && feedComplete && !hardSafetyBlock;
+  const eliteSetup=prediction!=='NEUTRAL' && confirmedCount===required.length && confirmationPct===100 && modelConfidence>=90 && required.every(k=>confirmations[k]) && !hardNoTrade && feedComplete && !hardSafetyBlock;
   const signalState=(!marketOpen||events?.hardBlock||events?.eventDayBlock)?'NO TRADE':(eliteSetup?'CONFIRMED':(watchEligible?'WATCH':'NO TRADE'));
   const action=signalState==='CONFIRMED'?(prediction==='BULLISH'?'CALL':'PUT'):'NO TRADE';
   const watchAction=watchEligible?(prediction==='BULLISH'?'CE WATCH':'PE WATCH'):'NO TRADE';
@@ -255,6 +255,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
     ? candidatePlan
     : {...finalTradePlan('NEUTRAL',null,null),reason:'Entry plan withheld because live feeds or confirmation gates are incomplete.'};
   const opportunityEligible=prediction!=='NEUTRAL' && modelConfidence>=opportunityConfidenceThreshold && !hardSafetyBlock && !hardNoTrade && marketOpen && plan.available;
+  const advisorMomentumExceptionEligible=prediction!=='NEUTRAL' && modelConfidence>=80 && confirmationPct>=80 && required.filter(k=>k!=='momentum').every(k=>confirmations[k]) && !hardNoTrade && feedComplete && !hardSafetyBlock;
   // Option scanning must not be gated by Greeks from one arbitrary ATM contract.
   // If every non-Greek confirmation is verified, let the contract selector find a
   // specific liquid CE/PE whose own Greeks pass; re-run this model with that contract.
@@ -279,9 +280,9 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
           : `${prediction==='NEUTRAL'?'Directional edge is weak.':prediction+' setup detected, but confirmation is incomplete.'} ${confirmedCount}/${required.length} checks currently pass.`;
   return {
     prediction, action, watchAction, signalState, score,
-    modelConfidence, opportunityConfidenceThreshold, opportunityEligible, contractScanEligible,
+    modelConfidence, opportunityConfidenceThreshold, opportunityEligible, contractScanEligible, advisorMomentumExceptionEligible,
     candidatePlan,
-    modelConfidenceBand:modelConfidence>=80?'OPTION OPPORTUNITY':modelConfidence>=70?'WATCH':'WEAK',
+    modelConfidenceBand:modelConfidence>=90&&confirmationPct===100?'COMMAND CENTER READY':modelConfidence>=80?'AI ADVISER':modelConfidence>=70?'FINAL TRADE PLAN':'WEAK',
     confirmationPct, confirmedCount, confirmationTotal:required.length,
     confirmations, trend1h:h1d, setup15m:m15d, trigger5m:String(m5?.candle||'WAIT'),
     volumeRatio:vr, volumeRatio10d:vr10, volumeBreakout:!!x5.volumeBreakout, volumeSource:x5.volumeSource||null, volumeUnavailable:!hasVerifiedVolume, candleAgeMinutes, candlesFresh, candlesVerified, candleSource, futureCandleTimestamp, optionDataVerified:optionFlowVerified, eventCalendarConnected:!!events?.connected, eventTimestampsVerified:!events?.unverifiedTimes, eventSafetyStatus, eventSafe, rsi, adx, atr, vwap, last, vix:hasVix?Number(vix):null, delta:hasGreeks?delta:null, theta:hasGreeks?theta:null, greekRisk:options?.greekRisk||null, oi:oi||null, noTradeReasons, rrGate:'1:2 MINIMUM',
@@ -290,7 +291,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
     historical:backtest||{available:false,kind:'UNDERLYING_PRICE_ONLY',instrument:'NIFTY INDEX',reason:'Index price-only backtest unavailable.'},
     optionBacktest:{available:false,verified:false,kind:'OPTION_PREMIUM',feesIncluded:false,slippageIncluded:false,reason:'Historical CE/PE option-premium backtest is not connected to a verified historical contract dataset. Do not use index-candle statistics as option win rate or P&L.'},
     feedComplete, eventBlocked:!!events?.hardBlock, eventCalendarConnected:!!events?.connected, eventTimestampsVerified:!events?.unverifiedTimes, eventSafetyStatus,
-    tradeFinder:{enabled:true,targetOpportunitiesPerSession:2,volumeMode:volumeContinuation?'CONTINUATION':'BREAKOUT',watchThreshold:70,contractThreshold:80},
+    tradeFinder:{enabled:true,targetOpportunitiesPerSession:2,volumeMode:volumeContinuation?'CONTINUATION':'BREAKOUT',watchThreshold:70,contractThreshold:70,advisorThreshold:80,commandCenterThreshold:90},
     note:'Two-trade finder is active: the scanner searches continuously for up to two high-quality opportunities per NSE session. A 1.5x 10-day same-slot volume breakout is preferred; strong trend-continuation may qualify from 0.90x when 1H/15M/5M, momentum and ADX agree. India VIX 12–22, event safety, complete verified feeds and minimum 1:2 risk-to-reward remain hard protections. This is a quality filter, not a guarantee of profit. Final SL/targets are volatility-based planning levels on the underlying index; option premium SL/targets must be verified from the selected live contract and its Greeks.',
     reasoning
   };
