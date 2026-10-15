@@ -2510,7 +2510,7 @@ function renderPredictionPanel(resp){
       if(fn){
         fn.textContent=finalPlanVisible
           ? `${candidatePreview?'Candidate only. ':'Contract candidate. '}Premium Entry ₹${Number(optionPlan.entry).toFixed(2)} • SL ₹${Number(optionPlan.stopLoss).toFixed(2)} • T1 ₹${Number(optionPlan.target1).toFixed(2)} • T2 ₹${Number(optionPlan.target2).toFixed(2)} • R:R 1:${optionPlan.rr1}/1:${optionPlan.rr2}. Delta ${Number(optionPlan.delta).toFixed(3)}, Theta ${Number(optionPlan.theta).toFixed(2)} (${optionPlan.greekStatus||'UNVERIFIED'}). Directional confidence ${directionalConfidence.toFixed(0)}%; final confidence ${Number(conf||0).toFixed(0)}%. Live execution remains OFF and all failed gates remain NO TRADE.`
-          : 'No contract is displayed below the 78% directional-confidence threshold. The live scanner continues checking contracts and safety gates.';
+          : 'No verified live contract candidate yet at the 70% directional-confidence tier. The scanner keeps checking; any failed safety gate remains NO TRADE.';
       }
       if(fb)fb.textContent=candidatePreview?'NO TRADE • CANDIDATE ONLY':state==='CONFIRMED'?'CONFIRMED TRADE PLAN':'WATCH • WAIT FOR FINAL GATES';
     }else{
