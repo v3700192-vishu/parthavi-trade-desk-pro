@@ -2057,7 +2057,7 @@ const ptdPredictionNotice={key:null,booted:false}; window.__notifyAlways=('Notif
 function announcePrediction(p){
   const pred=String(p?.prediction||'NO TRADE').toUpperCase(), act=String(p?.action||'NO TRADE').toUpperCase(), state=String(p?.signalState||'LOCKED').toUpperCase();
   const displayAct=state==='WATCH'?(p?.watchAction||(pred==='BULLISH'?'CE WATCH':pred==='BEARISH'?'PE WATCH':'NO TRADE')):act;
-  const contractReady=!!p?.optionPlan?.available && p?.optionPlan?.candidateOnly!==true && String(p?.signalState||'').toUpperCase()==='CONFIRMED' && ['CALL','PUT'].includes(String(p?.action||'').toUpperCase()) && Number(p?.modelConfidence)>=78 && Number(p?.confirmationPct)>=80 && p?.feedComplete===true && p?.exchangeTickVerified===true;
+  const contractReady=!!p?.optionPlan?.available && p?.optionPlan?.candidateOnly!==true && String(p?.signalState||'').toUpperCase()==='CONFIRMED' && ['CALL','PUT'].includes(String(p?.action||'').toUpperCase()) && Number(p?.modelConfidence)>=80 && Number(p?.confirmationPct)>=80 && p?.feedComplete===true && p?.exchangeTickVerified===true;
   const key=pred+'|'+act+'|'+state+'|'+(contractReady?'CONTRACT_READY':'');
   if(!ptdPredictionNotice.booted){ptdPredictionNotice.booted=true;ptdPredictionNotice.key=key;return}
   if(!key||key===ptdPredictionNotice.key)return;
@@ -2345,7 +2345,7 @@ function renderFreeAdvisor(p,resp={}){
     &&p?.exchangeTickVerified===true&&p?.feedComplete===true
     &&Number(p?.modelConfidence)>=PTD_ADVISOR_CONFIDENCE&&Number(p?.confirmationPct)>=80;
   const directionalConfidence=Number(p?.directionalConfidence??p?.modelConfidence)||0;
-  const optionConfidence=plan.candidateOnly===true?directionalConfidence:Number(p?.modelConfidence??directionalConfidence)||0;
+  const optionConfidence=directionalConfidence;
   const watchOnly=!strictConfirmed&&!marketClosed&&state==='WATCH'&&plan.candidateOnly!==true&&optionConfidence>=PTD_ADVISOR_CONFIDENCE;
   const gatedConfirmation=!strictConfirmed&&!marketClosed&&state==='CONFIRMED';
   const candidatePreview=!strictConfirmed&&!marketClosed&&p?.exchangeTickVerified===true&&plan.available===true&&optionConfidence>=PTD_ADVISOR_CONFIDENCE&&(plan.candidateOnly===true||state!=='WATCH');
@@ -2429,7 +2429,7 @@ function renderPredictionPanel(resp){
   const conf=p?.modelConfidence;
   const optionPlan=p?.optionPlan||{};
   const directionalConfidence=Number(p?.directionalConfidence??conf)||0;
-  const optionConfidence=optionPlan?.candidateOnly===true?directionalConfidence:Number(conf??directionalConfidence)||0;
+  const optionConfidence=directionalConfidence;
   const finalPlanVisible=!!optionPlan?.available&&optionConfidence>=PTD_FINAL_PLAN_CONFIDENCE;
   const optionVisible=!!optionPlan?.available&&optionConfidence>=PTD_ADVISOR_CONFIDENCE;
   const candidatePreview=finalPlanVisible&&(optionPlan?.candidateOnly===true||!['CONFIRMED','WATCH'].includes(state));

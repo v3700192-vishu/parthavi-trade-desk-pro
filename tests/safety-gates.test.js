@@ -133,6 +133,9 @@ test("unsafe ATM Greeks allow a scan for a separately verified contract, but nev
   assert.equal(waiting.action, "NO TRADE");
   assert.equal(waiting.confirmations.greeks, false);
   assert.equal(waiting.contractScanEligible, true);
+  assert.equal(waiting.tradeFinder.watchThreshold, 70);
+  assert.equal(waiting.tradeFinder.contractThreshold, 80);
+  assert.equal(waiting.opportunityConfidenceThreshold, 80);
   assert.equal(waiting.candidatePlan.available, true);
 
   const selected = buildPrediction({

@@ -225,7 +225,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
   const hardNoTrade=noTradeReasons.length>0;
   // Opportunity tiers: keep directional opportunities visible early, while
   // preserving hard safety blockers and the existing confirmed-entry gate.
-  const opportunityConfidenceThreshold=78;
+  const opportunityConfidenceThreshold=80;
   const hardSafetyBlock =
     !marketOpen ||
     !candlesVerified ||
@@ -260,7 +260,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
   // specific liquid CE/PE whose own Greeks pass; re-run this model with that contract.
   // Scan candidates from the WATCH tier so selected-contract Greeks can complete the
   // confidence calculation. This flag only permits analysis; event, trigger, Greek,
-  // confidence>=78, and final execution gates still decide whether anything is recommended.
+  // confidence>=80, and final execution gates still decide whether anything is recommended.
   const contractScanEligible=prediction!=='NEUTRAL' && modelConfidence>=70 &&
     marketOpen && candidatePlan.available && candlesVerified && hasVerifiedVolume && hasVix && Number(vix)>=12 && Number(vix)<=22 &&
     newsVerified && globalVerified && optionFlowVerified && events?.connected && !events?.unverifiedTimes && !events?.unverifiedHighImpact &&
@@ -281,7 +281,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
     prediction, action, watchAction, signalState, score,
     modelConfidence, opportunityConfidenceThreshold, opportunityEligible, contractScanEligible,
     candidatePlan,
-    modelConfidenceBand:modelConfidence>=78?'OPTION OPPORTUNITY':modelConfidence>=70?'WATCH':'WEAK',
+    modelConfidenceBand:modelConfidence>=80?'OPTION OPPORTUNITY':modelConfidence>=70?'WATCH':'WEAK',
     confirmationPct, confirmedCount, confirmationTotal:required.length,
     confirmations, trend1h:h1d, setup15m:m15d, trigger5m:String(m5?.candle||'WAIT'),
     volumeRatio:vr, volumeRatio10d:vr10, volumeBreakout:!!x5.volumeBreakout, volumeSource:x5.volumeSource||null, volumeUnavailable:!hasVerifiedVolume, candleAgeMinutes, candlesFresh, candlesVerified, candleSource, futureCandleTimestamp, optionDataVerified:optionFlowVerified, eventCalendarConnected:!!events?.connected, eventTimestampsVerified:!events?.unverifiedTimes, eventSafetyStatus, eventSafe, rsi, adx, atr, vwap, last, vix:hasVix?Number(vix):null, delta:hasGreeks?delta:null, theta:hasGreeks?theta:null, greekRisk:options?.greekRisk||null, oi:oi||null, noTradeReasons, rrGate:'1:2 MINIMUM',
@@ -290,7 +290,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
     historical:backtest||{available:false,kind:'UNDERLYING_PRICE_ONLY',instrument:'NIFTY INDEX',reason:'Index price-only backtest unavailable.'},
     optionBacktest:{available:false,verified:false,kind:'OPTION_PREMIUM',feesIncluded:false,slippageIncluded:false,reason:'Historical CE/PE option-premium backtest is not connected to a verified historical contract dataset. Do not use index-candle statistics as option win rate or P&L.'},
     feedComplete, eventBlocked:!!events?.hardBlock, eventCalendarConnected:!!events?.connected, eventTimestampsVerified:!events?.unverifiedTimes, eventSafetyStatus,
-    tradeFinder:{enabled:true,targetOpportunitiesPerSession:2,volumeMode:volumeContinuation?'CONTINUATION':'BREAKOUT',watchThreshold:70,contractThreshold:78},
+    tradeFinder:{enabled:true,targetOpportunitiesPerSession:2,volumeMode:volumeContinuation?'CONTINUATION':'BREAKOUT',watchThreshold:70,contractThreshold:80},
     note:'Two-trade finder is active: the scanner searches continuously for up to two high-quality opportunities per NSE session. A 1.5x 10-day same-slot volume breakout is preferred; strong trend-continuation may qualify from 0.90x when 1H/15M/5M, momentum and ADX agree. India VIX 12–22, event safety, complete verified feeds and minimum 1:2 risk-to-reward remain hard protections. This is a quality filter, not a guarantee of profit. Final SL/targets are volatility-based planning levels on the underlying index; option premium SL/targets must be verified from the selected live contract and its Greeks.',
     reasoning
   };

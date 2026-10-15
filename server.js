@@ -463,7 +463,7 @@ async function findBuyableOptionPlan(symbol, direction, underlyingEntry, underly
     if(!expiriesToScan.length) return {available:false,reason:'No current or future live option contracts found.',expiry,atm,optionType};
     const capitalBudget=Math.max(0,numEnv('MAX_OPTION_CAPITAL_RUPEES',5000));
     // Prefer a fully passing option at any active expiry; retain a caution-only
-    // candidate solely for the >=78% analysis panel, never as a trade-ready contract.
+    // candidate solely for the >=70% Final Trade Plan analysis panel, never as a trade-ready contract.
     let best=null,bestCaution=null,selectedExpiry=expiry,selectedPremiumCap=0;
     for(const scanExpiry of expiriesToScan){
       const contracts=allContracts.filter(x=>String(x.expiry||'').toUpperCase()===scanExpiry)
@@ -797,7 +797,8 @@ app.get("/api/data-health",(req,res)=>{
   const indexTick=freshIndexTick(symbol);
   const indexTickAgeMs=indexTick?exchangeTickAgeMs(indexTick.data):null;
   const tickAgeSeconds=indexTickAgeMs==null?null:Number((Math.max(0,indexTickAgeMs)/1000).toFixed(1));
-  const indexTickFresh=Boolean(indexTick&&isFreshExchangeTick(indexTick.data));  const volumeEntry=futuresVolumeCache.get(symbol)||null;
+  const indexTickFresh=Boolean(indexTick&&isFreshExchangeTick(indexTick.data));
+  const volumeEntry=futuresVolumeCache.get(symbol)||null;
   const volume=volumeEntry?.data||null;
   const volumeCandleTime=volume?.vwapLastCandleTime||volume?.lastCandleTime||null;
   // futures candles are stamped at interval start, so report freshness from the 5-minute close.
@@ -1596,7 +1597,8 @@ async function resolveIndexToken(symbol){
    if(x) return {token:String(x.token||x.symboltoken),symbol:String(x.tradingsymbol||x.symbol||x.name),exchange:'NSE'};
  }catch{}
  throw new Error('Index instrument not found');
- const aliases={NIFTY:['NIFTY','NIFTY 50'],BANKNIFTY:['BANKNIFTY','BANK NIFTY'],FINNIFTY:['FINNIFTY','NIFTY FIN SERVICE'],MIDCPNIFTY:['MIDCPNIFTY','NIFTY MID SELECT'],SENSEX:['SENSEX'],VIX:['INDIAVIX','INDIA VIX','VIX']}; const arr=aliases[s]||[s];
+ const aliases={NIFTY:['NIFTY','NIFTY 50'],BANKNIFTY:['BANKNIFTY','BANK NIFTY'],FINNIFTY:['FINNIFTY','NIFTY FIN SERVICE'],MIDCPNIFTY:['MIDCPNIFTY','NIFTY MID SELECT'],SENSEX:['SENSEX'],VIX:['INDIAVIX','INDIA VIX','VIX']};
+ const arr=aliases[s]||[s];
  let x=items.find(z=>arr.includes(String(z.name||'').toUpperCase())&&(String(z.exch_seg||'').toLowerCase()==='nse_cm'||String(z.exch_seg||'').toUpperCase()==='NSE'));
  if(!x) x=items.find(z=>arr.includes(String(z.symbol||'').toUpperCase())&&(String(z.exch_seg||'').toLowerCase()==='nse_cm'||String(z.exch_seg||'').toUpperCase()==='NSE'));
  if(!x) throw new Error('Index instrument not found');
@@ -2154,7 +2156,7 @@ app.get('/api/phase10/prediction',async(req,res)=>{
       // arbitrary ATM Greek snapshot is unsafe. The selected contract must pass its own
       // live quote, liquidity, expiry, premium and Delta/Theta filters before approval.
       optionPlan=await boundedFeed(findBuyableOptionPlan(symbol,optionAction,prediction.candidatePlan.entry,prediction.candidatePlan.sl,prediction.candidatePlan.target1,prediction.candidatePlan.target2),{available:false,reason:'Option contract scan exceeded its response deadline; no trade.'},'option-plan',20000);
-      if(!optionPlan.available) optionPlan={...optionPlan,threshold:78,reason:optionPlan.reason||'No suitable live contract passed the premium/Greek/liquidity filters.'};
+      if(!optionPlan.available) optionPlan={...optionPlan,threshold:70,reason:optionPlan.reason||'No suitable live contract passed the premium/Greek/liquidity filters.'};
       if(optionPlan.available){
         const selectedDelta=optionPlan.optionType==='PE'?-Math.abs(Number(optionPlan.delta)):Math.abs(Number(optionPlan.delta));
         const selectedTheta=-Math.abs(Number(optionPlan.theta));
@@ -2178,10 +2180,10 @@ app.get('/api/phase10/prediction',async(req,res)=>{
         prediction.reasoning=prediction.noTradeReasons.join(' • ');
       }
     }
-    optionPlan.threshold=78;
+    optionPlan.threshold=70;
     optionPlan.directionalConfidence=directionalConfidence;
     const contractDisplayConfidence=optionPlan.candidateOnly===true?directionalConfidence:Number(prediction.modelConfidence??directionalConfidence)||0;
-    optionPlan.displayEligible=contractDisplayConfidence>=78&&optionPlan.available===true;
+    optionPlan.displayEligible=contractDisplayConfidence>=70&&optionPlan.available===true;
     // This endpoint suggests/analyses contracts only; it never unlocks order placement.
     optionPlan.tradeReady=false;
     prediction.optionPlan=optionPlan;

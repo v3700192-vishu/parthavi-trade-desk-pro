@@ -118,6 +118,7 @@ test("staged contract visibility thresholds are distinct and the Command Center 
   assert.ok(html.includes("const PTD_FINAL_PLAN_CONFIDENCE=70;"));
   assert.ok(html.includes("const PTD_ADVISOR_CONFIDENCE=80;"));
   assert.ok(html.includes("const PTD_COMMAND_CENTER_CONFIDENCE=90;"));
+  assert.match(html, /const optionConfidence=directionalConfidence/);
   assert.match(html, /const finalPlanVisible=!!optionPlan\?\.available&&optionConfidence>=PTD_FINAL_PLAN_CONFIDENCE/);
   assert.match(html, /const optionVisible=!!optionPlan\?\.available&&optionConfidence>=PTD_ADVISOR_CONFIDENCE/);
   assert.match(html, /Number\(p\?\.modelConfidence\)>=PTD_COMMAND_CENTER_CONFIDENCE && Number\(p\?\.confirmationPct\)>=80/);
@@ -140,7 +141,17 @@ test("Command Center surfaces a plan only at 90% final confidence and 80% confir
   assert.ok(stccCurrentPlanForTest({ ...plan, modelConfidence: 90, confirmationPct: 79 }) === null, "confirmation below 80% must stay blocked");
   assert.equal(stccCurrentPlanForTest({ ...plan, modelConfidence: 90, confirmationPct: 80 })?.contract, "NIFTYTESTCE");
 });
-test("free advisor says RECOMMENDED only with a verified contract and every final gate", () => {
+test("AI Adviser can show an 80% directional candidate even if final gates keep the score at NO TRADE", () => {
+  const candidate = renderFreeAdvisorForTest({
+    signalState: "NO TRADE", action: "NO TRADE", prediction: "BULLISH",
+    directionalConfidence: 80, modelConfidence: 72, confirmationPct: 73, exchangeTickVerified: true,
+    optionPlan: { available: true, candidateOnly: false, greekStatus: "PASS", contract: "NIFTYTESTCE", optionType: "CE", strike: 23000, expiry: "19OCT2026", lotSize: 65, entry: 40, stopLoss: 32, target1: 56, target2: 60 },
+    noTradeReasons: ["The 5M trigger has not passed."]
+  }, { health: { marketOpen: true } });
+  assert.match(candidate.freeAdvisorDecision.textContent, /NO TRADE • CONTRACT CANDIDATE/);
+  assert.equal(candidate.freeAdvisorContract.textContent, "NIFTYTESTCE");
+  assert.doesNotMatch(candidate.freeAdvisorDecision.textContent, /RECOMMENDED/);
+});test("free advisor says RECOMMENDED only with a verified contract and every final gate", () => {
   const nodes = renderFreeAdvisorForTest({
     signalState: "CONFIRMED", action: "CALL", prediction: "BULLISH",
     optionPlan: { available: true, contract: "NIFTY13OCT2622500CE", optionType: "CE", strike: 22500, expiry: "13OCT2026", lotSize: 65, entry: 35, stopLoss: 30, target1: 45, target2: 47.5 },
