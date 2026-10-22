@@ -21,6 +21,13 @@ const MOVE_HORIZONS = [
 const MOVE_LABELS = ["UP_100", "DOWN_100", "BOTH_100", "NEITHER_100"];
 const MIN_MOVE_ANALOGS = 15;
 
+// Publish a directional percentage only when high-confidence forecasts also prove
+// >=68% hit rate on a chronological walk-forward sample. Rule/confluence score is
+// not a probability. Test cases use non-overlapping horizon steps to reduce leakage.
+const REQUIRED_DIRECTIONAL_HIT_RATE = 68;
+const MIN_CALIBRATION_SIGNALS = 30;
+const CALIBRATION_WINDOW_BARS = 300;
+
 function finite(value) {
   const n = Number(value);
   return value !== null && value !== undefined && value !== "" && Number.isFinite(n) ? n : null;
@@ -110,12 +117,91 @@ function toPercentages(counts, base, sampleSize) {
   return {up:whole[0],down:whole[1],sideways:whole[2]};
 }
 
+function historicalPredictionAt(rows, features, atr, index, config) {
+  const current = features[index];
+  if (!current) return null;
+  const start = Math.max(20, index - LOOKBACK_BARS - config.bars - 1);
+  const candidates = [], baseCounts = { UP: 0, DOWN: 0, RANGE: 0 };
+  // Every analogue's forward outcome must already be complete at the historical
+  // forecast timestamp. This is a strict chronological walk-forward simulation.
+  for (let i = start; i + config.bars <= index; i++) {
+    if (!features[i]) continue;
+    const label = outcomeAt(rows, i, config.bars, atr, config.thresholdAtr);
+    if (!label) continue;
+    baseCounts[label]++;
+    candidates.push({ i, label, distance: distance(current, features[i]) });
+  }
+  if (candidates.length < MIN_ANALOGS) return null;
+  const total = candidates.length, base = {};
+  for (const label of LABELS) base[label] = (baseCounts[label] || 0) / total;
+  candidates.sort((a, b) => a.distance - b.distance);
+  const selected = [];
+  for (const candidate of candidates) {
+    if (selected.some(x => Math.abs(x.i - candidate.i) <= config.bars)) continue;
+    selected.push(candidate);
+    if (selected.length >= TARGET_ANALOGS) break;
+  }
+  if (selected.length < MIN_ANALOGS) return null;
+  const counts = { UP: 0, DOWN: 0, RANGE: 0 };
+  for (const sample of selected) counts[sample.label]++;
+  const probabilities = toPercentages(counts, base, selected.length);
+  const best = Object.entries(probabilities).sort((a, b) => b[1] - a[1])[0];
+  return { label: best[0], leadingProbability: best[1], probabilities, sampleSize: selected.length };
+}
+
+function calibrateDirectionalHorizon(rows, features, atr, config) {
+  const evaluated = [];
+  const first = Math.max(20, rows.length - CALIBRATION_WINDOW_BARS - config.bars);
+  // Step by the horizon length so validation outcomes are not mostly duplicates.
+  for (let index = first; index < rows.length - config.bars; index += config.bars) {
+    const forecast = historicalPredictionAt(rows, features, atr, index, config);
+    const actual = outcomeAt(rows, index, config.bars, atr, config.thresholdAtr);
+    if (!forecast || !actual) continue;
+    evaluated.push({ forecast, actual });
+  }
+  const qualified = evaluated.filter(x =>
+    x.forecast.leadingProbability >= REQUIRED_DIRECTIONAL_HIT_RATE &&
+    (x.forecast.label === "UP" || x.forecast.label === "DOWN")
+  );
+  const correct = qualified.filter(x => x.forecast.label === x.actual).length;
+  const hitRate = qualified.length
+    ? round1(100 * correct / qualified.length)
+    : null;
+  const eligible = qualified.length >= MIN_CALIBRATION_SIGNALS &&
+    hitRate !== null && hitRate >= REQUIRED_DIRECTIONAL_HIT_RATE;
+  const status = eligible ? "WALK_FORWARD_VALIDATED" :
+    qualified.length < MIN_CALIBRATION_SIGNALS ? "INSUFFICIENT_OUT_OF_SAMPLE_SIGNALS" :
+    "WALK_FORWARD_HIT_RATE_BELOW_68";
+  return {
+    eligible,
+    status,
+    requiredHitRate: REQUIRED_DIRECTIONAL_HIT_RATE,
+    evaluatedPredictions: evaluated.length,
+    highConfidenceDirectionalSignals: qualified.length,
+    correctHighConfidenceSignals: correct,
+    outOfSampleHitRate: hitRate,
+    minimumSignals: MIN_CALIBRATION_SIGNALS,
+    windowBars: CALIBRATION_WINDOW_BARS,
+    method: "Chronological walk-forward test of high-confidence UP/DOWN nearest-analogue forecasts; forward labels are excluded from training until resolved; horizon-step sampling reduces overlap.",
+    reason: eligible
+      ? "Recent high-confidence directional forecasts passed the out-of-sample hit-rate and sample-size gates."
+      : qualified.length < MIN_CALIBRATION_SIGNALS
+        ? "Fewer than 30 out-of-sample high-confidence directional forecasts are resolved; do not display a directional percentage."
+        : "Recent out-of-sample high-confidence directional hit rate is below 68%; suppress directional percentage and wait."
+  };
+}
+
 function forecastHorizon(rows, features, atr, config) {
   const n=rows.length, current=features[n-1];
   const unavailable=(reason)=>({
-    available:false,horizonMinutes:config.minutes,probabilities:null,sampleSize:0,
-    direction:"UNAVAILABLE",reason,asOf:rows.at(-1)?.t??null,
-    method:"Nearest historical analogues, forward-labeled and base-rate-smoothed"
+    available:false,historyAvailable:false,horizonMinutes:config.minutes,
+    probabilities:null,rawProbabilities:null,sampleSize:0,
+    direction:"UNVERIFIED / WAIT",rawDirection:"UNAVAILABLE",leadingProbability:null,
+    rawLeadingProbability:null,calibration:{eligible:false,status:"INSUFFICIENT_HISTORY",
+      requiredHitRate:REQUIRED_DIRECTIONAL_HIT_RATE,highConfidenceDirectionalSignals:0,
+      correctHighConfidenceSignals:0,outOfSampleHitRate:null,minimumSignals:MIN_CALIBRATION_SIGNALS,reason},
+    reason,asOf:rows.at(-1)?.t??null,
+    method:"Nearest historical analogues with chronological walk-forward calibration gate"
   });
   if(!current) return unavailable("The latest closed candle does not have enough history for indicators.");
   const start=Math.max(20,n-LOOKBACK_BARS-config.bars-1);
@@ -142,18 +228,30 @@ function forecastHorizon(rows, features, atr, config) {
   if(selected.length<MIN_ANALOGS) return unavailable("Too few non-overlapping historical analogues for a stable estimate.");
   const counts={UP:0,DOWN:0,RANGE:0};
   for(const sample of selected) counts[sample.label]++;
-  const probabilities=toPercentages(counts,base,selected.length);
-  const best=Object.entries(probabilities).sort((a,b)=>b[1]-a[1])[0];
-  const direction=best[0]==="UP"?"UPWARD BIAS":best[0]==="DOWN"?"DOWNWARD BIAS":"RANGE / MIXED";
+  const rawProbabilities=toPercentages(counts,base,selected.length);
+  const best=Object.entries(rawProbabilities).sort((a,b)=>b[1]-a[1])[0];
+  const rawDirection=best[0]==="UP"?"UPWARD BIAS":best[0]==="DOWN"?"DOWNWARD BIAS":"RANGE / MIXED";
+  const calibration=calibrateDirectionalHorizon(rows,features,atr,config);
+  const currentDirectionalGate=best[1]>=REQUIRED_DIRECTIONAL_HIT_RATE &&
+    (best[0]==="UP"||best[0]==="DOWN");
+  const available=calibration.eligible&&currentDirectionalGate;
+  const reason=available
+    ? "Current analogue direction is >=68% and the recent out-of-sample high-confidence hit rate passed validation."
+    : !currentDirectionalGate
+      ? "Current leading directional estimate is below 68% or the leading class is RANGE; suppress directional percentage."
+      : calibration.reason;
   return {
-    available:true,horizonMinutes:config.minutes,probabilities,sampleSize:selected.length,
-    rawCounts:{up:counts.UP,down:counts.DOWN,sideways:counts.RANGE},
+    available,historyAvailable:true,horizonMinutes:config.minutes,
+    probabilities:available?rawProbabilities:null,rawProbabilities,
+    sampleSize:selected.length,rawCounts:{up:counts.UP,down:counts.DOWN,sideways:counts.RANGE},
     baseRates:{up:round1(base.UP*100),down:round1(base.DOWN*100),sideways:round1(base.RANGE*100)},
-    direction,leadingProbability:best[1],
+    direction:available?rawDirection:"UNVERIFIED / WAIT",rawDirection,
+    leadingProbability:available?best[1]:null,rawLeadingProbability:best[1],
+    calibration,reason,
     sampleQuality:selected.length>=35?"MODERATE":"LIMITED",
     asOf:rows.at(-1)?.t??null,
     outcomeRule:"UP/DOWN means the future close crosses ±"+config.thresholdAtr+" ATR; otherwise RANGE.",
-    method:"Nearest historical analogues using 3-bar/6-bar momentum, EMA9/EMA20 distance and RSI14; empirical outcome rates shrunk toward the recent base rate."
+    method:"Nearest historical analogues using 3-bar/6-bar momentum, EMA9/EMA20 distance and RSI14, with a recent chronological walk-forward quality gate."
   };
 }
 
@@ -243,19 +341,21 @@ export function buildForwardForecast(inputRows, options={}) {
   const baseResult=(reason)=>{
     const horizons={};
     for(const config of HORIZONS)horizons[String(config.minutes)]={
-      available:false,horizonMinutes:config.minutes,probabilities:null,sampleSize:0,
-      direction:"UNAVAILABLE",reason,asOf:last?.t??null,
-      method:"Nearest historical analogues, forward-labeled and base-rate-smoothed"
+      available:false,historyAvailable:false,horizonMinutes:config.minutes,probabilities:null,rawProbabilities:null,sampleSize:0,
+      direction:"UNVERIFIED / WAIT",rawDirection:"UNAVAILABLE",leadingProbability:null,rawLeadingProbability:null,
+      calibration:{eligible:false,status:"INSUFFICIENT_HISTORY",requiredHitRate:REQUIRED_DIRECTIONAL_HIT_RATE,highConfidenceDirectionalSignals:0,correctHighConfidenceSignals:0,outOfSampleHitRate:null,minimumSignals:MIN_CALIBRATION_SIGNALS,reason},
+      reason,asOf:last?.t??null,
+      method:"Nearest historical analogues with chronological walk-forward calibration gate"
     };
     const largeMoveHorizons={};
     for(const config of MOVE_HORIZONS)largeMoveHorizons[String(config.minutes)]={available:false,horizonMinutes:config.minutes,thresholdPoints:MOVE_POINTS,probabilities:null,sampleSize:0,reason,asOf:last?.t??null};
     return {
-      available:false,model:"HISTORICAL_ANALOGUE_V1",modelLabel:"Forward probability estimate",
+      available:false,historyAvailable:false,model:"HISTORICAL_ANALOGUE_V1",modelLabel:"Walk-forward gated directional estimate",
       asOf:last?.t??null,horizons,
       largeMoveRadar:{available:false,thresholdPoints:MOVE_POINTS,horizons:largeMoveHorizons,reason},
       moveMonitor:buildObservedMoveMonitor(rows,options),
       interpretation:"Forecast is shown only when the exchange session and latest closed candle can be verified. Percentages are not guarantees or option-premium win rates.",
-      calibrationStatus:"EMPIRICAL_ANALOGUE_ESTIMATE — needs ongoing walk-forward calibration before it should be treated as a calibrated probability."
+      calibrationStatus:"NO LIVE DIRECTIONAL PERCENTAGE UNLESS RECENT WALK-FORWARD HIGH-CONFIDENCE HIT RATE >=68% WITH AT LEAST 30 RESOLVED PREDICTIONS."
     };
   };
   if(options.marketOpen===false) return baseResult("Market session is closed; no live forward estimate is active.");
@@ -281,11 +381,12 @@ export function buildForwardForecast(inputRows, options={}) {
   const largeMoveRadar={available:Object.values(largeMoveHorizons).some(h=>h.available),thresholdPoints:MOVE_POINTS,horizons:largeMoveHorizons,interpretation:'Historical analogues estimating whether the next 30/60 minutes may touch +100, -100, both, or neither. This is a probability estimate, not a trade signal.'};
   return {
     available:Object.values(horizons).some(h=>h.available),
+    historyAvailable:Object.values(horizons).some(h=>h.historyAvailable),
     model:"HISTORICAL_ANALOGUE_V1",
-    modelLabel:"Forward probability estimate",
+    modelLabel:"Walk-forward gated directional estimate",
     asOf:selectedRows.at(-1)?.t??null,
     horizons, largeMoveRadar, moveMonitor:buildObservedMoveMonitor(selectedRows,options),
-    interpretation:"Probabilities estimate future close direction over the stated horizon from similar past candle states. They are not a guaranteed result, not option-premium win rates, and not an entry signal.",
-    calibrationStatus:"EMPIRICAL_ANALOGUE_ESTIMATE — needs ongoing walk-forward calibration before it should be treated as a calibrated probability."
+    interpretation:"A directional percentage is published only when the current analogue direction is >=68% AND at least 30 recent high-confidence out-of-sample directional forecasts achieve >=68% hit rate. Otherwise the system withholds the percentage and displays WAIT. Underlying price direction is not option-premium profit probability.",
+    calibrationStatus:"GATE: current leading class >=68%, recent walk-forward hit rate >=68%, minimum 30 high-confidence resolved predictions."
   };
 }
