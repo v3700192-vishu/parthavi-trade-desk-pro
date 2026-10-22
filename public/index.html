@@ -2292,7 +2292,7 @@ function stccIsOpposite(a,b){return (a==='CALL'&&b==='PUT')||(a==='PUT'&&b==='CA
 function stccCurrentPlan(p){
   const plan=p?.optionPlan||{};
   const action=String(p?.action||'NO TRADE').toUpperCase();
-  const rawDirectionalProbability=p?.directionalProbability??p?.directionalConfidence;
+  const rawDirectionalProbability=p?.directionalProbability;
   const directionalGatePassed=rawDirectionalProbability!=null&&rawDirectionalProbability!==''&&Number.isFinite(Number(rawDirectionalProbability))&&Number(rawDirectionalProbability)>=68;
   const required=['trend','setup','trigger','momentum','volume','strength','options','greeks','news','global','eventSafe'];
   const allConfirmationsPass=required.every(k=>p?.confirmations?.[k]===true);
@@ -2466,7 +2466,7 @@ function renderFreeAdvisor(p,resp={}){
   const reasons=Array.isArray(p?.noTradeReasons)?p.noTradeReasons.filter(Boolean):[];
   const marketClosed=resp?.mode==='OFF_SESSION_FAST_PATH'||resp?.health?.marketOpen===false||p?.marketOpen===false;
   const setupScore=Number(p?.modelConfidence)||0;
-  const rawDirectionalProbability=p?.directionalProbability??p?.directionalConfidence;
+  const rawDirectionalProbability=p?.directionalProbability;
   const directionalConfidence=rawDirectionalProbability==null||rawDirectionalProbability===''||!Number.isFinite(Number(rawDirectionalProbability))?null:Number(rawDirectionalProbability);
   const directionalGatePassed=directionalConfidence!==null&&directionalConfidence>=68;
   const optionConfidence=setupScore;
@@ -2676,7 +2676,7 @@ function renderPredictionPanel(resp){
   const conf=p?.modelConfidence;
   const optionPlan=p?.optionPlan||{};
   const setupScore=Number(conf)||0;
-  const rawDirectionalProbability=p?.directionalProbability??p?.directionalConfidence;
+  const rawDirectionalProbability=p?.directionalProbability;
   const directionalConfidence=rawDirectionalProbability==null||rawDirectionalProbability===''||!Number.isFinite(Number(rawDirectionalProbability))?null:Number(rawDirectionalProbability);
   const directionalGatePassed=directionalConfidence!==null&&directionalConfidence>=68;
   const optionConfidence=setupScore;
