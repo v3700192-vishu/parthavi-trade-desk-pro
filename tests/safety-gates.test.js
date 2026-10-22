@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { analyzeEvents, fuse, normalizeNews, analyzeNews, normalizeGlobal, analyzeGlobal } from "../fusion.js";
-import { buildPrediction, backtestFiveMinute } from "../prediction.js";
+import { buildPrediction, buildTradeTiming, backtestFiveMinute } from "../prediction.js";
 import { evaluate as evaluateRisk } from "../riskGuard.js";
 
 test("an empty economic calendar is never marked event-safe", () => {
@@ -463,4 +463,24 @@ test("future-dated global quotes are excluded even if provider labels them LIVE"
   const summary = analyzeGlobal(normalized);
   assert.equal(summary.connected, false);
   assert.equal(summary.freshInputs, 0);
+});
+
+test("trade timing expires stale five-minute entry windows instead of chasing", () => {
+  const now=Date.parse("2026-10-22T10:00:00.000Z");
+  const timing=buildTradeTiming({signalBarTime:new Date(now-11*60_000).toISOString(),candlesVerified:true,modelConfidence:92,signalState:"CONFIRMED",action:"CALL",confirmationPct:100,feedComplete:true,exchangeTickVerified:true,eventSafe:true,commandCenterEligible:true,noTradeReasons:[],optionPlan:{available:true,candidateOnly:false,greekStatus:"PASS"}},{marketOpen:true,now});
+  assert.equal(timing.status,"MISSED • SIGNAL EXPIRED");
+  assert.equal(timing.remainingSeconds,0);
+});
+
+test("90 percent confidence cannot pass trade timing when command-center eligibility fails", () => {
+  const now=Date.parse("2026-10-22T10:00:00.000Z");
+  const timing=buildTradeTiming({signalBarTime:new Date(now-6*60_000).toISOString(),candlesVerified:true,modelConfidence:92,signalState:"CONFIRMED",action:"CALL",confirmationPct:100,feedComplete:true,exchangeTickVerified:true,eventSafe:true,commandCenterEligible:false,noTradeReasons:[],optionPlan:{available:true,candidateOnly:false,greekStatus:"PASS"}},{marketOpen:true,now});
+  assert.equal(timing.status,"WAIT • 90% + ALL CHECKS REQUIRED");
+});
+
+test("ENTRY READY requires a fresh candle and every final gate", () => {
+  const now=Date.parse("2026-10-22T10:00:00.000Z");
+  const timing=buildTradeTiming({signalBarTime:new Date(now-6*60_000).toISOString(),candlesVerified:true,modelConfidence:92,signalState:"CONFIRMED",action:"CALL",confirmationPct:100,feedComplete:true,exchangeTickVerified:true,eventSafe:true,commandCenterEligible:true,noTradeReasons:[],optionPlan:{available:true,candidateOnly:false,greekStatus:"PASS"}},{marketOpen:true,now});
+  assert.equal(timing.status,"ENTRY READY");
+  assert.equal(timing.remainingSeconds,4*60);
 });
