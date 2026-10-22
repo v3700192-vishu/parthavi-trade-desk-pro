@@ -186,7 +186,7 @@ export function buildTradeTiming(p={}, {marketOpen=p.marketOpen===true,now=Date.
     p.optionPlan?.available!==true||p.optionPlan?.candidateOnly===true||
     p.optionPlan?.greekStatus!=='PASS'){
     status='WAIT • 90% + ALL CHECKS REQUIRED';
-    reason='70% and 80% tiers are analysis candidates only. ENTRY READY needs 90%+, all 11 confirmations, a verified live tick, complete feeds and the selected contract passing Greeks.';
+    reason='70/100 and 80/100 setup-score tiers are analysis candidates only. ENTRY READY needs a 90/100 setup score, all 11 confirmations, a verified live tick, complete feeds and the selected contract passing Greeks.';
   }else{
     status='ENTRY READY';
     reason='All server-side gates passed. Re-check the live quote and spread immediately before any manual decision.';
@@ -468,10 +468,10 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
   // Option scanning must not be gated by Greeks from one arbitrary ATM contract.
   // If every non-Greek confirmation is verified, let the contract selector find a
   // specific liquid CE/PE whose own Greeks pass; re-run this model with that contract.
-  // Scan candidates from the 70% directional tier. Momentum or options directional alignment
+  // Scan candidates from the 70/100 setup-score tier, only when calibrated direction also passes. Momentum or options directional alignment
   // may be missing even while feeds are valid; the scanner checks each contract's own live quote,
   // OI, volume, premium and Greeks. This permits analysis only, never a recommendation or order.
-  // At 70% directional confidence, start searching for a *candidate contract* even if
+  // At a 70/100 setup score, start searching for a *candidate contract* only when direction is calibrated, even if
   // other safety confirmations fail. The server still requires a fresh live exchange tick,
   // a live quoted option chain and verified contract Greeks; this flag never means BUY/ready.
   const contractScanEligible=prediction!=='NEUTRAL' && calibratedDirectionMatches && modelConfidence>=SIGNAL_THRESHOLDS.contractScanConfidence && marketOpen;
@@ -479,9 +479,9 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
   const reasoning = `Early direction: ${earlyDirection} (${earlyScore >= 0 ? '+' : ''}${earlyScore}). ${earlyDirectionReason} ` + (signalState==='CONFIRMED'
     ? `${prediction} structure aligns across 1H/15M/5M with ${confirmedCount}/${required.length} confirmation checks; VIX/ADX/volume/event filters passed and minimum RR is 1:2.`
     : signalState==='WATCH' && modelConfidence>=opportunityConfidenceThreshold
-      ? `${watchAction} • ${prediction} opportunity detected at ${modelConfidence}% model confidence. Live contract selection is active; wait for 5M confirmation before entry.`
+      ? `${watchAction} • ${prediction} opportunity detected with setup score ${modelConfidence}/100 (not a win probability). Live contract selection is active; wait for 5M confirmation before entry.`
       : signalState==='WATCH'
-        ? `${watchAction} • ${prediction} watch setup detected at ${modelConfidence}% model confidence. Wait for the 5M trigger.`
+        ? `${watchAction} • ${prediction} watch setup detected with setup score ${modelConfidence}/100 (not a win probability). Wait for the 5M trigger.`
         : noTradeReasons.length
           ? noTradeReasons.join(' • ')
           : !marketOpen ? 'Exchange session is closed; live trade action is disabled.'
