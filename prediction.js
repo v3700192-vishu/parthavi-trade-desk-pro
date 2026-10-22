@@ -10,6 +10,7 @@ const SIGNAL_THRESHOLDS = Object.freeze({
   directionalMinScore: 20, adxMin: 20, volumeBreakout: 1.5, volumeContinuation: 0.90,
   thetaHardMax: 10, deltaHardMin: 0.20, thetaConfirmMax: 6, deltaConfirmMin: 0.35,
   vixMin: 12, vixMax: 22, watchMinConfirmations: 6,
+  directionalProbabilityMin: 68, directionalCalibrationMinSignals: 30,
   contractScanConfidence: 70, adviserConfidence: 80, commandCenterConfidence: 90
 });
 
@@ -247,6 +248,15 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
   const movementDiagnostics=summarizePriceMovement(rows5,marketOpen);
   movementDiagnostics.source=candleSource;
   movementDiagnostics.verified=candlesVerified;
+  // The analogue model publishes no directional percentage until recent
+  // chronological walk-forward tests prove >=68% hit rate on >=30 resolved,
+  // high-confidence directional forecasts.
+  const forwardForecast=buildForwardForecast(rows5,{marketOpen});
+  const directionalForecast=forwardForecast?.horizons?.["15"]||{};
+  const directionalForecastEligible=directionalForecast.available===true &&
+    directionalForecast.calibration?.eligible===true &&
+    Number(directionalForecast.leadingProbability)>=SIGNAL_THRESHOLDS.directionalProbabilityMin &&
+    ["UPWARD BIAS","DOWNWARD BIAS"].includes(String(directionalForecast.direction||""));
   const hasVix=vix!==null&&vix!==undefined&&vix!==''&&Number.isFinite(Number(vix));
   const thetaRaw=options?.theta,deltaRaw=options?.delta;
   const hasGreeks=thetaRaw!==null&&thetaRaw!==undefined&&thetaRaw!==''&&deltaRaw!==null&&deltaRaw!==undefined&&deltaRaw!==''&&Number.isFinite(Number(thetaRaw))&&Number.isFinite(Number(deltaRaw));
@@ -337,6 +347,11 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
 
   score=Number(clamp(score,-100,100).toFixed(1));
   const prediction=score>=SIGNAL_THRESHOLDS.directionalMinScore?'BULLISH':score<=-SIGNAL_THRESHOLDS.directionalMinScore?'BEARISH':'NEUTRAL';
+  const calibratedDirectionMatches=directionalForecastEligible &&
+    ((prediction==='BULLISH'&&directionalForecast.direction==='UPWARD BIAS')||
+     (prediction==='BEARISH'&&directionalForecast.direction==='DOWNWARD BIAS'));
+  if(!directionalForecastEligible) noTradeReasons.push('No Trade: directional percentage is withheld until the 15M model has at least '+SIGNAL_THRESHOLDS.directionalCalibrationMinSignals+' resolved high-confidence out-of-sample forecasts and at least '+SIGNAL_THRESHOLDS.directionalProbabilityMin+'% hit rate.');
+  else if(!calibratedDirectionMatches) noTradeReasons.push('No Trade: the calibrated 15M chart direction disagrees with the multi-timeframe indicator consensus; wait for alignment.');
   if(prediction==='NEUTRAL') noTradeReasons.push('No Trade: directional score ' + score.toFixed(1) + ' is inside the neutral band (-' + SIGNAL_THRESHOLDS.directionalMinScore + ' to +' + SIGNAL_THRESHOLDS.directionalMinScore + '); a directional score of at least +/-' + SIGNAL_THRESHOLDS.directionalMinScore + ' is required before contract scanning.');
 
   // Two-trade finder: allow strong trend-continuation setups even when the
@@ -387,13 +402,14 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
     + backtestBonus,
     50,95
   ));
-  const feedComplete=!!marketOpen && candlesVerified && hasVerifiedVolume && hasVix && Number(vix)>=SIGNAL_THRESHOLDS.vixMin && Number(vix)<=SIGNAL_THRESHOLDS.vixMax && newsVerified && globalVerified && optionFlowVerified && hasGreeks && eventSafe;
+  const feedComplete=!!marketOpen && candlesVerified && hasVerifiedVolume && hasVix && Number(vix)>=SIGNAL_THRESHOLDS.vixMin && Number(vix)<=SIGNAL_THRESHOLDS.vixMax && newsVerified && globalVerified && optionFlowVerified && hasGreeks && eventSafe && calibratedDirectionMatches;
   const hardNoTrade=noTradeReasons.length>0;
   // Opportunity tiers: keep directional opportunities visible early, while
   // preserving hard safety blockers and the existing confirmed-entry gate.
   const opportunityConfidenceThreshold=SIGNAL_THRESHOLDS.adviserConfidence;
   const hardSafetyBlock =
     !marketOpen ||
+    !calibratedDirectionMatches ||
     !candlesVerified ||
     !hasVerifiedVolume ||
     !hasVix ||
@@ -455,9 +471,8 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
   // At 70% directional confidence, start searching for a *candidate contract* even if
   // other safety confirmations fail. The server still requires a fresh live exchange tick,
   // a live quoted option chain and verified contract Greeks; this flag never means BUY/ready.
-  const contractScanEligible=prediction!=='NEUTRAL' && modelConfidence>=SIGNAL_THRESHOLDS.contractScanConfidence && marketOpen;
-  const tradeTiming=buildTradeTiming({marketOpen,signalBarTime:rows5?.at?.(-1)?.t||null,signalState,action,prediction,modelConfidence,confirmationPct,finalPlan:plan,candlesVerified,feedComplete,eventSafe,noTradeReasons,exchangeTickVerified:false,commandCenterEligible:false,optionPlan:null},{marketOpen,now:Date.now()});
-  const forwardForecast=buildForwardForecast(rows5,{marketOpen});
+  const contractScanEligible=prediction!=='NEUTRAL' && calibratedDirectionMatches && modelConfidence>=SIGNAL_THRESHOLDS.contractScanConfidence && marketOpen;
+  const tradeTiming=buildTradeTiming({marketOpen,signalBarTime:rows5?.at?.(-1)?.t||null,signalState,action,prediction,modelConfidence,confirmationPct,finalPlan:plan,candlesVerified,feedComplete,eventSafe,noTradeReasons,exchangeTickVerified:false,commandCenterEligible:false,optionPlan:null,directionalCalibrationEligible:calibratedDirectionMatches,directionProbability:calibratedDirectionMatches?directionalForecast.leadingProbability:null},{marketOpen,now:Date.now()});
   const reasoning = `Early direction: ${earlyDirection} (${earlyScore >= 0 ? '+' : ''}${earlyScore}). ${earlyDirectionReason} ` + (signalState==='CONFIRMED'
     ? `${prediction} structure aligns across 1H/15M/5M with ${confirmedCount}/${required.length} confirmation checks; VIX/ADX/volume/event filters passed and minimum RR is 1:2.`
     : signalState==='WATCH' && modelConfidence>=opportunityConfidenceThreshold
@@ -474,6 +489,10 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
     earlyDirection, earlyScore, earlyDirectionReason,
     earlySetup, strongSetup, noTradeDiagnostics, movementDiagnostics,
     forwardForecast,
+    directionalForecast:directionalForecast,
+    directionalProbability:calibratedDirectionMatches?directionalForecast.leadingProbability:null,
+    directionalForecastEligible:calibratedDirectionMatches,
+    modelConfidenceMeaning:'SETUP CONFLUENCE SCORE — NOT A WIN PROBABILITY',
     tradeTiming,
     modelConfidence, opportunityConfidenceThreshold, opportunityEligible, contractScanEligible, advisorMomentumExceptionEligible,
     candidatePlan,
@@ -490,6 +509,14 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
     signalGates:{
       thresholds:{...SIGNAL_THRESHOLDS},
       directional:{score,minimumAbsoluteScore:SIGNAL_THRESHOLDS.directionalMinScore,pass:prediction!=='NEUTRAL'},
+      directionalCalibration:{
+        minimumProbability:SIGNAL_THRESHOLDS.directionalProbabilityMin,
+        minimumResolvedSignals:SIGNAL_THRESHOLDS.directionalCalibrationMinSignals,
+        direction:directionalForecast.direction||'UNVERIFIED / WAIT',
+        publishedProbability:calibratedDirectionMatches?directionalForecast.leadingProbability:null,
+        calibration:directionalForecast.calibration||null,
+        pass:calibratedDirectionMatches
+      },
       trendStrength:{adx,minimum:SIGNAL_THRESHOLDS.adxMin,pass:adx!=null&&adx>=SIGNAL_THRESHOLDS.adxMin},
       volume:{ratio:vr10,breakoutMinimum:SIGNAL_THRESHOLDS.volumeBreakout,continuationMinimum:SIGNAL_THRESHOLDS.volumeContinuation,continuationPass:volumeContinuation,pass:volumePass},
       greeks:{theta:hasGreeks?theta:null,delta:hasGreeks?delta:null,hardThetaMax:SIGNAL_THRESHOLDS.thetaHardMax,hardDeltaMin:SIGNAL_THRESHOLDS.deltaHardMin,confirmThetaMax:SIGNAL_THRESHOLDS.thetaConfirmMax,deltaConfirmMin:SIGNAL_THRESHOLDS.deltaConfirmMin,pass:confirmations.greeks},
@@ -498,7 +525,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
       feeds:{marketOpen,candlesFresh,candlesVerified,optionFlowVerified,newsVerified,globalVerified,eventSafe},
       rewardRisk:{minimum:2,pass:planGatesPassed&&!!plan?.available}
     },
-    note:'Two-trade finder is active: the scanner searches continuously for up to two high-quality opportunities per NSE session. A 1.5x 10-day same-slot volume breakout is preferred; strong trend-continuation may qualify from 0.90x when 1H/15M/5M, momentum and ADX agree. India VIX 12–22, event safety, complete verified feeds and minimum 1:2 risk-to-reward remain hard protections. This is a quality filter, not a guarantee of profit. Final SL/targets are volatility-based planning levels on the underlying index; option premium SL/targets must be verified from the selected live contract and its Greeks.',
+    note:'Scanner stays active during the NSE session, but a bullish/bearish percentage and directional option candidate are released only when the current 15M analogue estimate is >=68% and at least 30 recent high-confidence walk-forward predictions also achieve >=68% hit rate. Otherwise the chart can show an early observation only and the signal remains NO TRADE. A 1.5x 10-day same-slot volume breakout is preferred; strong trend-continuation may qualify from 0.90x when 1H/15M/5M, momentum and ADX agree. India VIX 12–22, event safety, complete verified feeds and minimum 1:2 risk-to-reward remain hard protections. This is a quality filter, not a guarantee of profit. Final SL/targets are volatility-based planning levels on the underlying index; option premium SL/targets must be verified from the selected live contract and its Greeks.',
     reasoning
   };
 }
