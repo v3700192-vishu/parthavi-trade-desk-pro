@@ -373,7 +373,7 @@ test("Phase 10 shows forward 5M/15M probabilities separately from setup confluen
   for (const id of ["p10ForwardForecast", "p10ForecastUp5", "p10ForecastDown5", "p10ForecastRange5", "p10ForecastUp15", "p10ForecastDown15", "p10ForecastRange15", "p10ForecastStatus"]) {
     assert.ok(html.includes('id="' + id + '"'), "missing forecast field " + id);
   }
-  assert.match(html, /function renderForwardForecast\(forecast\)/);
+  assert.match(html, /function renderForwardForecast\(forecast,movement,decision,marketOpenFlag\)/);
   assert.match(html, /Setup confluence score • not probability/);
   assert.match(html, /historical analogue estimates/i);
   assert.match(html, /Not an entry signal or an option-premium win rate/);
