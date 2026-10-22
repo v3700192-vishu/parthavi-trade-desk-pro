@@ -1003,6 +1003,29 @@ body.chart-fullscreen-open>.app>.bottom{
         <div class="prediction-stat"><small>Confirmation</small><b id="p10Confirmation">—</b></div>
         <div class="prediction-stat"><small>Option-premium backtest</small><b id="p10HitRate">NOT VERIFIED</b></div>
       </div>
+      <section class="forward-forecast" id="p10ChartDecision" aria-live="polite" style="margin:10px 0;border:1px solid var(--border,#334155)">
+        <div class="forward-forecast-head">
+          <div><strong>CHART ANALYSIS → WHAT TO DO</strong><small>Reads the chart and gives a plain-language outlook. Analysis only; no automatic order placement.</small></div>
+          <span class="forward-forecast-badge" id="p10DecisionFreshness">CHECKING DATA</span>
+        </div>
+        <div class="forward-forecast-grid">
+          <div class="forward-horizon">
+            <div class="forward-horizon-head"><strong>Next setup</strong><b id="p10ChartBias" class="wait">WAIT / MIXED</b></div>
+            <div class="forward-prob-row"><span>Chart direction</span><b id="p10ChartDirection">—</b></div>
+            <div class="forward-prob-row"><span>15M history estimate</span><b id="p10ChartProbability">—</b></div>
+            <div class="forward-prob-row"><span>Observed NIFTY</span><b id="p10ChartPrice">—</b></div>
+            <p class="forward-forecast-meta" id="p10ChartDrivers">Waiting for chart candles and indicators.</p>
+          </div>
+          <div class="forward-horizon">
+            <div class="forward-horizon-head"><strong>Recommendation</strong><b id="p10ChartAction" class="wait">WAIT</b></div>
+            <p id="p10ChartActionReason" class="forward-forecast-meta">Waiting for live market data and safety checks.</p>
+            <div class="forward-prob-row"><span>Entry window (IST)</span><b id="p10ChartEntryTime">NOT AVAILABLE</b></div>
+            <div class="forward-prob-row"><span>Setup expires</span><b id="p10ChartExpiryTime">—</b></div>
+            <p class="forward-forecast-meta" id="p10ChartInvalidation">If the chart reverses or any safety gate fails, do not enter.</p>
+          </div>
+        </div>
+        <p class="forward-forecast-note">The direction estimate is not a win probability. Exact entry timing appears only when candle freshness and required checks allow it; otherwise the panel must say WAIT, not invent a time.</p>
+      </section>
       <div class="forward-forecast" id="p10ForwardForecast" aria-live="polite">
         <div class="forward-forecast-head">
           <div><strong>Forward outlook • next 5 / 15 minutes</strong><small>Future closing direction estimated from similar completed historical candle patterns.</small></div>
