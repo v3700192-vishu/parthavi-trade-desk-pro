@@ -2607,6 +2607,8 @@ function renderForwardForecast(forecast,movement,decision,marketOpenFlag){
     if(horizon.available)parts.push('historical sample '+horizon.sampleSize+' ('+(horizon.sampleQuality||'limited')+')');
     const cal=horizon.calibration||{};
     parts.push('15M OOS: '+String(cal.status||'UNVERIFIED')+' • '+String(cal.highConfidenceDirectionalSignals??0)+'/'+String(cal.minimumSignals||30)+' high-confidence signals • hit rate '+(cal.outOfSampleHitRate==null?'N/A':String(cal.outOfSampleHitRate)+'%'));
+    const cal=horizon.calibration||{};
+    parts.push('15M OOS: '+String(cal.status||'UNVERIFIED')+' • '+String(cal.highConfidenceDirectionalSignals??0)+'/'+String(cal.minimumSignals||30)+' high-confidence signals • hit rate '+(cal.outOfSampleHitRate==null?'N/A':String(cal.outOfSampleHitRate)+'%'));
     chartDrivers.textContent=(parts.length?parts.join(' • '):'Chart indicators unavailable.')+' '+(liveFresh?'Live candle verified.':'Historical/unchecked data cannot authorize an entry.');
   }
   let recommendation='WAIT — NO TRADE';
