@@ -262,10 +262,10 @@ test("chart reports stale candle fallback and preserves selected historical day 
 });
 
 test("service-worker cache version is bumped and never caches live API responses", () => {
-  assert.match(serviceWorker, /const CACHE='ptd-shell-v34'/);
+  assert.match(serviceWorker, /const CACHE='ptd-shell-v37'/);
   assert.match(serviceWorker, /prediction-report\.html/);
   assert.match(serviceWorker, /if\(u\.pathname\.startsWith\('\/api\/'\)\) return/);
-  assert.doesNotMatch(serviceWorker, /const CACHE='ptd-shell-v3[0-3]'/);
+  assert.doesNotMatch(serviceWorker, /const CACHE='ptd-shell-v3[0-6]'/);
 });
 
 test("Contract Finder opens a separate analysis panel with verified quote, liquidity and Greek metrics", () => {
@@ -377,6 +377,17 @@ test("Phase 10 shows forward 5M/15M probabilities separately from setup confluen
   assert.match(html, /Setup confluence score • not probability/);
   assert.match(html, /historical analogue estimates/i);
   assert.match(html, /Not an entry signal or an option-premium win rate/);
+});
+
+test("Phase 10 has a chart-only action panel with direction, guarded timing and invalidation", () => {
+  for (const id of ["p10ChartDecision", "p10DecisionFreshness", "p10ChartBias", "p10ChartDirection", "p10ChartProbability", "p10ChartPrice", "p10ChartDrivers", "p10ChartAction", "p10ChartActionReason", "p10ChartEntryTime", "p10ChartExpiryTime", "p10ChartInvalidation"]) {
+    assert.ok(html.includes('id="' + id + '"'), "missing chart decision field " + id);
+  }
+  assert.match(html, /function renderForwardForecast\(forecast,movement,decision,marketOpenFlag\)/);
+  assert.match(html, /WAIT — VERIFY LIVE FEED/);
+  assert.match(html, /NO ENTRY TIME — WAIT/);
+  assert.match(html, /No order is placed by this panel/);
+  assert.match(html, /Cancel if the 5M trigger reverses/);
 });
 
 test("Phase 10 renders the trade timing and signal-expiry panel", () => {
