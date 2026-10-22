@@ -4,6 +4,7 @@
   This module never claims guaranteed profit.
 */
 import { buildForwardForecast } from './forwardForecast.js';
+import { analyzeCandlestickPatterns } from './candlePatterns.js';
 
 // One documented threshold map keeps signal decisions and UI diagnostics in sync.
 const SIGNAL_THRESHOLDS = Object.freeze({
@@ -215,7 +216,15 @@ function finalTradePlan(prediction, last, atr){
   return {available:true,direction:'PUT',mode:'UNDERLYING TRIGGER',entry,sl,target1,target2,riskPerUnit,rr1:2.0,rr2:2.5,breakEvenTriggerR:1.0,invalidation:`5M close above SL ${sl}`,trailingRule:'At +1R, move SL to cost-to-cost; then trail above lower 5M swing / ATR rule.'};
 }
 
-export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},options={},marketOpen=false,backtest=null,vix=null,oi=null}={}){
+export function buildPrediction({h1,m15,m5,rows5=[],rows15=[],rows60=[],news={},global={},events={},options={},marketOpen=false,backtest=null,vix=null,oi=null}={}){
+  const chartAnalysis=analyzeCandlestickPatterns(rows5);
+  const chartAnalysis15m=analyzeCandlestickPatterns(rows15);
+  const chartAnalysis1h=analyzeCandlestickPatterns(rows60);
+  // Higher-timeframe chart structure is a small confluence input only; it never bypasses a hard gate.
+  const higherPatternVotes=[chartAnalysis15m.direction,chartAnalysis1h.direction].filter(x=>x==='BULLISH'||x==='BEARISH');
+  const bullHigher=higherPatternVotes.filter(x=>x==='BULLISH').length;
+  const bearHigher=higherPatternVotes.filter(x=>x==='BEARISH').length;
+  const patternTimeframeAdjustment=bullHigher===2?3:bearHigher===2?-3:bullHigher===1&&bearHigher===0?1:bearHigher===1&&bullHigher===0?-1:0;
   const candleSummary=summarizeLatest(rows5);
   const x5={...candleSummary,...(m5||{})};
   // Only the separately verified futures-volume adapter may satisfy the volume gate.
@@ -272,14 +281,23 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
   let score=0;
   score += dirScore(h1d==='BULLISH',h1d==='BEARISH',weights.trend);
   score += dirScore(m15d==='BULLISH',m15d==='BEARISH',weights.setup);
-  const bullTrigger=['BULLISH ENGULFING','HAMMER','BULLISH CANDLE'].includes(String(m5?.candle||'')) || x5.candle==='BULLISH';
-  const bearTrigger=['BEARISH ENGULFING','SHOOTING STAR','BEARISH CANDLE'].includes(String(m5?.candle||'')) || x5.candle==='BEARISH';
+  const declaredCandle=String(m5?.candle||'').toUpperCase();
+  const declaredBull=['BULLISH ENGULFING','HAMMER','BULLISH CANDLE'].includes(declaredCandle);
+  const declaredBear=['BEARISH ENGULFING','SHOOTING STAR','BEARISH CANDLE'].includes(declaredCandle);
+  const bullPatternTrigger=chartAnalysis.triggerBullish===true&&!chartAnalysis.triggerBearish;
+  const bearPatternTrigger=chartAnalysis.triggerBearish===true&&!chartAnalysis.triggerBullish;
+  const triggerConflict=(declaredBull&&declaredBear)||(chartAnalysis.triggerBullish&&chartAnalysis.triggerBearish);
+  const bullTrigger=!triggerConflict&&(declaredBull||(!declaredBear&&x5.candle==='BULLISH')||bullPatternTrigger);
+  const bearTrigger=!triggerConflict&&(declaredBear||(!declaredBull&&x5.candle==='BEARISH')||bearPatternTrigger);
   score += dirScore(bullTrigger,bearTrigger,weights.trigger);
   score += dirScore(rsi!=null&&rsi>55, rsi!=null&&rsi<45, weights.momentum*0.55);
   score += dirScore(macdHist!=null&&macdHist>0, macdHist!=null&&macdHist<0, weights.momentum*0.45);
   if(last!=null&&vwap!=null) score += last>vwap?weights.volatility*0.75:-weights.volatility*0.75;
   if(adx!=null) score += adx>=SIGNAL_THRESHOLDS.adxMin?(score>=0?weights.volatility*0.25:-weights.volatility*0.25):0;
   if(vr10!=null&&vr10>=SIGNAL_THRESHOLDS.volumeBreakout) score += x5.candle==='BULLISH'?weights.volume:x5.candle==='BEARISH'?-weights.volume:0;
+  // Pattern confluence is deliberately small: it may refine direction, but cannot bypass any data/risk gate.
+  score += chartAnalysis.scoreAdjustment||0;
+  score += patternTimeframeAdjustment;
 
   const pcr=n(options?.pcr);
   // The live adapter returns ceoi/peoi; keep cedoi/pedoi aliases for older payloads.
@@ -338,8 +356,11 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
   earlyScore += dirScore(macdHist!=null&&macdHist>0,macdHist!=null&&macdHist<0,10);
   if(last!=null&&vwap!=null) earlyScore += last>vwap?8:last<vwap?-8:0;
   if(last!=null&&candleSummary.prev!=null) earlyScore += last>candleSummary.prev?5:last<candleSummary.prev?-5:0;
-  // Add multi-bar price momentum to EARLY observation only; it cannot bypass trade gates.
+  // Add multi-bar price momentum and a bounded candle-pattern adjustment to EARLY observation only.
+  // Pattern confluence is not a probability and cannot bypass trade gates.
   earlyScore += movementDiagnostics.momentumScore||0;
+  earlyScore += chartAnalysis.scoreAdjustment||0;
+  earlyScore += patternTimeframeAdjustment;
   earlyScore=Number(clamp(earlyScore,-75,75).toFixed(1));
   const earlyDirection=earlyScore>=20?'EARLY BULLISH':earlyScore<=-20?'EARLY BEARISH':'WAIT / MIXED';
   const earlyDirectionReason=earlyDirection==='WAIT / MIXED'
@@ -491,6 +512,9 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
     prediction, action, watchAction, signalState, score,
     earlyDirection, earlyScore, earlyDirectionReason,
     earlySetup, strongSetup, noTradeDiagnostics, movementDiagnostics,
+    chartAnalysis,
+    chartAnalysisByTimeframe:{'5M':chartAnalysis,'15M':chartAnalysis15m,'1H':chartAnalysis1h},
+    patternTimeframeAdjustment,
     forwardForecast,
     directionalForecast:directionalForecast,
     directionalProbability:calibratedDirectionMatches?directionalForecast.leadingProbability:null,
