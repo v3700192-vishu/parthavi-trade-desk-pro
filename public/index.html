@@ -1031,6 +1031,18 @@ body.chart-fullscreen-open>.app>.bottom{
         <section class="forward-horizon" aria-live="polite"><div class="forward-horizon-head"><strong>STRONG SETUP · safety-gated</strong><b id="p10StrongSetupStatus" class="wait">BLOCKED</b></div><p id="p10StrongSetupDetail" class="forward-forecast-meta">Waiting for verified feeds and all confirmations.</p></section>
       </div>
       <section class="forward-horizon" style="margin:8px 0" aria-live="polite"><div class="forward-horizon-head"><strong>Exact NO TRADE blockers</strong><b id="p10NoTradeCount">0 blockers</b></div><ul id="p10NoTradeList" class="forward-forecast-meta" style="padding-left:20px;margin:6px 0"><li>Waiting for prediction diagnostics.</li></ul><p id="p10BacktestCalibration" class="forward-forecast-meta">Historical calibration: waiting for enough data.</p></section>
+      <section class="forward-horizon" id="p10LargeMoveRadar" style="margin:10px 0" aria-live="polite">
+        <div class="forward-forecast-head"><div><strong>NIFTY ±100-point move radar</strong><small>Historical probability of touching +100 / -100 points in the next 30/60 minutes, plus measured past swings.</small></div><span class="forward-forecast-badge" id="p10MoveRadarStatus">NO ESTIMATE</span></div>
+        <div class="forward-forecast-grid">
+          <div class="forward-horizon"><div class="forward-horizon-head"><strong>Next 30 minutes</strong><b id="p10Move30Status" class="wait">NO ESTIMATE</b></div>
+            <div class="forward-prob-row up"><span>UP +100</span><b id="p10Move30Up">—</b></div><div class="forward-prob-row down"><span>DOWN -100</span><b id="p10Move30Down">—</b></div><div class="forward-prob-row range"><span>BOTH SIDES</span><b id="p10Move30Both">—</b></div><div class="forward-prob-row"><span>NEITHER</span><b id="p10Move30Neither">—</b></div><div class="forward-forecast-meta" id="p10Move30Meta">Waiting for enough historical outcomes.</div>
+          </div>
+          <div class="forward-horizon"><div class="forward-horizon-head"><strong>Next 60 minutes</strong><b id="p10Move60Status" class="wait">NO ESTIMATE</b></div>
+            <div class="forward-prob-row up"><span>UP +100</span><b id="p10Move60Up">—</b></div><div class="forward-prob-row down"><span>DOWN -100</span><b id="p10Move60Down">—</b></div><div class="forward-prob-row range"><span>BOTH SIDES</span><b id="p10Move60Both">—</b></div><div class="forward-prob-row"><span>NEITHER</span><b id="p10Move60Neither">—</b></div><div class="forward-forecast-meta" id="p10Move60Meta">Waiting for enough historical outcomes.</div>
+          </div>
+        </div>
+        <p class="forward-forecast-note" id="p10MoveObserved">Observed move monitor unavailable. It will not invent live prices when feed data is missing.</p>
+      </section>
       <div class="trade-timing-panel" id="p10TradeTiming" aria-live="polite">
         <div class="timing-head"><strong>Trade timing &amp; signal expiry</strong><span id="p10TimingDecision" class="timing-decision">WAIT • LIVE SIGNAL NEEDED</span></div>
         <div class="trade-timing-grid">
@@ -2507,6 +2519,31 @@ function renderForwardForecast(forecast){
     }
   }
   if(note){const calibration=forecast?.calibrationStatus||'Historical pattern estimate; not calibrated.';note.textContent=(forecast?.interpretation||'Forecast unavailable until enough completed candles are loaded.')+' '+calibration+' Not an entry signal or an option-premium win rate.';}
+  const radar=forecast?.largeMoveRadar||{};
+  const radarStatus=$('p10MoveRadarStatus');
+  if(radarStatus)radarStatus.textContent=radar.available?'HISTORICAL ANALOGUE':'NO ESTIMATE';
+  for(const minutes of [30,60]){
+    const h=radar.horizons?.[String(minutes)]||{}, probs=h.probabilities||{};
+    const detail=$('p10Move'+minutes+'Meta'), moveStatus=$('p10Move'+minutes+'Status');
+    if(moveStatus)moveStatus.textContent=h.available?('±100 PT / '+h.sampleSize+' analogues'):'NO ESTIMATE';
+    for(const [key,suffix] of [['up100','Up'],['down100','Down'],['both100','Both'],['neither100','Neither']]){
+      const el=$('p10Move'+minutes+suffix);
+      if(el)el.textContent=h.available&&Number.isFinite(Number(probs[key]))?Number(probs[key])+'%':'—';
+    }
+    if(detail)detail.textContent=h.available?('Sample '+h.sampleSize+' ('+(h.sampleQuality||'limited')+'). Historical chance of touching +100 / -100 within '+minutes+' minutes; not an entry signal.'): (h.reason||radar.reason||'Insufficient historical outcomes.');
+  }
+  const monitor=forecast?.moveMonitor||{}, observed=$('p10MoveObserved');
+  if(observed){
+    if(!monitor.available)observed.textContent=monitor.reason||'Observed move monitor unavailable; current price is not invented.';
+    else{
+      const f=n=>Number.isFinite(Number(n))?(Number(n)>0?'+':'')+Number(n).toFixed(1):'N/A';
+      const w30=monitor.windows?.['30']||{}, w60=monitor.windows?.['60']||{}, s=monitor.session;
+      const freshness=monitor.stale?'STALE / HISTORICAL CANDLES — not live':'Completed candle monitor; verify live quote separately';
+      const sessionText=s?('Session open/close '+Number(s.open).toLocaleString('en-IN')+' / '+Number(s.close).toLocaleString('en-IN')+'; net '+f(s.netPoints)+' pt; high swing +'+f(s.highFromOpen)+' pt ('+(s.up100?'UP 100 HIT':'UP 100 not hit')+'), low swing -'+f(s.lowFromOpen)+' pt ('+(s.down100?'DOWN 100 HIT':'DOWN 100 not hit')+'). '):'Session swing unavailable. ';
+      const windowsText='30m net '+f(w30.netPoints)+' pt, high swing +'+f(w30.upSwingPoints)+', low swing -'+f(w30.downSwingPoints)+'; 60m net '+f(w60.netPoints)+' pt, high swing +'+f(w60.upSwingPoints)+', low swing -'+f(w60.downSwingPoints)+'. ';
+      observed.textContent=freshness+'. '+sessionText+windowsText+(monitor.warning||'');
+    }
+  }
 }
 function renderPredictionPanel(resp){
   const p=resp?.prediction||resp||{};
