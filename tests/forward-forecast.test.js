@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildForwardForecast } from "../forwardForecast.js";
+import { buildForwardForecast, capLeadingProbabilityForDisplay } from "../forwardForecast.js";
 
 function makeCandles(count=260) {
   const rows=[];
@@ -17,6 +17,18 @@ function makeCandles(count=260) {
   return rows;
 }
 
+test("published direction never exceeds recent out-of-sample hit rate and keeps a normalized distribution",()=>{
+  const capped=capLeadingProbabilityForDisplay({up:82,down:12,sideways:6},"UP",70.9);
+  assert.deepEqual(capped,{up:70,down:20,sideways:10});
+  assert.equal(capped.up,70,"never round up or exceed the measured OOS hit rate");
+  assert.equal(capped.up+capped.down+capped.sideways,100);
+  const bearish=capLeadingProbabilityForDisplay({up:20,down:72,sideways:8},"DOWN",68.9);
+  assert.equal(bearish.down,68,"floor 68.9%, do not display 69%");
+  assert.equal(bearish.up+bearish.down+bearish.sideways,100);
+  assert.equal(capLeadingProbabilityForDisplay({up:82,down:12,sideways:6},"RANGE",75),null);
+  assert.equal(capLeadingProbabilityForDisplay({up:82,down:12,sideways:6},"UP",null),null);
+});
+
 test("directional percentages stay hidden unless the walk-forward calibration passes 68% with enough signals",()=>{
   const forecast=buildForwardForecast(makeCandles());
   assert.equal(forecast.model,"HISTORICAL_ANALOGUE_V1");
@@ -30,6 +42,11 @@ test("directional percentages stay hidden unless the walk-forward calibration pa
       assert.ok(horizon.calibration.outOfSampleHitRate>=68);
       assert.ok(horizon.calibration.highConfidenceDirectionalSignals>=30);
       assert.ok(horizon.leadingProbability>=68);
+      assert.ok(horizon.leadingProbability<=Math.floor(horizon.calibration.outOfSampleHitRate),
+        "the published leader must never exceed the recent out-of-sample hit rate");
+      assert.ok(horizon.leadingProbability<=horizon.rawLeadingProbability);
+      const leaderKey=horizon.direction==="UPWARD BIAS"?"up":"down";
+      assert.equal(horizon.probabilities[leaderKey],horizon.leadingProbability);
       assert.equal(horizon.probabilities.up+horizon.probabilities.down+horizon.probabilities.sideways,100);
       assert.ok(["UPWARD BIAS","DOWNWARD BIAS"].includes(horizon.direction));
     }else{
