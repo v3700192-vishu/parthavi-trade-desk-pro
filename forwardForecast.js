@@ -13,6 +13,13 @@ const LOOKBACK_BARS = 500;
 const TARGET_ANALOGS = 40;
 const MIN_ANALOGS = 24;
 const PRIOR_WEIGHT = 8;
+const MOVE_POINTS = 100;
+const MOVE_HORIZONS = [
+  { minutes: 30, bars: 6 },
+  { minutes: 60, bars: 12 }
+];
+const MOVE_LABELS = ["UP_100", "DOWN_100", "BOTH_100", "NEITHER_100"];
+const MIN_MOVE_ANALOGS = 15;
 
 function finite(value) {
   const n = Number(value);
@@ -150,6 +157,86 @@ function forecastHorizon(rows, features, atr, config) {
   };
 }
 
+function moveLabel(rows,index,bars){
+  const origin=rows[index]?.c;
+  if(!Number.isFinite(origin)||index+bars>=rows.length)return null;
+  let high=-Infinity,low=Infinity;
+  for(let j=index+1;j<=index+bars;j++){
+    const previous=rows[j-1],current=rows[j];
+    if(previous?.t&&current?.t){
+      const previousMs=Date.parse(previous.t),currentMs=Date.parse(current.t);
+      const day=(stamp)=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(stamp));
+      if(!Number.isFinite(previousMs)||!Number.isFinite(currentMs)||currentMs-previousMs>7*60_000||currentMs<=previousMs||day(previousMs)!==day(currentMs))return null;
+    }
+    high=Math.max(high,rows[j].h);low=Math.min(low,rows[j].l);
+  }
+  const up=high-origin>=MOVE_POINTS,down=origin-low>=MOVE_POINTS;
+  return up&&down?"BOTH_100":up?"UP_100":down?"DOWN_100":"NEITHER_100";
+}
+function movePercentages(counts,base,size){
+  const exact=MOVE_LABELS.map(label=>100*(counts[label]+PRIOR_WEIGHT*(base[label]||0))/(size+PRIOR_WEIGHT));
+  const whole=exact.map(Math.floor);let remain=100-whole.reduce((a,b)=>a+b,0);
+  exact.map((v,i)=>({i,frac:v-whole[i]})).sort((a,b)=>b.frac-a.frac).slice(0,remain).forEach(x=>whole[x.i]++);
+  return {up100:whole[0],down100:whole[1],both100:whole[2],neither100:whole[3]};
+}
+function forecastMoveHorizon(rows,features,config){
+  const current=features.at(-1);
+  const unavailable=(reason)=>({available:false,horizonMinutes:config.minutes,thresholdPoints:MOVE_POINTS,probabilities:null,sampleSize:0,reason,asOf:rows.at(-1)?.t??null});
+  if(!current)return unavailable("Not enough verified candle history for large-move indicators.");
+  const candidates=[],baseCounts={UP_100:0,DOWN_100:0,BOTH_100:0,NEITHER_100:0};
+  const start=Math.max(20,rows.length-LOOKBACK_BARS-config.bars-1);
+  for(let i=start;i<rows.length-config.bars;i++){
+    if(!features[i])continue;
+    const label=moveLabel(rows,i,config.bars);if(!label)continue;
+    baseCounts[label]++;candidates.push({i,label,distance:distance(current,features[i])});
+  }
+  if(candidates.length<MIN_MOVE_ANALOGS)return unavailable("Not enough historical forward outcomes to estimate a 100-point move.");
+  const total=candidates.length,base={};
+  for(const label of MOVE_LABELS)base[label]=baseCounts[label]/total;
+  candidates.sort((a,b)=>a.distance-b.distance);
+  const selected=[];
+  for(const candidate of candidates){
+    if(selected.some(x=>Math.abs(x.i-candidate.i)<=config.bars))continue;
+    selected.push(candidate);if(selected.length>=TARGET_ANALOGS)break;
+  }
+  if(selected.length<MIN_MOVE_ANALOGS)return unavailable("Too few non-overlapping similar historical moves for a stable estimate.");
+  const counts={UP_100:0,DOWN_100:0,BOTH_100:0,NEITHER_100:0};
+  for(const sample of selected)counts[sample.label]++;
+  return {available:true,horizonMinutes:config.minutes,thresholdPoints:MOVE_POINTS,probabilities:movePercentages(counts,base,selected.length),sampleSize:selected.length,sampleQuality:selected.length>=30?"MODERATE":"LIMITED",baseRates:{up100:round1(base.UP_100*100),down100:round1(base.DOWN_100*100),both100:round1(base.BOTH_100*100),neither100:round1(base.NEITHER_100*100)},asOf:rows.at(-1)?.t??null,method:"Historical analogue estimate from future 5-minute candle highs/lows; reports probability of touching +/-100 NIFTY points within the next horizon. Not a guarantee."};
+}
+function buildObservedMoveMonitor(rows,options={}){
+  const last=rows.at(-1);
+  const unavailable=(reason)=>({available:false,thresholdPoints:MOVE_POINTS,reason,source:"COMPLETED_5M_CANDLES_ONLY",asOf:last?.t??null});
+  if(!last||rows.length<13)return unavailable("Not enough recent completed candles to monitor 30/60-minute swings.");
+  const windows={};
+  for(const config of MOVE_HORIZONS){
+    const slice=rows.slice(-(config.bars+1));
+    if(slice.length<config.bars+1){windows[String(config.minutes)]={available:false,reason:"Insufficient candles"};continue;}
+    let continuous=true;
+    for(let j=1;j<slice.length;j++){
+      const a=slice[j-1].t?Date.parse(slice[j-1].t):NaN,b=slice[j].t?Date.parse(slice[j].t):NaN;
+      if(Number.isFinite(a)&&Number.isFinite(b)&&(b<=a||b-a>7*60_000)){continuous=false;break;}
+      if(Number.isFinite(a)&&Number.isFinite(b)){
+        const day=stamp=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(stamp));
+        if(day(a)!==day(b)){continuous=false;break;}
+      }
+    }
+    if(!continuous){windows[String(config.minutes)]={available:false,reason:"History has an overnight or missing-candle gap; not counted as a 30/60-minute move."};continue;}
+    const anchor=slice[0].c,high=Math.max(...slice.map(r=>r.h)),low=Math.min(...slice.map(r=>r.l)),close=slice.at(-1).c;
+    windows[String(config.minutes)]={available:true,minutes:config.minutes,anchor,close,netPoints:round1(close-anchor),upSwingPoints:round1(high-anchor),downSwingPoints:round1(anchor-low),up100:high-anchor>=MOVE_POINTS,down100:anchor-low>=MOVE_POINTS};
+  }
+  const lastTime=last.t?Date.parse(last.t):NaN;
+  const todayKey=Number.isFinite(lastTime)?new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(lastTime)):null;
+  const sessionRows=todayKey?rows.filter(row=>row.t&&new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(row.t))===todayKey):[];
+  let session=null;
+  if(sessionRows.length){
+    const open=sessionRows[0].o,high=Math.max(...sessionRows.map(r=>r.h)),low=Math.min(...sessionRows.map(r=>r.l)),close=sessionRows.at(-1).c;
+    session={available:true,candleCount:sessionRows.length,open,close,netPoints:round1(close-open),highFromOpen:round1(high-open),lowFromOpen:round1(open-low),up100:high-open>=MOVE_POINTS,down100:open-low>=MOVE_POINTS};
+  }
+  const ageMinutes=Number.isFinite(lastTime)?round1((Date.now()-(lastTime+5*60_000))/60000):null;
+  return {available:true,thresholdPoints:MOVE_POINTS,source:"COMPLETED_5M_CANDLES_ONLY",marketOpen:options.marketOpen===true,asOf:last.t??null,candleAgeMinutes:ageMinutes,stale:ageMinutes===null||ageMinutes>10||ageMinutes<-.25,windows,session,warning:"This reports observed completed-candle movement, not a live-tick reading. Stale candles cannot prove the current NIFTY price."};
+}
+
 export function buildForwardForecast(inputRows, options={}) {
   const rows=prepareRows(inputRows);
   const last=rows.at(-1)||null;
@@ -160,9 +247,13 @@ export function buildForwardForecast(inputRows, options={}) {
       direction:"UNAVAILABLE",reason,asOf:last?.t??null,
       method:"Nearest historical analogues, forward-labeled and base-rate-smoothed"
     };
+    const largeMoveHorizons={};
+    for(const config of MOVE_HORIZONS)largeMoveHorizons[String(config.minutes)]={available:false,horizonMinutes:config.minutes,thresholdPoints:MOVE_POINTS,probabilities:null,sampleSize:0,reason,asOf:last?.t??null};
     return {
       available:false,model:"HISTORICAL_ANALOGUE_V1",modelLabel:"Forward probability estimate",
       asOf:last?.t??null,horizons,
+      largeMoveRadar:{available:false,thresholdPoints:MOVE_POINTS,horizons:largeMoveHorizons,reason},
+      moveMonitor:buildObservedMoveMonitor(rows,options),
       interpretation:"Forecast is shown only when the exchange session and latest closed candle can be verified. Percentages are not guarantees or option-premium win rates.",
       calibrationStatus:"EMPIRICAL_ANALOGUE_ESTIMATE — needs ongoing walk-forward calibration before it should be treated as a calibrated probability."
     };
@@ -185,12 +276,15 @@ export function buildForwardForecast(inputRows, options={}) {
   const atr=selectedRows.map((_,i)=>i>=13?avg(trueRanges.slice(i-13,i+1)):null);
   const horizons={};
   for(const config of HORIZONS) horizons[String(config.minutes)]=forecastHorizon(selectedRows,features,atr,config);
+  const largeMoveHorizons={};
+  for(const config of MOVE_HORIZONS)largeMoveHorizons[String(config.minutes)]=forecastMoveHorizon(selectedRows,features,config);
+  const largeMoveRadar={available:Object.values(largeMoveHorizons).some(h=>h.available),thresholdPoints:MOVE_POINTS,horizons:largeMoveHorizons,interpretation:'Historical analogues estimating whether the next 30/60 minutes may touch +100, -100, both, or neither. This is a probability estimate, not a trade signal.'};
   return {
     available:Object.values(horizons).some(h=>h.available),
     model:"HISTORICAL_ANALOGUE_V1",
     modelLabel:"Forward probability estimate",
     asOf:selectedRows.at(-1)?.t??null,
-    horizons,
+    horizons, largeMoveRadar, moveMonitor:buildObservedMoveMonitor(selectedRows,options),
     interpretation:"Probabilities estimate future close direction over the stated horizon from similar past candle states. They are not a guaranteed result, not option-premium win rates, and not an entry signal.",
     calibrationStatus:"EMPIRICAL_ANALOGUE_ESTIMATE — needs ongoing walk-forward calibration before it should be treated as a calibrated probability."
   };
