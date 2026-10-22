@@ -1026,6 +1026,11 @@ body.chart-fullscreen-open>.app>.bottom{
         </div>
         <p class="forward-forecast-note" id="p10ForecastNote">This forecast looks forward from the latest closed candle. Percentages are historical analogue estimates, not guaranteed outcomes or option win rates.</p>
       </div>
+      <div class="setup-tier-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin:10px 0">
+        <section class="forward-horizon" aria-live="polite"><div class="forward-horizon-head"><strong>EARLY SETUP · observation only</strong><b id="p10EarlySetupStatus" class="wait">WAIT / MIXED</b></div><p id="p10EarlySetupDetail" class="forward-forecast-meta">Early directional bias; never an entry signal.</p></section>
+        <section class="forward-horizon" aria-live="polite"><div class="forward-horizon-head"><strong>STRONG SETUP · safety-gated</strong><b id="p10StrongSetupStatus" class="wait">BLOCKED</b></div><p id="p10StrongSetupDetail" class="forward-forecast-meta">Waiting for verified feeds and all confirmations.</p></section>
+      </div>
+      <section class="forward-horizon" style="margin:8px 0" aria-live="polite"><div class="forward-horizon-head"><strong>Exact NO TRADE blockers</strong><b id="p10NoTradeCount">0 blockers</b></div><ul id="p10NoTradeList" class="forward-forecast-meta" style="padding-left:20px;margin:6px 0"><li>Waiting for prediction diagnostics.</li></ul><p id="p10BacktestCalibration" class="forward-forecast-meta">Historical calibration: waiting for enough data.</p></section>
       <div class="trade-timing-panel" id="p10TradeTiming" aria-live="polite">
         <div class="timing-head"><strong>Trade timing &amp; signal expiry</strong><span id="p10TimingDecision" class="timing-decision">WAIT • LIVE SIGNAL NEEDED</span></div>
         <div class="trade-timing-grid">
@@ -2533,6 +2538,21 @@ function renderPredictionPanel(resp){
   const main=$('p10Prediction'); if(main){main.textContent=pred;main.className='prediction-big '+tone;}
   const act=$('p10Action'); if(act){act.textContent=displayAction;act.className=(displayAction==='CALL'||displayAction==='CE WATCH')?'bullish':(displayAction==='PUT'||displayAction==='PE WATCH')?'bearish':tone;}
   const reason=$('p10Reason'); if(reason)reason.textContent=p?.reasoning||p?.reason||'Waiting for verified live inputs and confirmation.';
+  const earlyTier=p?.earlySetup||{};
+  const earlyStatus=$('p10EarlySetupStatus'), earlyDetail=$('p10EarlySetupDetail');
+  if(earlyStatus){earlyStatus.textContent=earlyTier.status||p?.earlyDirection||'WAIT / MIXED';earlyStatus.className=(earlyTier.direction==='BULLISH'?'bullish':earlyTier.direction==='BEARISH'?'bearish':'wait');}
+  if(earlyDetail)earlyDetail.textContent=(earlyTier.reason||p?.earlyDirectionReason||'Early directional bias unavailable.')+' Score: '+(earlyTier.score??p?.earlyScore??'-')+'. '+(earlyTier.dataStatus||'OBSERVATION ONLY')+'. No entry plan is generated from EARLY setup.';
+  const strongTier=p?.strongSetup||{};
+  const strongStatus=$('p10StrongSetupStatus'), strongDetail=$('p10StrongSetupDetail');
+  if(strongStatus){strongStatus.textContent=strongTier.status||state;strongStatus.className=strongTier.status==='CONFIRMED'?'bullish':strongTier.status==='WATCH'?'wait':'neutral';}
+  if(strongDetail)strongDetail.textContent=(strongTier.confirmedCount??confirmed??0)+' / '+(strongTier.confirmationTotal??total??11)+' confirmations ('+(strongTier.confirmationPct??pct??0)+'%). '+((strongTier.blockers||p?.noTradeReasons||[]).slice(0,2).join(' ')||'No reported blockers; still verify the live contract before manual action.')+' Safety gates: '+(strongTier.safetyGatesPreserved===true?'ON':'status unavailable')+'.';
+  const blockersForUi=Array.isArray(p?.noTradeReasons)?p.noTradeReasons:[];
+  const blockerCount=$('p10NoTradeCount'); if(blockerCount)blockerCount.textContent=blockersForUi.length+' blocker(s)';
+  const blockerList=$('p10NoTradeList');
+  if(blockerList){blockerList.replaceChildren();const shown=blockersForUi.length?blockersForUi:['No explicit NO TRADE blocker reported. Check signal state and feed freshness.'];for(const item of shown){const li=document.createElement('li');li.textContent=String(item);blockerList.appendChild(li);}}
+  const calibration=p?.historical?.calibration||resp?.backtest?.calibration;
+  const calibrationEl=$('p10BacktestCalibration');
+  if(calibrationEl)calibrationEl.textContent='Historical calibration: '+(calibration?.status||'INSUFFICIENT_SAMPLE')+'. '+(calibration?.reason||'Index-only backtest is not an option-premium backtest; thresholds stay unchanged unless walk-forward validation passes.');
   const pc=$('p10Confidence'); if(pc)pc.textContent=Number.isFinite(Number(conf))?Number(conf).toFixed(0)+'%':'—';
   const pm=$('p10Confirmation'); if(pm)pm.textContent=Number.isFinite(Number(pct))?Number(pct).toFixed(0)+'% ('+(confirmed??'—')+'/'+total+')':'—';
   const hr=$('p10HitRate'); if(hr)hr.textContent=optionBacktestVerified&&Number.isFinite(Number(bt?.targetHitRate))?Number(bt.targetHitRate).toFixed(1)+'%':'NOT VERIFIED';
