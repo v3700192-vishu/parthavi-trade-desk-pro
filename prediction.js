@@ -3,6 +3,7 @@
   Rule-based multi-timeframe prediction + confirmation + transparent historical target-hit backtest.
   This module never claims guaranteed profit.
 */
+import { buildForwardForecast } from './forwardForecast.js';
 
 function clamp(x,a,b){ return Math.max(a,Math.min(b,x)); }
 function n(v,d=null){ if(v==null || (typeof v==='string' && v.trim()==='')) return d; const x=Number(v); return Number.isFinite(x)?x:d; }
@@ -289,6 +290,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
     newsVerified && globalVerified && optionFlowVerified && events?.connected && !events?.unverifiedTimes && !events?.unverifiedHighImpact &&
     !events?.hardBlock && !events?.eventDayBlock &&
     required.filter(k=>!['greeks','trigger','eventSafe','momentum','options','volume'].includes(k)).every(k=>confirmations[k]);
+  const forwardForecast=buildForwardForecast(rows5,{marketOpen});
   const reasoning = signalState==='CONFIRMED'
     ? `${prediction} structure aligns across 1H/15M/5M with ${confirmedCount}/${required.length} confirmation checks; VIX/ADX/volume/event filters passed and minimum RR is 1:2.`
     : signalState==='WATCH' && modelConfidence>=opportunityConfidenceThreshold
@@ -302,6 +304,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
           : `${prediction==='NEUTRAL'?'Directional edge is weak.':prediction+' setup detected, but confirmation is incomplete.'} ${confirmedCount}/${required.length} checks currently pass.`;
   return {
     prediction, action, watchAction, signalState, score,
+    forwardForecast,
     modelConfidence, opportunityConfidenceThreshold, opportunityEligible, contractScanEligible, advisorMomentumExceptionEligible,
     candidatePlan,
     modelConfidenceBand:modelConfidence>=90&&confirmationPct===100?'COMMAND CENTER READY':modelConfidence>=80?'AI ADVISER':modelConfidence>=70?'FINAL TRADE PLAN':'WEAK',

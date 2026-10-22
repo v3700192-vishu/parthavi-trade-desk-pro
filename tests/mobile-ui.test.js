@@ -262,10 +262,10 @@ test("chart reports stale candle fallback and preserves selected historical day 
 });
 
 test("service-worker cache version is bumped and never caches live API responses", () => {
-  assert.match(serviceWorker, /const CACHE='ptd-shell-v21'/);
+  assert.match(serviceWorker, /const CACHE='ptd-shell-v34'/);
   assert.match(serviceWorker, /prediction-report\.html/);
   assert.match(serviceWorker, /if\(u\.pathname\.startsWith\('\/api\/'\)\) return/);
-  assert.doesNotMatch(serviceWorker, /const CACHE='ptd-shell-v[345678]'/);
+  assert.doesNotMatch(serviceWorker, /const CACHE='ptd-shell-v3[0-3]'/);
 });
 
 test("Contract Finder opens a separate analysis panel with verified quote, liquidity and Greek metrics", () => {
@@ -367,6 +367,16 @@ test("Global Risk ticker uses verified API state and refreshes instead of stayin
   await context.window.refreshGlobalRisk();
   assert.equal(el.textContent, "WAIT");
   assert.match(el.title, /No fresh verified global inputs/);
+});
+
+test("Phase 10 shows forward 5M/15M probabilities separately from setup confluence score", () => {
+  for (const id of ["p10ForwardForecast", "p10ForecastUp5", "p10ForecastDown5", "p10ForecastRange5", "p10ForecastUp15", "p10ForecastDown15", "p10ForecastRange15", "p10ForecastStatus"]) {
+    assert.ok(html.includes('id="' + id + '"'), "missing forecast field " + id);
+  }
+  assert.match(html, /function renderForwardForecast\(forecast\)/);
+  assert.match(html, /Setup confluence score • not probability/);
+  assert.match(html, /historical analogue estimates/i);
+  assert.match(html, /Not an entry signal or an option-premium win rate/);
 });
 
 test("Phase 10 renders the trade timing and signal-expiry panel", () => {

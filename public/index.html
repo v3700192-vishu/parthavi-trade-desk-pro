@@ -623,7 +623,25 @@ body.chart-fullscreen-open>.app>.bottom{
   .ca-decision{grid-template-columns:1fr 1fr}
   .ca-decision-value{font-size:16px}
 }
-</style></head>
+</style><style id="P10_FORWARD_FORECAST_V1">
+.forward-forecast{margin:12px 0;padding:12px;border:1px solid var(--line,#26364f);border-radius:14px;background:linear-gradient(145deg,rgba(13,23,42,.95),rgba(5,10,20,.94))}
+.forward-forecast-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px}
+.forward-forecast-head strong{display:block;font-size:12px}.forward-forecast-head small{display:block;margin-top:4px;color:var(--muted,#8b98ad);font-size:9px;line-height:1.4}
+.forward-forecast-badge{flex-shrink:0;padding:5px 7px;border:1px solid var(--line,#26364f);border-radius:8px;font-size:8px;font-weight:900;color:var(--amber,#ffcf67)}
+.forward-forecast-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.forward-horizon{min-width:0;padding:10px;border:1px solid var(--line,#26364f);border-radius:11px;background:rgba(3,8,17,.65)}
+.forward-horizon-head{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:10px}
+.forward-horizon-head strong{font-size:11px}.forward-horizon-head b{font-size:9px;text-align:right}
+.forward-horizon-head .up{color:var(--green,#21e6a1)}.forward-horizon-head .down{color:var(--red,#ff5f80)}.forward-horizon-head .range{color:var(--amber,#ffcf67)}.forward-horizon-head .wait{color:var(--muted,#8b98ad)}
+.forward-prob-row{display:grid;grid-template-columns:45px 34px minmax(0,1fr);align-items:center;gap:7px;margin:8px 0}
+.forward-prob-row span{font-size:9px;color:var(--muted,#8b98ad)}.forward-prob-row b{font-size:10px;font-variant-numeric:tabular-nums}
+.forward-prob-bar{height:6px;overflow:hidden;border-radius:99px;background:#18243a}.forward-prob-bar i{display:block;width:0;height:100%;border-radius:99px;transition:width .25s ease}
+.forward-prob-row.up i{background:var(--green,#21e6a1)}.forward-prob-row.down i{background:var(--red,#ff5f80)}.forward-prob-row.range i{background:var(--amber,#ffcf67)}
+.forward-forecast-meta{min-height:24px;margin-top:9px;color:var(--muted,#8b98ad);font-size:8px;line-height:1.45}
+.forward-forecast-note{margin:10px 0 0;color:var(--muted,#8b98ad);font-size:9px;line-height:1.5}
+@media(max-width:560px){.forward-forecast-grid{grid-template-columns:1fr}.forward-horizon{padding:11px}.forward-forecast-head{flex-direction:column}.forward-prob-row{grid-template-columns:55px 38px minmax(0,1fr)}}
+</style>
+</head>
 <body>
 <script id="ANDROID_LAYOUT_GUARD">
 (function(){try{window.scrollTo(0,0);document.documentElement.scrollLeft=0;document.body.scrollLeft=0}catch(e){}})();
@@ -736,7 +754,7 @@ body.chart-fullscreen-open>.app>.bottom{
   </div>
   <div class="sp-mid">
     <span id="spAction" class="sp-pill">ACTION: NO TRADE</span>
-    <span id="spConfidence" class="sp-pill">CONFIDENCE: —</span>
+    <span id="spConfidence" class="sp-pill">SETUP SCORE: —</span>
     <span id="spConfirmation" class="sp-pill">CONFIRMATION: —</span>
     <span id="spUpdated" class="sp-pill sp-updated">UPDATED: —</span>
   </div>
@@ -876,7 +894,7 @@ body.chart-fullscreen-open>.app>.bottom{
     <button class="btn" onclick="requestPhase11Signal()">✅ Get Confirmed Signal Lock</button>
     <span class="shield-status" id="p11SignalStatus">No live signal token loaded.</span>
   </div>
-  <div class="finder-note"><b>Performance view:</b> “Model confidence” is a rule-based confluence measure. “Historical target-hit” is a backtest statistic from Phase 10; it is not a forward probability of profit and does not include every real-world execution cost.</div>
+  <div class="finder-note"><b>Performance view:</b> “Setup confluence score” is a rule-based filter, not a future probability. See Phase 10’s Forward Outlook for 5M/15M historical-analogue estimates; these still require walk-forward calibration and are not option-premium win rates.</div>
 </section>
 
 <section class="card" id="freeSmartAdvisor" aria-live="polite">
@@ -981,9 +999,32 @@ body.chart-fullscreen-open>.app>.bottom{
       <div id="p10Reason" class="prediction-sub">Connect Angel One and verified market/news/global/options feeds to calculate the live model.</div>
       <div class="prediction-stats">
         <div class="prediction-stat"><small>Suggested action</small><b id="p10Action" class="neutral">NO TRADE</b></div>
-        <div class="prediction-stat"><small>Model confidence • directional</small><b id="p10Confidence">—</b></div>
+        <div class="prediction-stat"><small>Setup confluence score • not probability</small><b id="p10Confidence">—</b></div>
         <div class="prediction-stat"><small>Confirmation</small><b id="p10Confirmation">—</b></div>
         <div class="prediction-stat"><small>Option-premium backtest</small><b id="p10HitRate">NOT VERIFIED</b></div>
+      </div>
+      <div class="forward-forecast" id="p10ForwardForecast" aria-live="polite">
+        <div class="forward-forecast-head">
+          <div><strong>Forward outlook • next 5 / 15 minutes</strong><small>Future closing direction estimated from similar completed historical candle patterns.</small></div>
+          <span class="forward-forecast-badge" id="p10ForecastStatus">WAITING FOR HISTORY</span>
+        </div>
+        <div class="forward-forecast-grid">
+          <div class="forward-horizon">
+            <div class="forward-horizon-head"><strong>Next 5 minutes</strong><b id="p10ForecastDirection5" class="wait">—</b></div>
+            <div class="forward-prob-row up"><span>UP</span><b id="p10ForecastUp5">—</b><div class="forward-prob-bar"><i id="p10ForecastBarUp5"></i></div></div>
+            <div class="forward-prob-row down"><span>DOWN</span><b id="p10ForecastDown5">—</b><div class="forward-prob-bar"><i id="p10ForecastBarDown5"></i></div></div>
+            <div class="forward-prob-row range"><span>RANGE</span><b id="p10ForecastRange5">—</b><div class="forward-prob-bar"><i id="p10ForecastBarRange5"></i></div></div>
+            <div class="forward-forecast-meta" id="p10ForecastMeta5">Waiting for sufficient past outcomes.</div>
+          </div>
+          <div class="forward-horizon">
+            <div class="forward-horizon-head"><strong>Next 15 minutes</strong><b id="p10ForecastDirection15" class="wait">—</b></div>
+            <div class="forward-prob-row up"><span>UP</span><b id="p10ForecastUp15">—</b><div class="forward-prob-bar"><i id="p10ForecastBarUp15"></i></div></div>
+            <div class="forward-prob-row down"><span>DOWN</span><b id="p10ForecastDown15">—</b><div class="forward-prob-bar"><i id="p10ForecastBarDown15"></i></div></div>
+            <div class="forward-prob-row range"><span>RANGE</span><b id="p10ForecastRange15">—</b><div class="forward-prob-bar"><i id="p10ForecastBarRange15"></i></div></div>
+            <div class="forward-forecast-meta" id="p10ForecastMeta15">Waiting for sufficient past outcomes.</div>
+          </div>
+        </div>
+        <p class="forward-forecast-note" id="p10ForecastNote">This forecast looks forward from the latest closed candle. Percentages are historical analogue estimates, not guaranteed outcomes or option win rates.</p>
       </div>
       <div class="trade-timing-panel" id="p10TradeTiming" aria-live="polite">
         <div class="timing-head"><strong>Trade timing &amp; signal expiry</strong><span id="p10TimingDecision" class="timing-decision">WAIT • LIVE SIGNAL NEEDED</span></div>
@@ -2041,7 +2082,7 @@ function updateStickyPrediction(p){
     const displayAct=state==='WATCH'?(p?.watchAction||(pred==='BULLISH'?'CE WATCH':pred==='BEARISH'?'PE WATCH':'NO TRADE')):act;
     ae.textContent='ACTION: '+displayAct;
     ae.className='sp-pill '+(displayAct==='CALL'||displayAct==='CE WATCH'?'bullish':displayAct==='PUT'||displayAct==='PE WATCH'?'bearish':'neutral');
-    ce.textContent='CONFIDENCE: '+(p?.modelConfidence!=null?String(p.modelConfidence)+'%':'—');
+    ce.textContent='SETUP SCORE: '+(p?.modelConfidence!=null?String(p.modelConfidence)+'%':'—');
     qe.textContent='CONFIRMATION: '+(p?.confirmationPct!=null?String(p.confirmationPct)+'%':'—')+' • '+state;
     ue.textContent='UPDATED: '+indiaNow();
   }catch(_){}
@@ -2433,8 +2474,38 @@ function renderFreeAdvisor(p,resp={}){
     else checks.textContent=(reasons.slice(0,6).join(' • ')||p?.reasoning||'Waiting for verified market data, fresh exchange tick and all safety gates.');
   }
 }
+function renderForwardForecast(forecast){
+  const status=$('p10ForecastStatus');
+  const note=$('p10ForecastNote');
+  const horizons=forecast?.horizons||{};
+  const asOf=forecast?.asOf?p10Clock(forecast.asOf):'time unavailable';
+  const available=!!forecast?.available;
+  if(status)status.textContent=available?('HISTORY ESTIMATE • '+asOf):'INSUFFICIENT HISTORY';
+  for(const minutes of [5,15]){
+    const h=horizons[String(minutes)]||{},suffix=String(minutes);
+    const direction=$('p10ForecastDirection'+suffix),meta=$('p10ForecastMeta'+suffix),values=h.probabilities||{};
+    if(direction){
+      direction.textContent=h.available?(String(h.direction||'RANGE / MIXED')+' • '+String(h.leadingProbability??'—')+'%'):'NO ESTIMATE';
+      direction.className='wait';
+      if(h.available&&String(h.direction).includes('UPWARD'))direction.className='up';
+      else if(h.available&&String(h.direction).includes('DOWNWARD'))direction.className='down';
+      else if(h.available)direction.className='range';
+    }
+    for(const [key,name] of [['up','Up'],['down','Down'],['sideways','Range']]){
+      const valueEl=$('p10Forecast'+name+suffix),bar=$('p10ForecastBar'+name+suffix),value=Number(values[key]);
+      if(valueEl)valueEl.textContent=h.available&&Number.isFinite(value)?value+'%':'—';
+      if(bar)bar.style.width=h.available&&Number.isFinite(value)?Math.max(0,Math.min(100,value))+'%':'0%';
+    }
+    if(meta){
+      if(!h.available)meta.textContent=h.reason||'Not enough completed historical outcomes.';
+      else{const base=h.baseRates||{};meta.textContent='Similar past patterns: '+h.sampleSize+' • '+h.sampleQuality+' sample • Past base rate U/D/R: '+(base.up??'—')+'/'+(base.down??'—')+'/'+(base.sideways??'—')+'%.';}
+    }
+  }
+  if(note){const calibration=forecast?.calibrationStatus||'Historical pattern estimate; not calibrated.';note.textContent=(forecast?.interpretation||'Forecast unavailable until enough completed candles are loaded.')+' '+calibration+' Not an entry signal or an option-premium win rate.';}
+}
 function renderPredictionPanel(resp){
   const p=resp?.prediction||resp||{};
+  renderForwardForecast(p?.forwardForecast);
   renderFreeAdvisor(p,resp);
   // Keep the Command Center connected to each fresh prediction result. Without this
   // handoff, stccCurrentPlan() reads an empty global and can never surface a signal.
@@ -2475,7 +2546,7 @@ function renderPredictionPanel(resp){
   const timingSignalEl=$('p10TimingSignal');if(timingSignalEl)timingSignalEl.textContent=timingIST(timing.signalGeneratedAt||resp?.checkedAt);
   const timingEntryEl=$('p10TimingEntry');if(timingEntryEl)timingEntryEl.textContent=timingIST(timing.entryWindowStart);
   const timingExpiryEl=$('p10TimingExpiry');if(timingExpiryEl)timingExpiryEl.textContent=timingIST(timing.validUntil);
-  const timingTierEl=$('p10TimingTier');if(timingTierEl)timingTierEl.textContent='Confidence tier: '+String(timing.confidenceTier||'WAIT').toUpperCase();
+  const timingTierEl=$('p10TimingTier');if(timingTierEl)timingTierEl.textContent='Setup eligibility: '+String(timing.confidenceTier||'WAIT').toUpperCase();
   const timingReasonEl=$('p10TimingReason');if(timingReasonEl)timingReasonEl.textContent=String(timing.reason||'Waiting for a timestamped completed 5M candle and all live safety checks.');
   const note=$('p10Note'); if(note)note.textContent=(p?.note||'Confidence is a rule-based confluence estimate.')+' Option-premium backtest is NOT VERIFIED and adds no confidence bonus.';
 
