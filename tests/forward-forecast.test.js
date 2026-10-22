@@ -17,15 +17,26 @@ function makeCandles(count=260) {
   return rows;
 }
 
-test("forward forecast gives future-horizon probabilities from historical analogue outcomes",()=>{
+test("directional percentages stay hidden unless the walk-forward calibration passes 68% with enough signals",()=>{
   const forecast=buildForwardForecast(makeCandles());
   assert.equal(forecast.model,"HISTORICAL_ANALOGUE_V1");
-  assert.equal(forecast.available,true);
+  assert.equal(forecast.historyAvailable,true);
   for(const horizon of [forecast.horizons["5"],forecast.horizons["15"]]){
-    assert.equal(horizon.available,true);
+    assert.equal(horizon.historyAvailable,true);
     assert.ok(horizon.sampleSize>=24);
-    assert.equal(horizon.probabilities.up+horizon.probabilities.down+horizon.probabilities.sideways,100);
-    assert.ok(["UPWARD BIAS","DOWNWARD BIAS","RANGE / MIXED"].includes(horizon.direction));
+    assert.ok(horizon.calibration);
+    if(horizon.available){
+      assert.equal(horizon.calibration.eligible,true);
+      assert.ok(horizon.calibration.outOfSampleHitRate>=68);
+      assert.ok(horizon.calibration.highConfidenceDirectionalSignals>=30);
+      assert.ok(horizon.leadingProbability>=68);
+      assert.equal(horizon.probabilities.up+horizon.probabilities.down+horizon.probabilities.sideways,100);
+      assert.ok(["UPWARD BIAS","DOWNWARD BIAS"].includes(horizon.direction));
+    }else{
+      assert.equal(horizon.probabilities,null);
+      assert.equal(horizon.direction,"UNVERIFIED / WAIT");
+      assert.ok(horizon.reason);
+    }
     assert.ok(horizon.asOf);
   }
 });
@@ -52,7 +63,8 @@ test("live forward forecast requires a fresh timestamp but accepts a fresh compl
   const rows=makeCandles();
   rows[rows.length-1].t=new Date(Date.now()-6*60_000).toISOString();
   const forecast=buildForwardForecast(rows,{marketOpen:true});
-  assert.equal(forecast.available,true);
+  assert.equal(forecast.historyAvailable,true);
+  assert.equal(forecast.horizons["5"].historyAvailable,true);
 });
 
 test("forecast uses the latest completed candle timestamp as its as-of marker",()=>{
@@ -60,5 +72,5 @@ test("forecast uses the latest completed candle timestamp as its as-of marker",(
   const forecast=buildForwardForecast(rows);
   assert.equal(forecast.asOf,rows.at(-1).t);
   assert.equal(forecast.horizons["15"].asOf,rows.at(-1).t);
-  assert.match(forecast.interpretation,/not a guaranteed result/i);
+  assert.match(forecast.interpretation,/not option-premium profit probability/i);
 });
