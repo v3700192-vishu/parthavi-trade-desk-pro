@@ -1047,7 +1047,7 @@ body.chart-fullscreen-open>.app>.bottom{
             <div class="forward-forecast-meta" id="p10ForecastMeta15">Waiting for sufficient past outcomes.</div>
           </div>
         </div>
-        <p class="forward-forecast-note" id="p10ForecastNote">This forecast looks forward from the latest closed candle. Percentages are historical analogue estimates, not guaranteed outcomes or option win rates.</p>
+        <p class="forward-forecast-note" id="p10ForecastNote">Only validated out-of-sample directional percentages are displayed; setup confluence scores are not probabilities. NIFTY direction does not equal CE/PE profit probability.</p>
       </div>
       <div class="setup-tier-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin:10px 0">
         <section class="forward-horizon" aria-live="polite"><div class="forward-horizon-head"><strong>EARLY SETUP · observation only</strong><b id="p10EarlySetupStatus" class="wait">WAIT / MIXED</b></div><p id="p10EarlySetupDetail" class="forward-forecast-meta">Early directional bias; never an entry signal.</p></section>
@@ -1118,10 +1118,14 @@ body.chart-fullscreen-open>.app>.bottom{
     </div>
     <div class="decision-grid">
       <div class="stat"><small>Final action</small><b class="wait" id="action">NO TRADE</b></div>
+      <div class="stat"><small>Fusion Score (signed)</small><b id="fusionScore">—</b></div>
+      <div class="stat"><small>Technical Confluence</small><b id="technicalConfluence">—</b></div>
+      <div class="stat"><small>5M Momentum</small><b id="fusionMomentum">—</b></div>
       <div class="stat"><small>Confluence</small><b id="score">— / 100</b></div>
       <div class="stat"><small>Confidence band</small><b id="confidence">—</b></div>
       <div class="stat"><small>R:R</small><b id="rr">—</b></div>
     </div>
+    <div class="note" style="margin-top:7px"><strong>Fusion gate diagnostics</strong><ul id="fusionGateList" style="margin:4px 0 0;padding-left:18px"><li>Waiting for live decision diagnostics.</li></ul></div>
   </div>
   <div class="card gate">
     <div class="eyebrow">Hard Safety Gate</div>
@@ -1678,10 +1682,36 @@ function signalTone(value){
  return 'neutral';
 }
 function paintSignal(id,value){const el=$(id);if(!el)return;el.textContent=value??'WAIT';el.classList.remove('bullish','bearish','neutral');el.classList.add(signalTone(value));}
+function resolveDisplayedH1Trend(decision,h1){
+ const out={...(decision||{})}, fast=numericTrendEma(h1?.trendFastEma), slow=numericTrendEma(h1?.trendSlowEma), ema20=numericTrendEma(h1?.ema20), ema50=numericTrendEma(h1?.ema50);
+ const fastDirection=fast!==null&&slow!==null?(fast>slow?'BULLISH':fast<slow?'BEARISH':null):null;
+ const slowDirection=ema20!==null&&ema50!==null?(ema20>ema50?'BULLISH':ema20<ema50?'BEARISH':null):null;
+ if(fastDirection&&slowDirection&&fastDirection!==slowDirection){
+   out.trend1h='NEUTRAL';
+   out.trend1hReason='EMA8/20 is '+fastDirection.toLowerCase()+' while EMA20/50 is '+slowDirection.toLowerCase()+'; the 1H trend conflicts, so display NEUTRAL.';
+ }else if(fastDirection&&slowDirection&&fastDirection===slowDirection){
+   out.trend1h=fastDirection;
+   delete out.trend1hReason;
+ }
+ return out;
+}
+function numericTrendEma(value){
+ if(value==null||value===''||!Number.isFinite(Number(value)))return null;
+ return Number(value);
+}
 function renderDecision(d){
+ d=resolveDisplayedH1Trend(d,d?.multiTf?.h1||d?.h1||{});
  const action=d.action||'NO TRADE';
  $('decision').textContent=action; $('action').textContent=action; $('score').textContent=(d.score??'—')+' / 100';
  $('confidence').textContent=d.confidence||'—'; $('rr').textContent=d.rr||'—';
+ const fusionValue=d.fusionScore??d.fusion?.score;
+ const fusionEl=$('fusionScore'); if(fusionEl)fusionEl.textContent=Number.isFinite(Number(fusionValue))?(Number(fusionValue)>0?'+':'')+Number(fusionValue).toFixed(1)+' • '+String(d.fusionDirection??d.fusion?.direction??'UNVERIFIED'):'—';
+ const technicalRaw=d.technicalScore??d.fusion?.technicalScore;
+ const technicalEl=$('technicalConfluence'); if(technicalEl)technicalEl.textContent=Number.isFinite(Number(d.technicalConfluence??technicalRaw))?String(d.technicalConfluence??Math.round(Math.abs(Number(technicalRaw))))+'/100':'—';
+ const momentumRaw=d.momentum5m??d.momentum5mScore??d.momentum;
+ const momentumEl=$('fusionMomentum'); if(momentumEl)momentumEl.textContent=momentumRaw==null?'—':(typeof momentumRaw==='number'&&Number.isFinite(momentumRaw)?(momentumRaw>0?'+':'')+momentumRaw.toFixed(1):String(momentumRaw));
+ const gateList=$('fusionGateList');
+ if(gateList){gateList.replaceChildren();const blockers=Array.isArray(d.noTradeReasons)?d.noTradeReasons:[];const display=blockers.length?blockers.slice(0,4):(d.fusion?.hardGate===true?['At least one critical live-data, event, option or risk gate is blocked.']:['Review all live feeds and contract safeguards before acting.']);for(const text of display){const li=document.createElement('li');li.textContent=String(text);gateList.appendChild(li);}}
  const diag=[
    d.vix!=null?`VIX ${Number(d.vix).toFixed(2)}`:'',
    d.adx!=null?`ADX ${Number(d.adx).toFixed(1)}`:'',
@@ -2605,8 +2635,6 @@ function renderForwardForecast(forecast,movement,decision,marketOpenFlag){
     if(p.adx!=null)parts.push('ADX '+Number(p.adx).toFixed(1));
     if(movement?.available)parts.push('15M move '+(Number(movement.change15m)>0?'+':'')+movement.change15m+' pt');
     if(horizon.available)parts.push('historical sample '+horizon.sampleSize+' ('+(horizon.sampleQuality||'limited')+')');
-    const cal=horizon.calibration||{};
-    parts.push('15M OOS: '+String(cal.status||'UNVERIFIED')+' • '+String(cal.highConfidenceDirectionalSignals??0)+'/'+String(cal.minimumSignals||30)+' high-confidence signals • hit rate '+(cal.outOfSampleHitRate==null?'N/A':String(cal.outOfSampleHitRate)+'%'));
     const cal=horizon.calibration||{};
     parts.push('15M OOS: '+String(cal.status||'UNVERIFIED')+' • '+String(cal.highConfidenceDirectionalSignals??0)+'/'+String(cal.minimumSignals||30)+' high-confidence signals • hit rate '+(cal.outOfSampleHitRate==null?'N/A':String(cal.outOfSampleHitRate)+'%'));
     chartDrivers.textContent=(parts.length?parts.join(' • '):'Chart indicators unavailable.')+' '+(liveFresh?'Live candle verified.':'Historical/unchecked data cannot authorize an entry.');
