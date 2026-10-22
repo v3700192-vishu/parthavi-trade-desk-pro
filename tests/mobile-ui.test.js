@@ -101,6 +101,8 @@ test("free smart advisor gives a buy recommendation only when every final live g
   assert.match(html, /const setupScore=Number\(p\?\.modelConfidence\)\|\|0/);
   assert.match(html, /const rawDirectionalProbability=p\?\.directionalProbability;/);
   assert.doesNotMatch(html, /directionalProbability\?\?p\?\.directionalConfidence/);
+  assert.match(html, /const rawDirectionalProbability=p\?\.directionalProbability;/);
+  assert.doesNotMatch(html, /directionalProbability\?\?p\?\.directionalConfidence/);
   assert.match(html, /setupScore>=PTD_COMMAND_CENTER_CONFIDENCE/);
   assert.match(html, /NO TRADE • MARKET CLOSED/);
   assert.match(html, /WAIT • CANDIDATE ONLY/);
@@ -170,11 +172,12 @@ test("Command Center surfaces a plan only at 90% final confidence and all 11 con
   assert.equal(stccCurrentPlanForTest({ ...plan, modelConfidence: 90, confirmationPct: 100, confirmations: { ...plan.confirmations, momentum:false } })?.contract||null, null, "momentum must pass for the Command Center");
   assert.equal(stccCurrentPlanForTest({ ...plan, modelConfidence: 90, confirmationPct: 100 })?.contract, "NIFTYTESTCE");
   assert.equal(stccCurrentPlanForTest({ ...plan, directionalProbability: null, directionalConfidence: null, modelConfidence: 90, confirmationPct: 100 })?.contract||null, null, "setup score alone cannot bypass the calibrated direction gate");
+  assert.equal(stccCurrentPlanForTest({ ...plan, directionalProbability: null, directionalConfidence: 90, modelConfidence: 95, confirmationPct: 100 })?.contract||null, null, "legacy directional score cannot impersonate a calibrated probability");
 });
 test("AI Adviser can show an 80% directional candidate even if final gates keep the score at NO TRADE", () => {
   const candidate = renderFreeAdvisorForTest({
     signalState: "NO TRADE", action: "NO TRADE", prediction: "BULLISH",
-    directionalConfidence: 80, modelConfidence: 72, confirmationPct: 73, exchangeTickVerified: true,
+    directionalProbability: 80, directionalConfidence: 80, modelConfidence: 72, confirmationPct: 73, exchangeTickVerified: true,
     optionPlan: { available: true, candidateOnly: false, greekStatus: "PASS", contract: "NIFTYTESTCE", optionType: "CE", strike: 23000, expiry: "19OCT2026", lotSize: 65, entry: 40, stopLoss: 32, target1: 56, target2: 60 },
     noTradeReasons: ["The 5M trigger has not passed."]
   }, { health: { marketOpen: true } });
@@ -212,7 +215,7 @@ test("free advisor says RECOMMENDED only with a verified contract and every fina
 test("80% directional confidence can display a risk-blocked contract candidate only as NO TRADE", () => {
   const candidate = renderFreeAdvisorForTest({
     signalState: "NO TRADE", action: "NO TRADE", prediction: "BULLISH",
-    directionalConfidence: 80, modelConfidence: 72, confirmationPct: 73, exchangeTickVerified: true,
+    directionalProbability: 80, directionalConfidence: 80, modelConfidence: 72, confirmationPct: 73, exchangeTickVerified: true,
     optionPlan: { available: true, candidateOnly: true, greekStatus: "NO TRADE", contract: "NIFTY19OCT2623050CE", optionType: "CE", strike: 23050, expiry: "19OCT2026", lotSize: 65, entry: 74.45, stopLoss: 60, target1: 103.35, target2: 110.58 },
     noTradeReasons: ["Theta exceeds the configured safety limit."]
   }, { health: { marketOpen: true } });
