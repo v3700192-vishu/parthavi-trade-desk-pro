@@ -2486,7 +2486,7 @@ function renderFreeAdvisor(p,resp={}){
   }else if(candidatePreview){
     decision.textContent='NO TRADE • CONTRACT CANDIDATE';
     decision.className='stcc-decision neutral';
-    reason.textContent=`Directional/setup confidence ${directionalConfidence.toFixed(0)}% has crossed 80%, so the live ${plan.optionType||'CE/PE'} candidate is shown for review only. Final model confidence is ${Number(p?.modelConfidence||0).toFixed(0)}%; Greek status is ${plan.greekStatus||'UNVERIFIED'}. The signal stays NO TRADE until the selected contract Greeks, 5M trigger, event window and all final gates pass.`;
+    reason.textContent=`Setup score ${directionalConfidence.toFixed(0)}/100 has crossed the adviser-review tier; this is NOT a probability. The live ${plan.optionType||'CE/PE'} candidate is analysis-only. Validated direction: ${p?.directionalProbability==null?'NOT VALIDATED':Number(p.directionalProbability).toFixed(0)+'%'}. Greek status is ${plan.greekStatus||'UNVERIFIED'}. The signal stays NO TRADE until the selected contract Greeks, 5M trigger, event window and all final gates pass.`;
     stateBadge.textContent='CANDIDATE ONLY • NO TRADE';stateBadge.className='badge danger';
     status.textContent='SAFETY GATE LOCKED';status.className='stcc-badge neutral';
   }else{
@@ -2673,7 +2673,7 @@ function renderPredictionPanel(resp){
   const calibration=p?.historical?.calibration||resp?.backtest?.calibration;
   const calibrationEl=$('p10BacktestCalibration');
   if(calibrationEl)calibrationEl.textContent='Historical calibration: '+(calibration?.status||'INSUFFICIENT_SAMPLE')+'. '+(calibration?.reason||'Index-only backtest is not an option-premium backtest; thresholds stay unchanged unless walk-forward validation passes.');
-  const pc=$('p10Confidence'); if(pc)pc.textContent=Number.isFinite(Number(conf))?Number(conf).toFixed(0)+'%':'—';
+  const pc=$('p10Confidence'); if(pc)pc.textContent=Number.isFinite(Number(conf))?Number(conf).toFixed(0)+'/100':'—';
   const pm=$('p10Confirmation'); if(pm)pm.textContent=Number.isFinite(Number(pct))?Number(pct).toFixed(0)+'% ('+(confirmed??'—')+'/'+total+')':'—';
   const hr=$('p10HitRate'); if(hr)hr.textContent=optionBacktestVerified&&Number.isFinite(Number(bt?.targetHitRate))?Number(bt.targetHitRate).toFixed(1)+'%':'NOT VERIFIED';
   const meter=$('p10Meter'); if(meter)meter.style.width=Math.max(0,Math.min(100,Number(pct)||0))+'%';
@@ -2688,7 +2688,7 @@ function renderPredictionPanel(resp){
   const timingExpiryEl=$('p10TimingExpiry');if(timingExpiryEl)timingExpiryEl.textContent=timingIST(timing.validUntil);
   const timingTierEl=$('p10TimingTier');if(timingTierEl)timingTierEl.textContent='Setup eligibility: '+String(timing.confidenceTier||'WAIT').toUpperCase();
   const timingReasonEl=$('p10TimingReason');if(timingReasonEl)timingReasonEl.textContent=String(timing.reason||'Waiting for a timestamped completed 5M candle and all live safety checks.');
-  const note=$('p10Note'); if(note)note.textContent=(p?.note||'Confidence is a rule-based confluence estimate.')+' Option-premium backtest is NOT VERIFIED and adds no confidence bonus.';
+  const note=$('p10Note'); if(note)note.textContent=(p?.note||'Setup score is a confluence score, not a win probability.')+' Option-premium backtest is NOT VERIFIED and adds no confidence bonus.';
 
   const checks=p?.confirmations||{};
   const labels=[
@@ -2713,7 +2713,7 @@ function renderPredictionPanel(resp){
   if(finder){
     const contractLine=optionVisible
       ? ` • ${optionPlan.candidateOnly?'Candidate (NO TRADE)':'Contract'}: <b>${escapeHtml(optionPlan.contract||'—')}</b> • LTP ₹${Number(optionPlan.entry||0).toFixed(2)} • Δ ${Number(optionPlan.delta||0).toFixed(3)} • Θ ${Number(optionPlan.theta||0).toFixed(2)} • Greek ${escapeHtml(optionPlan.greekStatus||'WAIT')}`
-      : (directionalConfidence>=PTD_ADVISOR_CONFIDENCE?' • Confidence ≥80%: checking live contract and safety gates.':'');
+      : (directionalConfidence>=PTD_ADVISOR_CONFIDENCE?' • Setup score ≥80/100: checking live contract and calibration gates.':'');
     finder.innerHTML="&#127919; <b>CONTINUOUS SETUP SCANNER ACTIVE</b> | Confirmed opportunities today: <b id='p10OpportunityCount'>0 / 2</b> | Setup-score tiers: 70/100 scan • 80/100 adviser review • >=90/100 command-center tier. These are not win probabilities. A validated 15M direction >=68% and all live safety gates are required."+contractLine+" | Scanner keeps searching during the NSE session.";
   }
   renderP10OpportunityCount();
@@ -2737,11 +2737,11 @@ function renderPredictionPanel(resp){
       if(fm){
         fm.textContent=finalPlanVisible
           ? `${optionPlan.optionType} ${optionPlan.strike} • Expiry ${optionPlan.expiry} • Premium ₹${Number(optionPlan.entry).toFixed(2)} • Δ ${Number(optionPlan.delta).toFixed(3)} • Θ ${Number(optionPlan.theta).toFixed(2)} • ${candidatePreview?'ANALYSIS ONLY • NO TRADE':optionPlan.candidateOnly?'GREEK CAUTION':'WATCH / CONFIRMED'}`
-          : (directionalConfidence>=PTD_FINAL_PLAN_CONFIDENCE?'Confidence ≥70%; scanning live contracts':'Contract selection starts at 70% confidence');
+          : (directionalConfidence>=PTD_FINAL_PLAN_CONFIDENCE?'Setup score ≥70/100; calibration gate also required':'Contract scan begins at a 70/100 setup score');
       }
       if(fn){
         fn.textContent=finalPlanVisible
-          ? `${candidatePreview?'Candidate only. ':'Contract candidate. '}Premium Entry ₹${Number(optionPlan.entry).toFixed(2)} • SL ₹${Number(optionPlan.stopLoss).toFixed(2)} • T1 ₹${Number(optionPlan.target1).toFixed(2)} • T2 ₹${Number(optionPlan.target2).toFixed(2)} • R:R 1:${optionPlan.rr1}/1:${optionPlan.rr2}. Delta ${Number(optionPlan.delta).toFixed(3)}, Theta ${Number(optionPlan.theta).toFixed(2)} (${optionPlan.greekStatus||'UNVERIFIED'}). Directional confidence ${directionalConfidence.toFixed(0)}%; final confidence ${Number(conf||0).toFixed(0)}%. Live execution remains OFF and all failed gates remain NO TRADE.`
+          ? `${candidatePreview?'Candidate only. ':'Contract candidate. '}Premium Entry ₹${Number(optionPlan.entry).toFixed(2)} • SL ₹${Number(optionPlan.stopLoss).toFixed(2)} • T1 ₹${Number(optionPlan.target1).toFixed(2)} • T2 ₹${Number(optionPlan.target2).toFixed(2)} • R:R 1:${optionPlan.rr1}/1:${optionPlan.rr2}. Delta ${Number(optionPlan.delta).toFixed(3)}, Theta ${Number(optionPlan.theta).toFixed(2)} (${optionPlan.greekStatus||'UNVERIFIED'}). Setup score ${directionalConfidence.toFixed(0)}/100 (not probability); validated direction ${p?.directionalProbability==null?'NOT VALIDATED':Number(p.directionalProbability).toFixed(0)+'%'}. Live execution remains OFF and all failed gates remain NO TRADE.`
           : 'No contract candidate until the 15M direction estimate and recent out-of-sample hit rate both validate at >=68% with >=30 resolved forecasts. The scanner keeps monitoring; failed gates remain NO TRADE.';
       }
       if(fb)fb.textContent=candidatePreview?'NO TRADE • CANDIDATE ONLY':state==='CONFIRMED'?'CONFIRMED TRADE PLAN':'WATCH • WAIT FOR FINAL GATES';
