@@ -217,6 +217,8 @@ body{-webkit-overflow-scrolling:touch}
 .backtest{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:8px}
 .backtest .bt{border:1px solid var(--line);background:#070d18;border-radius:10px;padding:9px}.bt small{display:block;color:var(--muted);font-size:7px}.bt b{display:block;margin-top:4px;font-size:13px}
 .prediction-meter{height:10px;border:1px solid var(--line);border-radius:999px;background:#101827;overflow:hidden;margin-top:8px}.prediction-meter i{display:block;height:100%;width:0;background:linear-gradient(90deg,#ffcf67,#fff,#ff5f80);transition:width .25s ease}
+.trade-timing-panel{margin-top:10px;border:1px solid var(--line2);border-radius:13px;padding:10px;background:linear-gradient(135deg,rgba(100,230,255,.055),rgba(169,139,255,.055)),#070d18}.timing-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:10px}.timing-decision{font-size:9px;font-weight:900;border:1px solid var(--line2);border-radius:999px;padding:5px 8px;color:var(--amber)}.timing-decision.ready{color:var(--green);border-color:rgba(33,230,161,.45)}.timing-decision.blocked{color:var(--red);border-color:rgba(255,95,128,.45)}.trade-timing-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:8px}.trade-timing-cell{border:1px solid var(--line);border-radius:9px;background:#050a14;padding:8px;min-width:0}.trade-timing-cell small{display:block;color:var(--muted);font-size:7px;text-transform:uppercase;letter-spacing:.45px}.trade-timing-cell b{display:block;margin-top:4px;font-size:11px;overflow-wrap:anywhere}.timing-tier{display:flex;justify-content:space-between;flex-wrap:wrap;gap:5px;margin-top:8px;color:#bac7dc;font-size:8px}.timing-reason{margin:7px 0 0;color:var(--muted);font-size:8px;line-height:1.5}
+@media(max-width:620px){.trade-timing-grid{grid-template-columns:1fr 1fr}.timing-head{align-items:flex-start;flex-direction:column}}
 @media(max-width:820px){.prediction-grid{grid-template-columns:1fr}.prediction-stats{grid-template-columns:repeat(2,1fr)}.backtest{grid-template-columns:repeat(2,1fr)}}
 .finalplan{display:grid;grid-template-columns:1.1fr repeat(5,1fr);gap:8px;margin-top:9px}
 .finalplan .plan-card{border:1px solid var(--line2);background:#070d18;border-radius:12px;padding:10px}
@@ -982,6 +984,16 @@ body.chart-fullscreen-open>.app>.bottom{
         <div class="prediction-stat"><small>Model confidence • directional</small><b id="p10Confidence">—</b></div>
         <div class="prediction-stat"><small>Confirmation</small><b id="p10Confirmation">—</b></div>
         <div class="prediction-stat"><small>Option-premium backtest</small><b id="p10HitRate">NOT VERIFIED</b></div>
+      </div>
+      <div class="trade-timing-panel" id="p10TradeTiming" aria-live="polite">
+        <div class="timing-head"><strong>Trade timing &amp; signal expiry</strong><span id="p10TimingDecision" class="timing-decision">WAIT • LIVE SIGNAL NEEDED</span></div>
+        <div class="trade-timing-grid">
+          <div class="trade-timing-cell"><small>Signal generated (IST)</small><b id="p10TimingSignal">—</b></div>
+          <div class="trade-timing-cell"><small>5M entry window starts</small><b id="p10TimingEntry">—</b></div>
+          <div class="trade-timing-cell"><small>Valid until (IST)</small><b id="p10TimingExpiry">—</b></div>
+        </div>
+        <div class="timing-tier"><b id="p10TimingTier">Confidence tier: WAIT</b><span>70% = scan only • 80% = candidate • 90%+ = all-gates check</span></div>
+        <p id="p10TimingReason" class="timing-reason">Timing appears only from a timestamped 5M candle. Never enter on confidence alone.</p>
       </div>
       <div class="prediction-meter"><i id="p10Meter"></i></div>
       <div class="finder-note" id="p10TradeFinder">🎯 <b>TWO-TRADE FINDER ACTIVE</b> • Confirmed opportunities today: <b id="p10OpportunityCount">0 / 2</b> • Scanner keeps searching during the NSE session and never manufactures a weak second trade.</div>
@@ -2456,6 +2468,15 @@ function renderPredictionPanel(resp){
   const meter=$('p10Meter'); if(meter)meter.style.width=Math.max(0,Math.min(100,Number(pct)||0))+'%';
   const st=$('p10State'); if(st){st.textContent=state;st.className='badge '+(state==='CONFIRMED'?'ok':state==='WATCH'?'warn':'danger');}
   const tm=$('p10Time'); if(tm)tm.textContent='Updated • '+p10Clock(resp?.checkedAt||Date.now());
+  const timing=p?.tradeTiming||{};
+  const timingIST=value=>{if(!value)return '—';const d=new Date(value);if(Number.isNaN(d.getTime()))return '—';return new Intl.DateTimeFormat('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true}).format(d)+' IST';};
+  const timingDecision=String(timing.status||'WAIT • LIVE SIGNAL NEEDED').toUpperCase();
+  const timingDecisionEl=$('p10TimingDecision');if(timingDecisionEl){timingDecisionEl.textContent=timingDecision;timingDecisionEl.className='timing-decision '+(timingDecision==='ENTRY READY'?'ready':timingDecision.includes('MISSED')||timingDecision.includes('NO TRADE')?'blocked':'');}
+  const timingSignalEl=$('p10TimingSignal');if(timingSignalEl)timingSignalEl.textContent=timingIST(timing.signalGeneratedAt||resp?.checkedAt);
+  const timingEntryEl=$('p10TimingEntry');if(timingEntryEl)timingEntryEl.textContent=timingIST(timing.entryWindowStart);
+  const timingExpiryEl=$('p10TimingExpiry');if(timingExpiryEl)timingExpiryEl.textContent=timingIST(timing.validUntil);
+  const timingTierEl=$('p10TimingTier');if(timingTierEl)timingTierEl.textContent='Confidence tier: '+String(timing.confidenceTier||'WAIT').toUpperCase();
+  const timingReasonEl=$('p10TimingReason');if(timingReasonEl)timingReasonEl.textContent=String(timing.reason||'Waiting for a timestamped completed 5M candle and all live safety checks.');
   const note=$('p10Note'); if(note)note.textContent=(p?.note||'Confidence is a rule-based confluence estimate.')+' Option-premium backtest is NOT VERIFIED and adds no confidence bonus.';
 
   const checks=p?.confirmations||{};
