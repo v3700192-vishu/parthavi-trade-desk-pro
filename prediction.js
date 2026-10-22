@@ -170,7 +170,16 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
   const globalBull=String(global?.bias||'')==='RISK-ON', globalBear=String(global?.bias||'')==='RISK-OFF';
   if(global?.connected) score += dirScore(globalBull,globalBear,weights.global);
 
+  let earlyScore=0;
+  if(h1d==='BULLISH') earlyScore+=25; else if(h1d==='BEARISH') earlyScore-=25;
+  if(m15d==='BULLISH') earlyScore+=25; else if(m15d==='BEARISH') earlyScore-=25;
+  if(rsi!=null) earlyScore+=rsi>55?10:rsi<45?-10:0;
+  if(macdHist!=null) earlyScore+=macdHist>0?10:macdHist<0?-10:0;
+  earlyScore=Number(clamp(earlyScore,-75,75).toFixed(1));
+  const earlyDirection=earlyScore>=20?'EARLY BULLISH':earlyScore<=-20?'EARLY BEARISH':'WAIT / MIXED';
+  const earlyDirectionReason=earlyDirection==='WAIT / MIXED'?'Leading indicators are mixed; wait for direction to align.':earlyDirection==='EARLY BULLISH'?'Leading trend/momentum lean upward; observation only, not an entry signal.':'Leading trend/momentum lean downward; observation only, not an entry signal.';
   const noTradeReasons=[];
+  if(!marketOpen) noTradeReasons.push('No Trade: NSE session is closed; live entries and live probabilities are disabled.');
   if(!hasVix) noTradeReasons.push('No Trade: India VIX is not verified live.');
   else if(Number(vix)<12 || Number(vix)>22) noTradeReasons.push('No Trade: Market is too slow or too volatile.');
   if(!candlesFresh) noTradeReasons.push('No Trade: the latest completed 5-minute candle is stale or unavailable.');
@@ -271,6 +280,10 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
   const signalState=(!marketOpen||events?.hardBlock||events?.eventDayBlock)?'NO TRADE':(eliteSetup?'CONFIRMED':(watchEligible?'WATCH':'NO TRADE'));
   const action=signalState==='CONFIRMED'?(prediction==='BULLISH'?'CALL':'PUT'):'NO TRADE';
   const watchAction=watchEligible?(prediction==='BULLISH'?'CE WATCH':'PE WATCH'):'NO TRADE';
+  // EARLY is visible as an observation bias only. STRONG remains governed by all existing safety gates.
+  const earlySetup={status:Math.abs(earlyScore)>=20?earlyDirection:'WAIT / MIXED',direction:earlyScore>=20?'BULLISH':earlyScore<=-20?'BEARISH':'NEUTRAL',score:earlyScore,observationOnly:true,entryAllowed:false,reason:earlyDirectionReason,dataStatus:!marketOpen?'MARKET CLOSED':(!candlesFresh?'STALE CANDLES':'OBSERVATION ONLY')};
+  const strongSetup={status:signalState==='CONFIRMED'?'CONFIRMED':signalState==='WATCH'?'WATCH':'BLOCKED',direction:prediction,action,eligible:['CONFIRMED','WATCH'].includes(signalState),confirmationPct,confirmedCount,confirmationTotal:required.length,blockers:[...new Set(noTradeReasons)],safetyGatesPreserved:true};
+  const noTradeDiagnostics={count:noTradeReasons.length,blockers:noTradeReasons.map(reason=>({reason,category:/market|candle|session|tick/i.test(reason)?'MARKET_DATA':/VIX|volatility/i.test(reason)?'VIX_RISK':/option|PCR|OI|Theta|Delta|Greek/i.test(reason)?'OPTIONS_RISK':/volume/i.test(reason)?'VOLUME':/news|global/i.test(reason)?'NEWS_GLOBAL_RISK':/event|calendar/i.test(reason)?'EVENT_RISK':/directional|neutral band|score/i.test(reason)?'DIRECTION':/ADX|trend strength/i.test(reason)?'TREND_STRENGTH':/confirmation|reward|risk/i.test(reason)?'CONFIRMATION_RISK':'OTHER'}))};
   const candidatePlan=finalTradePlan(prediction,last,atr);
   // Never expose an actionable entry/SL/target when a safety gate failed or the setup is below WATCH.
   const planGatesPassed=!!marketOpen&&feedComplete&&!hardNoTrade&&['WATCH','CONFIRMED'].includes(signalState);
@@ -304,6 +317,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
           : `${prediction==='NEUTRAL'?'Directional edge is weak.':prediction+' setup detected, but confirmation is incomplete.'} ${confirmedCount}/${required.length} checks currently pass.`;
   return {
     prediction, action, watchAction, signalState, score,
+    earlyDirection, earlyScore, earlyDirectionReason, earlySetup, strongSetup, noTradeDiagnostics,
     forwardForecast,
     modelConfidence, opportunityConfidenceThreshold, opportunityEligible, contractScanEligible, advisorMomentumExceptionEligible,
     candidatePlan,
@@ -322,14 +336,31 @@ export function buildPrediction({h1,m15,m5,rows5=[],news={},global={},events={},
   };
 }
 
+function calibrateHistoricalRules(rows){
+  const r=rows||[];
+  const unavailable={status:'INSUFFICIENT_SAMPLE',method:'Chronological 70/30 walk-forward split; EMA20/EMA50 + RSI threshold sweep; 1:2 underlying-index R target, max 20 bars; ambiguous same-bar stop/target counts as loss.',recommended:null,reason:'Need at least 30 resolved training signals and 20 resolved out-of-sample signals before changing live thresholds.'};
+  if(r.length<140)return unavailable;
+  const split=Math.floor(r.length*0.7), configs=[{bullRsi:50,bearRsi:50},{bullRsi:52,bearRsi:48},{bullRsi:55,bearRsi:45}];
+  const ema=(vals,n)=>{if(vals.length<n)return null;const k=2/(n+1);let e=vals.slice(0,n).reduce((a,b)=>a+b,0)/n;for(let i=n;i<vals.length;i++)e=vals[i]*k+e*(1-k);return e;};
+  const rsiAt=(vals,n=14)=>{if(vals.length<=n)return null;let g=0,l=0;for(let i=1;i<=n;i++){const d=vals[i]-vals[i-1];g+=Math.max(0,d);l+=Math.max(0,-d);}let ag=g/n,al=l/n;for(let i=n+1;i<vals.length;i++){const d=vals[i]-vals[i-1];ag=(ag*(n-1)+Math.max(0,d))/n;al=(al*(n-1)+Math.max(0,-d))/n;}return al===0?100:100-100/(1+ag/al);};
+  const evaluate=(cfg,from,to)=>{let wins=0,losses=0,signals=0,lastSignal=-999;for(let i=Math.max(60,from);i<Math.min(to,r.length-20);i++){if(i-lastSignal<3)continue;const vals=r.slice(0,i+1).map(x=>Number(x.c));const e20=ema(vals,20),e50=ema(vals,50),rr=rsiAt(vals);const bull=e20!=null&&e50!=null&&e20>e50&&rr!=null&&rr>cfg.bullRsi;const bear=e20!=null&&e50!=null&&e20<e50&&rr!=null&&rr<cfg.bearRsi;if(!bull&&!bear)continue;const tr=[];for(let k=Math.max(1,i-13);k<=i;k++){const prev=Number(r[k-1].c);tr.push(Math.max(Number(r[k].h)-Number(r[k].l),Math.abs(Number(r[k].h)-prev),Math.abs(Number(r[k].l)-prev)));}const risk=tr.reduce((a,b)=>a+b,0)/tr.length;if(!Number.isFinite(risk)||risk<=0)continue;signals++;lastSignal=i;let result='UNRESOLVED';for(let j=i+1;j<=i+20&&j<r.length;j++){const hitStop=bull?Number(r[j].l)<=Number(r[i].c)-risk:Number(r[j].h)>=Number(r[i].c)+risk;const hitTarget=bull?Number(r[j].h)>=Number(r[i].c)+2*risk:Number(r[j].l)<=Number(r[i].c)-2*risk;if(hitStop&&hitTarget){result='LOSS';break;}if(hitTarget){result='WIN';break;}if(hitStop){result='LOSS';break;}}if(result==='WIN')wins++;else if(result==='LOSS')losses++;}const resolved=wins+losses,rate=resolved?Number((wins/resolved*100).toFixed(1)):null;return {signals,resolved,wins,losses,targetHitRate:rate,expectedR:rate==null?null:Number((rate/100*2-(1-rate/100)).toFixed(2))};};
+  const train=configs.map(cfg=>({...cfg,...evaluate(cfg,60,split-20)}));
+  const viable=train.filter(x=>x.resolved>=30&&x.expectedR!=null).sort((a,b)=>b.expectedR-a.expectedR);
+  if(!viable.length)return {...unavailable,trainingResults:train,reason:'Historical training segment has fewer than 30 resolved signals; no threshold change is justified.'};
+  const chosen=viable[0], validation=evaluate(chosen,split,r.length-20), baseline=evaluate(configs[1],split,r.length-20);
+  if(validation.resolved<20||validation.expectedR==null)return {...unavailable,trainingResults:train,selectedForValidation:{bullRsi:chosen.bullRsi,bearRsi:chosen.bearRsi},validation,baseline,reason:'The out-of-sample segment has fewer than 20 resolved signals; keep current live thresholds unchanged.'};
+  const validated=validation.expectedR>0&&baseline.expectedR!=null&&validation.expectedR>=baseline.expectedR;
+  return {status:validated?'WALK_FORWARD_VALIDATED':'NO_IMPROVEMENT',method:'Chronological 70/30 walk-forward split; EMA20/EMA50 + RSI threshold sweep; 1:2 underlying-index R target, max 20 bars; ambiguous same-bar stop/target counts as loss.',trainingResults:train,selectedForValidation:{bullRsi:chosen.bullRsi,bearRsi:chosen.bearRsi},validation,baseline,recommended:validated?{bullRsi:chosen.bullRsi,bearRsi:chosen.bearRsi}:null,reason:validated?'Candidate threshold beat baseline on the held-out segment. Review again on fresh sessions before production promotion.':'No candidate beat the baseline out-of-sample; retain live thresholds.'};
+}
+
 export function backtestFiveMinute(rows=[]){
   // This is deliberately classified as an UNDERLYING proxy, never an option backtest.
-  const r=rows||[]; if(r.length<260) return {available:false,kind:'UNDERLYING_PRICE_ONLY',instrument:'NIFTY INDEX',verified:false,optionsPremiumIncluded:false,feesIncluded:false,slippageIncluded:false,notValidForOptionPnl:true,reason:'Need at least 260 five-minute index candles. This does not backtest CE/PE option premiums.',sample:0};
+  const r=rows||[]; if(r.length<120) return {available:false,kind:'UNDERLYING_PRICE_ONLY',instrument:'NIFTY INDEX',verified:false,optionsPremiumIncluded:false,feesIncluded:false,slippageIncluded:false,notValidForOptionPnl:true,reason:'Need at least 120 five-minute index candles for a preliminary underlying-only backtest. This does not backtest CE/PE option premiums.',sample:0,calibration:{status:'INSUFFICIENT_SAMPLE',recommended:null,reason:'Not enough candles for walk-forward calibration.'}};
   const wins=[]; const outcomes=[]; let candidates=0, resolved=0, hits=0;
-  const closes=[]; const trs=[];
+  const closes=[]; const trs=r.slice(1,60).map((row,offset)=>{const prev=Number(r[offset].c);return Math.max(Number(row.h)-Number(row.l),Math.abs(Number(row.h)-prev),Math.abs(Number(row.l)-prev));});
   const ema=(vals,n)=>{if(vals.length<n)return null;const k=2/(n+1);let e=vals.slice(0,n).reduce((a,b)=>a+b,0)/n;for(let i=n;i<vals.length;i++)e=vals[i]*k+e*(1-k);return e;};
   const rsiAt=(vals,n=14)=>{if(vals.length<=n)return null;let g=0,l=0;for(let i=1;i<=n;i++){const d=vals[i]-vals[i-1];g+=Math.max(0,d);l+=Math.max(0,-d);}let ag=g/n,al=l/n;for(let i=n+1;i<vals.length;i++){const d=vals[i]-vals[i-1],gg=Math.max(0,d),ll=Math.max(0,-d);ag=(ag*(n-1)+gg)/n;al=(al*(n-1)+ll)/n;}return al===0?100:100-100/(1+ag/al);};
-  for(let i=220;i<r.length-25;i++){
+  for(let i=60;i<r.length-25;i++){
     closes.push(r[i].c); const prev=r[i-1]?.c??r[i].c; trs.push(Math.max(r[i].h-r[i].l,Math.abs(r[i].h-prev),Math.abs(r[i].l-prev)));
     const e20=ema(r.slice(0,i+1).map(x=>x.c),20), e50=ema(r.slice(0,i+1).map(x=>x.c),50); const rr=rsiAt(r.slice(0,i+1).map(x=>x.c));
     // Historical test is explicitly price/technical-only: index candle volume
@@ -353,5 +384,7 @@ export function backtestFiveMinute(rows=[]){
     if(outcome==='WIN'){hits++;resolved++;} else if(outcome==='LOSS'){resolved++;}
   }
   const rate=resolved?Number((hits/resolved*100).toFixed(1)):null;
-  const expectedR=rate!=null?Number((rate/100*2.0-(1-rate/100)).toFixed(2)):null; return {available:resolved>=30,kind:'UNDERLYING_PRICE_ONLY',instrument:'NIFTY INDEX',verified:false,optionsPremiumIncluded:false,feesIncluded:false,slippageIncluded:false,notValidForOptionPnl:true,signals:candidates,resolved,wins:hits,losses:resolved-hits,targetHitRate:rate,expectedR,sample:resolved,minSample:30,method:'5M rolling EMA20/EMA50 + RSI on NIFTY index candles; 1.0 index-point ATR-risk unit vs 2.0R target; max 20 bars forward. NOT an option-premium test; excludes contract selection, CE/PE premium, spread, fees and slippage.',disclaimer:'Underlying index-only proxy. targetHitRate/expectedR must never be presented as CE/PE win rate, option returns or evidence of profitability.'};
+  const expectedR=rate!=null?Number((rate/100*2.0-(1-rate/100)).toFixed(2)):null;
+  const calibration=calibrateHistoricalRules(r);
+  return {available:resolved>=30,kind:'UNDERLYING_PRICE_ONLY',instrument:'NIFTY INDEX',verified:false,optionsPremiumIncluded:false,feesIncluded:false,slippageIncluded:false,notValidForOptionPnl:true,signals:candidates,resolved,wins:hits,losses:resolved-hits,targetHitRate:rate,expectedR,sample:resolved,minSample:30,calibration,method:'5M rolling EMA20/EMA50 + RSI on NIFTY index candles; 1.0 index-point ATR-risk unit vs 2.0R target; max 20 bars forward. NOT an option-premium test; excludes contract selection, CE/PE premium, spread, fees and slippage.',disclaimer:'Underlying index-only proxy. targetHitRate/expectedR must never be presented as CE/PE win rate, option returns or evidence of profitability.'};
 }
