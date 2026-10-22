@@ -1929,7 +1929,7 @@ function renderContractAnalysis(selected,analysisResponse,predictionResponse,ana
       'RSI '+caFormat(p?.rsi,1),'VIX '+caFormat(p?.vix,2),'Greeks '+(greekRisk.status||'UNVERIFIED')
     ].map(s=>'<span class="ca-chip">'+escapeHtml(s)+'</span>').join('')+'</div>'+
     '<div class="ca-section-title">Why this decision?</div><ul class="ca-reasons">'+uniqueReasons.map(reason=>'<li>'+escapeHtml(reason)+'</li>').join('')+'</ul>'+
-    '<div class="ca-foot">Provider quotes and Greeks are shown only when returned by the backend. UNVERIFIED values are not substituted with zero. Model confidence is a confluence score, not a win probability. Entry is allowed only when exact-contract checks and every prediction safety gate pass.</div>'+
+    '<div class="ca-foot">Provider quotes and Greeks are shown only when returned by the backend. UNVERIFIED values are not substituted with zero. Setup score is a confluence score, not a win probability. Entry is allowed only when exact-contract checks and every prediction safety gate pass.</div>'+
     '<div class="ca-actions"><button class="btn primary" type="button" id="caRefreshBtn">Refresh Analysis</button><button class="btn" type="button" id="caCloseBtn">Close Analysis</button></div>'+
     '<div class="ca-foot">Quote request: '+escapeHtml(updated)+'</div>';
   $('caRefreshBtn')?.addEventListener('click',()=>analyseContract(window.selectedContract||selected));
