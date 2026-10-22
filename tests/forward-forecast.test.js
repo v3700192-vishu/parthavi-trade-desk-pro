@@ -62,5 +62,3 @@ test("forecast uses the latest completed candle timestamp as its as-of marker",(
   assert.equal(forecast.horizons["15"].asOf,rows.at(-1).t);
   assert.match(forecast.interpretation,/not a guaranteed result/i);
 });
-
-[executed on device: KiranKhoradiya (c22a64af-c32d-4918-beea-b3204b43f035)]

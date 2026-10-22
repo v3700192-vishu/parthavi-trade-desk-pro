@@ -195,5 +195,3 @@ export function buildForwardForecast(inputRows, options={}) {
     calibrationStatus:"EMPIRICAL_ANALOGUE_ESTIMATE — needs ongoing walk-forward calibration before it should be treated as a calibrated probability."
   };
 }
-
-[executed on device: KiranKhoradiya (c22a64af-c32d-4918-beea-b3204b43f035)]
