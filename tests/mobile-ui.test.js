@@ -125,6 +125,8 @@ test("candidate contract scanner is single-flight, parallelizes independent quot
   assert.ok(server.includes("const contractDisplayConfidence=directionalConfidence;"));
   assert.ok(server.includes("contractSetupScore>=70"));
   assert.ok(server.includes("contractDisplayConfidence>=68"));
+  assert.ok(server.includes("prediction.directionalForecastEligible===true"));
+  assert.ok(server.includes("Number(prediction.directionalProbability)>=68"));
   assert.match(server, /const rawDirectionalProbability=prediction\.directionalProbability/);
   assert.match(server, /const finalRawDirectionalProbability=prediction\.directionalProbability/);
   assert.doesNotMatch(server, /rawDirectionalProbability=prediction\.modelConfidence/);
@@ -140,6 +142,7 @@ test("staged contract visibility thresholds are distinct and the Command Center 
   assert.match(html, /const finalPlanVisible=!!optionPlan\?\.available&&optionConfidence>=PTD_FINAL_PLAN_CONFIDENCE&&directionalGatePassed/);
   assert.match(html, /const optionVisible=!!optionPlan\?\.available&&optionConfidence>=PTD_ADVISOR_CONFIDENCE&&directionalGatePassed/);
   assert.match(html, /const directionalGatePassed=directionalConfidence!==null&&directionalConfidence>=68/);
+  assert.match(html, /const usable=directionalGatePassed && p\?\.commandCenterEligible===true/);
   assert.doesNotMatch(html, /directionalConfidence\?\?p\?\.modelConfidence|directionalConfidence\?\?conf/);
   assert.match(html, /Number\(p\?\.modelConfidence\)>=PTD_COMMAND_CENTER_CONFIDENCE/);
   assert.match(serviceWorker, new RegExp("const CACHE='ptd-shell-v[0-9]+'"));
@@ -156,6 +159,7 @@ test("Command Center surfaces a plan only at 90% final confidence and all 11 con
   const plan = {
     signalState: "CONFIRMED", action: "CALL", prediction: "BULLISH",
     optionPlan: { available: true, candidateOnly: false, greekStatus: "PASS", contract: "NIFTYTESTCE", optionType: "CE", strike: 23000, lotSize: 65, entry: 35, stopLoss: 30, target1: 45, target2: 47.5 },
+    directionalProbability: 75, directionalConfidence: 75,
     modelConfidence: 89, confirmationPct: 100, commandCenterEligible: true, feedComplete: true, exchangeTickVerified: true, eventSafe: true, noTradeReasons: [],
     confirmations: { trend:true, setup:true, trigger:true, momentum:true, volume:true, strength:true, options:true, greeks:true, news:true, global:true, eventSafe:true }
   };
@@ -163,6 +167,7 @@ test("Command Center surfaces a plan only at 90% final confidence and all 11 con
   assert.equal(stccCurrentPlanForTest({ ...plan, modelConfidence: 90, confirmationPct: 99 })?.contract||null, null, "one or more confirmations missing must stay blocked");
   assert.equal(stccCurrentPlanForTest({ ...plan, modelConfidence: 90, confirmationPct: 100, confirmations: { ...plan.confirmations, momentum:false } })?.contract||null, null, "momentum must pass for the Command Center");
   assert.equal(stccCurrentPlanForTest({ ...plan, modelConfidence: 90, confirmationPct: 100 })?.contract, "NIFTYTESTCE");
+  assert.equal(stccCurrentPlanForTest({ ...plan, directionalProbability: null, directionalConfidence: null, modelConfidence: 90, confirmationPct: 100 })?.contract||null, null, "setup score alone cannot bypass the calibrated direction gate");
 });
 test("AI Adviser can show an 80% directional candidate even if final gates keep the score at NO TRADE", () => {
   const candidate = renderFreeAdvisorForTest({
