@@ -117,6 +117,35 @@ function toPercentages(counts, base, sampleSize) {
   return {up:whole[0],down:whole[1],sideways:whole[2]};
 }
 
+
+export function capLeadingProbabilityForDisplay(rawProbabilities, leader, outOfSampleHitRate) {
+  const leaderKey=leader==="UP"?"up":leader==="DOWN"?"down":null;
+  const keys=["up","down","sideways"];
+  if(!leaderKey||!rawProbabilities||typeof rawProbabilities!=="object")return null;
+  if(keys.some(k=>rawProbabilities[k]==null||rawProbabilities[k]===""||
+    !Number.isFinite(Number(rawProbabilities[k]))||Number(rawProbabilities[k])<0))return null;
+  const hit=outOfSampleHitRate==null||outOfSampleHitRate===""?NaN:Number(outOfSampleHitRate);
+  const values=keys.map(k=>Number(rawProbabilities[k]));
+  const rawTotal=values.reduce((a,b)=>a+b,0);
+  if(!Number.isFinite(hit)||hit<0||hit>100||Math.round(rawTotal)!==100)return null;
+
+  // Do not publish the analogue leader above the recent observed out-of-sample hit rate.
+  const lead=Math.min(Math.floor(Number(rawProbabilities[leaderKey])),Math.floor(hit));
+  const others=keys.filter(k=>k!==leaderKey);
+  const otherMass=others.reduce((sum,k)=>sum+Number(rawProbabilities[k]),0);
+  const remainder=100-lead;
+  const exact=others.map(k=>otherMass>0?remainder*Number(rawProbabilities[k])/otherMass:remainder/2);
+  const whole=exact.map(Math.floor);
+  let left=remainder-whole.reduce((a,b)=>a+b,0);
+  const fractions=exact.map((v,i)=>({i,fraction:v-whole[i]})).sort((a,b)=>b.fraction-a.fraction);
+  for(let i=0;i<left;i++)whole[fractions[i%fractions.length].i]++;
+
+  const published={up:0,down:0,sideways:0};
+  published[leaderKey]=lead;
+  others.forEach((k,i)=>{published[k]=whole[i];});
+  return published;
+}
+
 function historicalPredictionAt(rows, features, atr, index, config) {
   const current = features[index];
   if (!current) return null;
@@ -234,24 +263,30 @@ function forecastHorizon(rows, features, atr, config) {
   const calibration=calibrateDirectionalHorizon(rows,features,atr,config);
   const currentDirectionalGate=best[1]>=REQUIRED_DIRECTIONAL_HIT_RATE &&
     (best[0]==="UP"||best[0]==="DOWN");
-  const available=calibration.eligible&&currentDirectionalGate;
+  const calibrationGatePassed=calibration.eligible&&currentDirectionalGate;
+  const publishedProbabilities=calibrationGatePassed
+    ? capLeadingProbabilityForDisplay(rawProbabilities,best[0],calibration.outOfSampleHitRate)
+    : null;
+  const available=calibrationGatePassed&&publishedProbabilities!==null;
+  const leaderKey=best[0]==="UP"?"up":best[0]==="DOWN"?"down":"sideways";
+  const publishedLeadingProbability=available?publishedProbabilities[leaderKey]:null;
   const reason=available
-    ? "Current analogue direction is >=68% and the recent out-of-sample high-confidence hit rate passed validation."
+    ? "Published direction is capped at the lower of the analogue estimate and recent walk-forward hit rate; at least 30 resolved high-confidence forecasts must validate."
     : !currentDirectionalGate
       ? "Current leading directional estimate is below 68% or the leading class is RANGE; suppress directional percentage."
       : calibration.reason;
   return {
     available,historyAvailable:true,horizonMinutes:config.minutes,
-    probabilities:available?rawProbabilities:null,rawProbabilities,
+    probabilities:available?publishedProbabilities:null,rawProbabilities,
     sampleSize:selected.length,rawCounts:{up:counts.UP,down:counts.DOWN,sideways:counts.RANGE},
     baseRates:{up:round1(base.UP*100),down:round1(base.DOWN*100),sideways:round1(base.RANGE*100)},
     direction:available?rawDirection:"UNVERIFIED / WAIT",rawDirection,
-    leadingProbability:available?best[1]:null,rawLeadingProbability:best[1],
+    leadingProbability:available?publishedLeadingProbability:null,rawLeadingProbability:best[1],
     calibration,reason,
     sampleQuality:selected.length>=35?"MODERATE":"LIMITED",
     asOf:rows.at(-1)?.t??null,
     outcomeRule:"UP/DOWN means the future close crosses ±"+config.thresholdAtr+" ATR; otherwise RANGE.",
-    method:"Nearest historical analogues using 3-bar/6-bar momentum, EMA9/EMA20 distance and RSI14, with a recent chronological walk-forward quality gate."
+    method:"Nearest historical analogues using 3-bar/6-bar momentum, EMA9/EMA20 distance and RSI14. The leading class is capped by the recent out-of-sample hit rate; remaining class shares are proportionally normalized and are not independently calibrated."
   };
 }
 
@@ -386,7 +421,7 @@ export function buildForwardForecast(inputRows, options={}) {
     modelLabel:"Walk-forward gated directional estimate",
     asOf:selectedRows.at(-1)?.t??null,
     horizons, largeMoveRadar, moveMonitor:buildObservedMoveMonitor(selectedRows,options),
-    interpretation:"A directional percentage is published only when the current analogue direction is >=68% AND at least 30 recent high-confidence out-of-sample directional forecasts achieve >=68% hit rate. Otherwise the system withholds the percentage and displays WAIT. Underlying price direction is not option-premium profit probability.",
+    interpretation:"A directional percentage is published only when the current analogue direction is >=68% AND at least 30 recent high-confidence out-of-sample directional forecasts achieve >=68% hit rate. The displayed leading direction is capped at the lower of its analogue estimate and the recent out-of-sample hit rate. The remaining UP/DOWN/RANGE shares are proportionally normalized and are not independently calibrated. Otherwise the system withholds the percentage and displays WAIT. Underlying price direction is not option-premium profit probability.",
     calibrationStatus:"GATE: current leading class >=68%, recent walk-forward hit rate >=68%, minimum 30 high-confidence resolved predictions."
   };
 }
