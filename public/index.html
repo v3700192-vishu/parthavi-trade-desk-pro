@@ -877,7 +877,7 @@ body.chart-fullscreen-open>.app>.bottom{
     </div>
     <div class="shield-metric"><small>Daily loss left</small><b id="p11DailyLeft">₹ —</b></div>
     <div class="shield-metric"><small>Trades today</small><b id="p11Trades">—</b></div>
-    <div class="shield-metric"><small>Confidence gate</small><b id="p11ConfGate">70%</b></div>
+    <div class="shield-metric"><small>Minimum setup score</small><b id="p11ConfGate">70/100</b></div>
     <div class="shield-metric"><small>Confirmation gate</small><b id="p11ConfirmGate">80%</b></div>
   </div>
   <div class="shield-rules">
@@ -984,7 +984,7 @@ body.chart-fullscreen-open>.app>.bottom{
     <div class="level"><small>Option IV</small><b id="riskIV">—</b></div>
     <div class="level"><small>Greek guard</small><b id="riskGreekGuard" class="neutral">WAIT</b></div>
   </div>
-  <div class="note" id="riskGreekMessage">At ≥78% confidence, a suitable live option contract is surfaced; quantity stays locked until confirmation. The system will use live option LTP, lot size, Delta and the underlying SL distance to calculate the maximum quantity that fits the ₹1,000 risk budget.</div>
+  <div class="note" id="riskGreekMessage">A contract candidate is shown only after the validated 15M direction and recent out-of-sample hit rate both clear 68%; setup score is not a win probability. Quantity remains locked until all live contract and risk checks pass.</div>
 </section>
 
 <section class="card" id="phase10Prediction">
@@ -1012,7 +1012,7 @@ body.chart-fullscreen-open>.app>.bottom{
           <div class="forward-horizon">
             <div class="forward-horizon-head"><strong>Next setup</strong><b id="p10ChartBias" class="wait">WAIT / MIXED</b></div>
             <div class="forward-prob-row"><span>Chart direction</span><b id="p10ChartDirection">—</b></div>
-            <div class="forward-prob-row"><span>15M history estimate</span><b id="p10ChartProbability">—</b></div>
+            <div class="forward-prob-row"><span>Validated 15M direction estimate</span><b id="p10ChartProbability">—</b></div>
             <div class="forward-prob-row"><span>Observed NIFTY</span><b id="p10ChartPrice">—</b></div>
             <p class="forward-forecast-meta" id="p10ChartDrivers">Waiting for chart candles and indicators.</p>
           </div>
@@ -1028,8 +1028,8 @@ body.chart-fullscreen-open>.app>.bottom{
       </section>
       <div class="forward-forecast" id="p10ForwardForecast" aria-live="polite">
         <div class="forward-forecast-head">
-          <div><strong>Forward outlook • next 5 / 15 minutes</strong><small>Future closing direction estimated from similar completed historical candle patterns.</small></div>
-          <span class="forward-forecast-badge" id="p10ForecastStatus">WAITING FOR HISTORY</span>
+          <div><strong>Forward outlook • calibrated 5M / 15M direction</strong><small>Directional percentages appear only after the recent out-of-sample validation gate passes.</small></div>
+          <span class="forward-forecast-badge" id="p10ForecastStatus">WAITING FOR VALIDATION</span>
         </div>
         <div class="forward-forecast-grid">
           <div class="forward-horizon">
@@ -1073,12 +1073,12 @@ body.chart-fullscreen-open>.app>.bottom{
           <div class="trade-timing-cell"><small>5M entry window starts</small><b id="p10TimingEntry">—</b></div>
           <div class="trade-timing-cell"><small>Valid until (IST)</small><b id="p10TimingExpiry">—</b></div>
         </div>
-        <div class="timing-tier"><b id="p10TimingTier">Confidence tier: WAIT</b><span>70% = scan only • 80% = candidate • 90%+ = all-gates check</span></div>
+        <div class="timing-tier"><b id="p10TimingTier">Confidence tier: WAIT</b><span>Setup score /100: 70 = scan tier • 80 = adviser review • 90+ = final-gate review. These are not win probabilities.</span></div>
         <p id="p10TimingReason" class="timing-reason">Timing appears only from a timestamped 5M candle. Never enter on confidence alone.</p>
       </div>
       <div class="prediction-meter"><i id="p10Meter"></i></div>
       <div class="finder-note" id="p10TradeFinder">🎯 <b>TWO-TRADE FINDER ACTIVE</b> • Confirmed opportunities today: <b id="p10OpportunityCount">0 / 2</b> • Scanner keeps searching during the NSE session and never manufactures a weak second trade.</div>
-      <div class="finder-note" id="p10Note">Confidence is a rule-based confluence estimate. Historical target-hit rate is based on the displayed rolling 5M backtest and is not a guarantee of future profit.</div>
+      <div class="finder-note" id="p10Note">Setup score is a confluence score, NOT a win probability. Bullish/bearish percentages stay hidden unless the current direction estimate and recent out-of-sample hit rate both clear 68% with at least 30 resolved high-confidence forecasts. NIFTY index backtest is not an option-premium P&amp;L test.</div>
     </div>
     <div>
       <div class="card-head" style="margin-bottom:7px"><h3 style="font-size:12px">Confirmation Matrix</h3><span>Current decision inputs</span></div>
@@ -2122,7 +2122,7 @@ function updateStickyPrediction(p){
     const displayAct=state==='WATCH'?(p?.watchAction||(pred==='BULLISH'?'CE WATCH':pred==='BEARISH'?'PE WATCH':'NO TRADE')):act;
     ae.textContent='ACTION: '+displayAct;
     ae.className='sp-pill '+(displayAct==='CALL'||displayAct==='CE WATCH'?'bullish':displayAct==='PUT'||displayAct==='PE WATCH'?'bearish':'neutral');
-    ce.textContent='SETUP SCORE: '+(p?.modelConfidence!=null?String(p.modelConfidence)+'%':'—');
+    ce.textContent='SETUP SCORE: '+(p?.modelConfidence!=null?String(p.modelConfidence)+'/100':'—');
     qe.textContent='CONFIRMATION: '+(p?.confirmationPct!=null?String(p.confirmationPct)+'%':'—')+' • '+state;
     ue.textContent='UPDATED: '+indiaNow();
   }catch(_){}
@@ -2158,7 +2158,7 @@ function announcePrediction(p){
   const tone=displayAct==='CALL'||displayAct==='CE WATCH'||pred==='BULLISH'?'bullish':displayAct==='PUT'||displayAct==='PE WATCH'||pred==='BEARISH'?'bearish':'neutral';
   const vib=state==='CONFIRMED'?'confirmed':tone;
   const contractText=contractReady?` • Contract ${p?.optionPlan?.contract} • Premium ₹${Number(p.optionPlan.entry).toFixed(2)}`:'';
-  const detail=`${symbol} • ${pred} • ${displayAct} • Confidence ${p?.modelConfidence??'—'}% • Confirmation ${p?.confirmationPct??'—'}%${contractText}`;
+  const detail=`${symbol} • ${pred} • ${displayAct} • Setup score ${p?.modelConfidence??'—'}/100 • Confirmation ${p?.confirmationPct??'—'}%${contractText}`;
   addAlert('Prediction changed',detail,tone,'prediction-'+key);
   // addAlert() already handles the top toast, vibration and system notification.
 }
@@ -2353,15 +2353,15 @@ function stccRender(x){
     const marketClosed=p?.marketOpen===false;
     const signalState=String(p?.signalState||'').toUpperCase();
     const blockers=Array.isArray(p?.noTradeReasons)?p.noTradeReasons.filter(Boolean):[];
-    decision.textContent=marketClosed?'NO TRADE • MARKET CLOSED':signalState==='CONFIRMED'&&Number(p?.modelConfidence||0)<PTD_COMMAND_CENTER_CONFIDENCE?'NO TRADE • WAIT FOR 90%':signalState==='NO TRADE'?'NO TRADE • GATES BLOCKED':signalState==='WATCH'?'WATCH • WAIT FOR CONFIRMATION':'WAIT FOR CONFIRMED SETUP';
+    decision.textContent=marketClosed?'NO TRADE • MARKET CLOSED':signalState==='CONFIRMED'&&Number(p?.modelConfidence||0)<PTD_COMMAND_CENTER_CONFIDENCE?'NO TRADE • WAIT FOR 90/100 SETUP SCORE':signalState==='NO TRADE'?'NO TRADE • GATES BLOCKED':signalState==='WATCH'?'WATCH • WAIT FOR CONFIRMATION':'WAIT FOR CONFIRMED SETUP';
     setP10Tone(decision,'NEUTRAL');
-    state.textContent=marketClosed?'MARKET CLOSED':signalState==='CONFIRMED'&&Number(p?.modelConfidence||0)<PTD_COMMAND_CENTER_CONFIDENCE?'90% GATE':signalState==='NO TRADE'?'GATES BLOCKED':signalState==='WATCH'?'WATCH ONLY':'SCANNING';
+    state.textContent=marketClosed?'MARKET CLOSED':signalState==='CONFIRMED'&&Number(p?.modelConfidence||0)<PTD_COMMAND_CENTER_CONFIDENCE?'90/100 SCORE GATE':signalState==='NO TRADE'?'GATES BLOCKED':signalState==='WATCH'?'WATCH ONLY':'SCANNING';
     setP10Tone(state,'NEUTRAL');
     reason.textContent=marketClosed
       ? 'NSE is closed; live entries stay disabled until the next market session.'
       : blockers.length
         ? 'No confirmed trade: '+blockers.slice(0,3).join(' • ')+(blockers.length>3?' • +'+(blockers.length-3)+' more checks pending':'')
-        : (signalState==='CONFIRMED'&&Number(p?.modelConfidence||0)<PTD_COMMAND_CENTER_CONFIDENCE?'A confirmed prediction below 90% stays hidden from the Command Center. The AI Advisor threshold is 80%; the Command Center requires final confidence ≥90% plus every final live safety gate.':(p?.reasoning||'No live confirmed option plan right now. The scanner keeps searching and will not manufacture a trade.'));
+        : (signalState==='CONFIRMED'&&Number(p?.modelConfidence||0)<PTD_COMMAND_CENTER_CONFIDENCE?'A confirmed setup below 90/100 confluence score stays hidden from the Command Center. The AI Adviser review tier is 80/100; these are setup scores, not win probabilities. A calibrated direction ≥68% and every final live safety gate are separately required.':(p?.reasoning||'No live confirmed option plan right now. The scanner keeps searching and will not manufacture a trade.'));
   }
   $('stccContract').textContent=plan?.contract||'—';
   $('stccContractMeta').textContent=plan?((plan.optionType||'OPTION')+' • Strike '+(plan.strike??'—')+' • Lot '+(plan.lotSize??'—')):'Live contract only';
@@ -2456,7 +2456,7 @@ function renderFreeAdvisor(p,resp={}){
   if(strictConfirmed){
     decision.textContent='RECOMMENDED • '+String(plan.contract||'VERIFIED OPTION');
     decision.className='stcc-decision bullish';
-    reason.textContent=`Confirmed ${action} setup. All final data gates passed • confidence ${Number(p.modelConfidence).toFixed(0)}% • confirmation ${Number(p.confirmationPct).toFixed(0)}%. Review the premium-based Entry, SL and Targets below. No order is placed automatically.`;
+    reason.textContent=`Confirmed ${action} setup. All final data gates passed • setup score ${Number(p.modelConfidence).toFixed(0)}/100 (not win probability) • validated direction ${p?.directionalProbability==null?'N/A':Number(p.directionalProbability).toFixed(0)+'%'} • confirmation ${Number(p.confirmationPct).toFixed(0)}%. Review the premium-based Entry, SL and Targets below. No order is placed automatically.`;
     stateBadge.textContent='CONFIRMED • GATES PASSED';stateBadge.className='badge ok';
     status.textContent='READY TO REVIEW';status.className='stcc-badge bullish';
   }else if(marketClosed){
@@ -2498,19 +2498,19 @@ function renderFreeAdvisor(p,resp={}){
   }
   const showPlan=hasCandidate;
   if(contract)contract.textContent=showPlan?String(plan.contract||'—'):'—';
-  if(meta)meta.textContent=showPlan?`${plan.optionType||''} ${plan.strike??''} • Expiry ${plan.expiry||'—'} • Lot ${plan.lotSize??'—'}${candidatePreview?' • ANALYSIS ONLY • NO TRADE':watchOnly?' • CANDIDATE ONLY':''} • Greeks ${plan.greekStatus||'UNVERIFIED'}`:'Only display a contract after directional confidence reaches 80% and live checks run';
+  if(meta)meta.textContent=showPlan?`${plan.optionType||''} ${plan.strike??''} • Expiry ${plan.expiry||'—'} • Lot ${plan.lotSize??'—'}${candidatePreview?' • ANALYSIS ONLY • NO TRADE':watchOnly?' • CANDIDATE ONLY':''} • Greeks ${plan.greekStatus||'UNVERIFIED'}`:'A directional contract candidate requires a validated 15M estimate ≥68%, out-of-sample hit rate ≥68%, and fresh live checks';
   $('freeAdvisorEntry').textContent=showPlan?money(plan.entry):'—';
   $('freeAdvisorSL').textContent=showPlan?money(plan.stopLoss):'—';
   $('freeAdvisorT1').textContent=showPlan?money(plan.target1):'—';
   $('freeAdvisorT2').textContent=showPlan?money(plan.target2):'—';
   $('freeAdvisorConfidence').textContent=p?.modelConfidence!==null&&p?.modelConfidence!==undefined&&p?.modelConfidence!==''&&Number.isFinite(Number(p?.modelConfidence))
-    ?`${Number(p.modelConfidence).toFixed(0)}% final / ${Number.isFinite(Number(p?.directionalConfidence))?Number(p.directionalConfidence).toFixed(0)+'% directional / ':''}${Number.isFinite(Number(p?.confirmationPct))?Number(p.confirmationPct).toFixed(0):'—'}% confirm`
+    ?`${Number(p.modelConfidence).toFixed(0)}/100 setup score / ${p?.directionalProbability!=null?Number(p.directionalProbability).toFixed(0)+'% validated direction / ':'direction NOT VALIDATED / '}${Number.isFinite(Number(p?.confirmationPct))?Number(p.confirmationPct).toFixed(0):'—'}% confirm`
     :'—';
   const checks=$('freeAdvisorChecks');
   if(checks){
     if(strictConfirmed) checks.textContent=`Reason: ${p.reasoning||'Required confluence checks passed.'} • This is a rule-based recommendation, not a profit guarantee or an automatic order.`;
     else if(watchOnly) checks.textContent='Candidate details are for observation only. The system will not label this contract BUY until the final gates pass.';
-    else if(candidatePreview) checks.textContent=`Directional confidence ${directionalConfidence.toFixed(0)}% crossed 80%, so this live contract is shown for analysis only. Final confidence ${Number(p?.modelConfidence||0).toFixed(0)}%; Greek status ${plan.greekStatus||'UNVERIFIED'}. No trade unless all final safety gates pass.`;
+    else if(candidatePreview) checks.textContent=`Setup score ${directionalConfidence.toFixed(0)}/100 crossed the adviser-review tier, so this live contract is analysis-only. This is not a win probability. Validated direction: ${p?.directionalProbability==null?'NOT VALIDATED':Number(p.directionalProbability).toFixed(0)+'%'}. Greek status ${plan.greekStatus||'UNVERIFIED'}. No trade unless every final safety gate passes.`;
     else checks.textContent=(reasons.slice(0,6).join(' • ')||p?.reasoning||'Waiting for verified market data, fresh exchange tick and all safety gates.');
   }
 }
@@ -2520,7 +2520,7 @@ function renderForwardForecast(forecast,movement,decision,marketOpenFlag){
   const horizons=forecast?.horizons||{};
   const asOf=forecast?.asOf?p10Clock(forecast.asOf):'time unavailable';
   const available=!!forecast?.available;
-  if(status)status.textContent=available?('HISTORY ESTIMATE • '+asOf):'INSUFFICIENT HISTORY';
+  if(status)status.textContent=available?('VALIDATED DIRECTION • '+asOf):(forecast?.historyAvailable?'WAIT • 68% WALK-FORWARD GATE NOT PASSED':'INSUFFICIENT VERIFIED HISTORY');
   for(const minutes of [5,15]){
     const h=horizons[String(minutes)]||{},suffix=String(minutes);
     const direction=$('p10ForecastDirection'+suffix),meta=$('p10ForecastMeta'+suffix),values=h.probabilities||{};
@@ -2593,7 +2593,7 @@ function renderForwardForecast(forecast,movement,decision,marketOpenFlag){
   }
   if(chartBias){chartBias.textContent=bias;chartBias.className=(bias.startsWith('BULLISH')?'bullish':bias.startsWith('BEARISH')?'bearish':'wait');}
   if(chartDirection)chartDirection.textContent=direction;
-  if(chartProbability)chartProbability.textContent=horizon.available&&Number.isFinite(up)&&Number.isFinite(down)&&Number.isFinite(range)?('UP '+up+'% / DOWN '+down+'% / RANGE '+range+'%'):'NO VERIFIED ESTIMATE';
+  if(chartProbability)chartProbability.textContent=horizon.available&&Number.isFinite(up)&&Number.isFinite(down)&&Number.isFinite(range)?('UP '+up+'% / DOWN '+down+'% / RANGE '+range+'%'):(horizon.historyAvailable?'WITHHELD • 68% WALK-FORWARD GATE NOT PASSED':'NO VERIFIED ESTIMATE');
   if(chartPrice)chartPrice.textContent=movement?.available&&Number.isFinite(Number(movement.latestPrice))?Number(movement.latestPrice).toLocaleString('en-IN',{maximumFractionDigits:2}):'NO CANDLE DATA';
   if(freshness){freshness.textContent=!marketOpen?'MARKET CLOSED':!liveFresh?'LIVE DATA NOT VERIFIED':'FRESH CANDLE';freshness.className='forward-forecast-badge';}
   if(chartDrivers){
@@ -2605,6 +2605,8 @@ function renderForwardForecast(forecast,movement,decision,marketOpenFlag){
     if(p.adx!=null)parts.push('ADX '+Number(p.adx).toFixed(1));
     if(movement?.available)parts.push('15M move '+(Number(movement.change15m)>0?'+':'')+movement.change15m+' pt');
     if(horizon.available)parts.push('historical sample '+horizon.sampleSize+' ('+(horizon.sampleQuality||'limited')+')');
+    const cal=horizon.calibration||{};
+    parts.push('15M OOS: '+String(cal.status||'UNVERIFIED')+' • '+String(cal.highConfidenceDirectionalSignals??0)+'/'+String(cal.minimumSignals||30)+' high-confidence signals • hit rate '+(cal.outOfSampleHitRate==null?'N/A':String(cal.outOfSampleHitRate)+'%'));
     chartDrivers.textContent=(parts.length?parts.join(' • '):'Chart indicators unavailable.')+' '+(liveFresh?'Live candle verified.':'Historical/unchecked data cannot authorize an entry.');
   }
   let recommendation='WAIT — NO TRADE';
@@ -2710,7 +2712,7 @@ function renderPredictionPanel(resp){
     const contractLine=optionVisible
       ? ` • ${optionPlan.candidateOnly?'Candidate (NO TRADE)':'Contract'}: <b>${escapeHtml(optionPlan.contract||'—')}</b> • LTP ₹${Number(optionPlan.entry||0).toFixed(2)} • Δ ${Number(optionPlan.delta||0).toFixed(3)} • Θ ${Number(optionPlan.theta||0).toFixed(2)} • Greek ${escapeHtml(optionPlan.greekStatus||'WAIT')}`
       : (directionalConfidence>=PTD_ADVISOR_CONFIDENCE?' • Confidence ≥80%: checking live contract and safety gates.':'');
-    finder.innerHTML="&#127919; <b>TWO-TRADE FINDER ACTIVE</b> | Confirmed opportunities today: <b id='p10OpportunityCount'>0 / 2</b> | 70-79% = FINAL PLAN | 80-89% = AI ADVISOR | >=90% = COMMAND CENTER (final gates still required)"+contractLine+" | Scanner keeps searching during the NSE session.";
+    finder.innerHTML="&#127919; <b>CONTINUOUS SETUP SCANNER ACTIVE</b> | Confirmed opportunities today: <b id='p10OpportunityCount'>0 / 2</b> | Setup-score tiers: 70/100 scan • 80/100 adviser review • >=90/100 command-center tier. These are not win probabilities. A validated 15M direction >=68% and all live safety gates are required."+contractLine+" | Scanner keeps searching during the NSE session.";
   }
   renderP10OpportunityCount();
   recordP10Opportunity(p);
@@ -2738,7 +2740,7 @@ function renderPredictionPanel(resp){
       if(fn){
         fn.textContent=finalPlanVisible
           ? `${candidatePreview?'Candidate only. ':'Contract candidate. '}Premium Entry ₹${Number(optionPlan.entry).toFixed(2)} • SL ₹${Number(optionPlan.stopLoss).toFixed(2)} • T1 ₹${Number(optionPlan.target1).toFixed(2)} • T2 ₹${Number(optionPlan.target2).toFixed(2)} • R:R 1:${optionPlan.rr1}/1:${optionPlan.rr2}. Delta ${Number(optionPlan.delta).toFixed(3)}, Theta ${Number(optionPlan.theta).toFixed(2)} (${optionPlan.greekStatus||'UNVERIFIED'}). Directional confidence ${directionalConfidence.toFixed(0)}%; final confidence ${Number(conf||0).toFixed(0)}%. Live execution remains OFF and all failed gates remain NO TRADE.`
-          : 'No verified live contract candidate yet at the 70% directional-confidence tier. The scanner keeps checking; any failed safety gate remains NO TRADE.';
+          : 'No contract candidate until the 15M direction estimate and recent out-of-sample hit rate both validate at >=68% with >=30 resolved forecasts. The scanner keeps monitoring; failed gates remain NO TRADE.';
       }
       if(fb)fb.textContent=candidatePreview?'NO TRADE • CANDIDATE ONLY':state==='CONFIRMED'?'CONFIRMED TRADE PLAN':'WATCH • WAIT FOR FINAL GATES';
     }else{
@@ -2762,7 +2764,7 @@ function renderPredictionPanel(resp){
     if(action==='CALL'||action==='PUT'){
       const bp=p?.finalPlan||{};
       const d={
-        action,score:p?.score!=null?p.score:'—',confidence:conf!=null?conf+'%':'—',rr:bp?.rr1?'1:'+bp.rr1:'1:2+',
+        action,score:p?.score!=null?p.score:'—',confidence:conf!=null?conf+'/100 setup score':'—',rr:bp?.rr1?'1:'+bp.rr1:'1:2+',
         reason:p?.reasoning||'',
         trend1h:p?.trend1h||'WAIT',setup15m:p?.setup15m||'WAIT',trigger5m:p?.trigger5m||'WAIT',
         rsi:p?.rsi,adx:p?.adx,vwap:p?.vwap,priceAction:p?.trigger5m,volume:p?.volumeSource||'WAIT',atr:p?.atr,
@@ -2810,7 +2812,7 @@ async function loadPhase11Shield(){
   $('p11Mode').textContent=p.locked?'CAPITAL SHIELD • LOCKED':'CAPITAL SHIELD ACTIVE';
   $('p11DailyLeft').textContent='₹ '+Number(p.dailyLossRemaining||0).toLocaleString('en-IN');
   $('p11Trades').textContent=`${p.tradesToday||0} / ${p.maxTradesPerDay||0}`;
-  $('p11ConfGate').textContent=(p.minModelConfidence||0)+'%'; $('p11ConfirmGate').textContent=(p.minConfirmationPct||0)+'%';
+  $('p11ConfGate').textContent=(p.minModelConfidence||0)+'/100'; $('p11ConfirmGate').textContent=(p.minConfirmationPct||0)+'%';
   $('p11RR').textContent=(p.minRR||0)+'R'; $('p11MaxPos').textContent=p.maxOpenPositions||'—'; $('p11Spread').textContent=(p.maxSpreadPct||0)+'%'; $('p11Cooldown').textContent=(p.cooldownMinutes||0)+'m';
   $('p11Average').textContent=p.noAveraging?'ON':'OFF'; $('p11Martingale').textContent=p.noMartingale?'ON':'OFF'; $('p11SL').textContent=p.requireStopLoss?'ON':'OFF'; $('p11Signed').textContent=p.requireSignalToken?'ON':'OFF';
   if(p.locked && $('alertRisk')?.checked) addAlert('🛡 CAPITAL SHIELD LOCK',`Trading gate locked: ${(p.breachReasons||[]).join(', ')||'risk limits active'}.`,'neutral',`p11-lock-${p.asOf}`);
@@ -2821,8 +2823,8 @@ async function requestPhase11Signal(){
   const r=await fetch(API_BASE+'/api/phase11/signal-token?symbol='+encodeURIComponent(symbol)); const d=await r.json();
   if(!r.ok||!d.ok) throw new Error(d.error||'Confirmed signal unavailable');
   window.phase11SignalToken=d.token; window.phase11Snapshot=d.snapshot;
-  $('p11SignalStatus').textContent=`LOCKED • ${d.snapshot.action} • ${d.snapshot.modelConfidence}% confidence • ${d.snapshot.confirmationPct}% confirmation • 60s`;
-  addAlert('✅ Confirmed Signal Lock',`${symbol} • ${d.snapshot.action} • ${d.snapshot.modelConfidence}% model confidence • ${d.snapshot.confirmationPct}% confirmation.`,'bullish','p11-'+d.snapshot.createdAt);
+  $('p11SignalStatus').textContent=`LOCKED • ${d.snapshot.action} • ${d.snapshot.modelConfidence}/100 setup score • ${d.snapshot.confirmationPct}% confirmation • 60s`;
+  addAlert('✅ Confirmed Signal Lock',`${symbol} • ${d.snapshot.action} • ${d.snapshot.modelConfidence}/100 setup score • ${d.snapshot.confirmationPct}% confirmation.`,'bullish','p11-'+d.snapshot.createdAt);
   toast('Phase 11 confirmed signal lock loaded');
  }catch(e){window.phase11SignalToken='';window.phase11Snapshot=null;$('p11SignalStatus').textContent='Not available • confirmation gate not met or live feed unavailable.';toast(e.message||'Confirmed signal unavailable')}
 }
