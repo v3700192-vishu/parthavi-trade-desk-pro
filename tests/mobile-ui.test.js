@@ -262,7 +262,7 @@ test("chart reports stale candle fallback and preserves selected historical day 
 });
 
 test("service-worker cache version is bumped and never caches live API responses", () => {
-  assert.match(serviceWorker, /const CACHE='ptd-shell-v37'/);
+  assert.match(serviceWorker, /const CACHE='ptd-shell-v38'/);
   assert.match(serviceWorker, /prediction-report\.html/);
   assert.match(serviceWorker, /if\(u\.pathname\.startsWith\('\/api\/'\)\) return/);
   assert.doesNotMatch(serviceWorker, /const CACHE='ptd-shell-v3[0-6]'/);
@@ -397,5 +397,5 @@ test("Phase 10 renders the trade timing and signal-expiry panel", () => {
   assert.match(html, /const timing=p\?\.tradeTiming\|\|\{\}/);
   assert.match(html, /timeZone:'Asia\/Kolkata'/);
   assert.match(html, /timingDecision==='ENTRY READY'/);
-  assert.match(html, /70% = scan only • 80% = candidate • 90%\+ = all-gates check/);
+  assert.match(html, /Setup score \/100: 70 = scan tier • 80 = adviser review • 90\+ = final-gate review/);
 });
