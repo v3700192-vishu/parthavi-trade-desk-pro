@@ -155,7 +155,7 @@ export function buildTradeTiming(p={}, {marketOpen=p.marketOpen===true,now=Date.
   const validUntil=Number.isFinite(stamp)?stamp+10*60_000:null;
   const expired=validUntil==null||now>=validUntil;
   const confidence=Number(p.modelConfidence)||0;
-  const confidenceTier=confidence>=90?'90%+ • COMMAND CENTER CHECK':confidence>=80?'80%+ • ADVISER CANDIDATE':confidence>=70?'70%+ • CONTRACT SCAN ONLY':'BELOW 70% • WAIT';
+  const confidenceTier=confidence>=90?'90/100 SETUP SCORE • COMMAND CENTER CHECK':confidence>=80?'80/100 SETUP SCORE • ADVISER CANDIDATE':confidence>=70?'70/100 SETUP SCORE • CONTRACT SCAN ONLY':'BELOW 70/100 SETUP SCORE • WAIT';
   const hasAction=['CALL','PUT'].includes(String(p.action||'').toUpperCase());
   const reasons=Array.isArray(p.noTradeReasons)?p.noTradeReasons:[];
   let status='WAIT • CONFIRMATION REQUIRED';
@@ -178,6 +178,9 @@ export function buildTradeTiming(p={}, {marketOpen=p.marketOpen===true,now=Date.
   }else if(p.exchangeTickVerified!==true||p.feedComplete!==true||p.eventSafe!==true||reasons.length>0){
     status='WAIT • SAFETY GATE BLOCKED';
     reason=reasons[0]||'Live exchange tick, complete verified feeds, event safety and all risk gates must pass.';
+  }else if(p.directionalCalibrationEligible!==true||!Number.isFinite(Number(p.directionProbability))||Number(p.directionProbability)<68){
+    status='WAIT • DIRECTION NOT VALIDATED';
+    reason='The 15M chart direction must match a >=68% current estimate and pass a recent walk-forward hit-rate of >=68% over at least 30 resolved high-confidence forecasts.';
   }else if(p.signalState!=='CONFIRMED'||!hasAction||p.commandCenterEligible!==true||
     confidence<90||Number(p.confirmationPct)!==100||
     p.optionPlan?.available!==true||p.optionPlan?.candidateOnly===true||
