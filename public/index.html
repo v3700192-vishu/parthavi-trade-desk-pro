@@ -2491,7 +2491,7 @@ function renderFreeAdvisor(p,resp={}){
     else checks.textContent=(reasons.slice(0,6).join(' • ')||p?.reasoning||'Waiting for verified market data, fresh exchange tick and all safety gates.');
   }
 }
-function renderForwardForecast(forecast){
+function renderForwardForecast(forecast,movement){
   const status=$('p10ForecastStatus');
   const note=$('p10ForecastNote');
   const horizons=forecast?.horizons||{};
@@ -2534,7 +2534,13 @@ function renderForwardForecast(forecast){
   }
   const monitor=forecast?.moveMonitor||{}, observed=$('p10MoveObserved');
   if(observed){
-    if(!monitor.available)observed.textContent=monitor.reason||'Observed move monitor unavailable; current price is not invented.';
+    if(movement?.available){
+      const f=n=>Number.isFinite(Number(n))?(Number(n)>0?'+':'')+Number(n).toFixed(1):'N/A';
+      const priceText=n=>Number.isFinite(Number(n))?Number(n).toLocaleString('en-IN',{maximumFractionDigits:2}):'N/A';
+      const when=movement.candleClosedAt?new Date(movement.candleClosedAt).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:true}):'time unavailable';
+      const session='Session O/H/L '+priceText(movement.sessionOpen)+' / '+priceText(movement.sessionHigh)+' / '+priceText(movement.sessionLow)+'; range '+f(movement.sessionRange)+' pt; net '+f(movement.sessionChange)+' pt; from high '+f(movement.pointsFromHigh)+' pt; from low '+f(movement.pointsFromLow)+' pt.';
+      observed.textContent='OBSERVED: '+(movement.status||'MOVE UNKNOWN')+' ('+(movement.direction||'UNKNOWN')+'). NIFTY '+priceText(movement.latestPrice)+'; Δ5m '+f(movement.change5m)+', Δ15m '+f(movement.change15m)+', Δ30m '+f(movement.change30m)+', Δ60m '+f(movement.change60m)+'. '+session+' Last bar closed '+when+' IST; age '+(movement.candleAgeMinutes??'N/A')+' min; '+(movement.dataStatus||'DATA STATUS UNKNOWN')+'; source '+(movement.source||'UNKNOWN')+'; '+(movement.verified===true?'fresh/verified entry-bar data':'NOT VERIFIED FOR LIVE ENTRY')+'. '+(movement.reason||'Observed changes are not a forecast or a trade entry.');
+    }else if(!monitor.available)observed.textContent=monitor.reason||'No candle data: the system has no price bars to measure.';
     else{
       const f=n=>Number.isFinite(Number(n))?(Number(n)>0?'+':'')+Number(n).toFixed(1):'N/A';
       const w30=monitor.windows?.['30']||{}, w60=monitor.windows?.['60']||{}, s=monitor.session;
@@ -2547,7 +2553,7 @@ function renderForwardForecast(forecast){
 }
 function renderPredictionPanel(resp){
   const p=resp?.prediction||resp||{};
-  renderForwardForecast(p?.forwardForecast);
+  renderForwardForecast(p?.forwardForecast,p?.movementDiagnostics);
   renderFreeAdvisor(p,resp);
   // Keep the Command Center connected to each fresh prediction result. Without this
   // handoff, stccCurrentPlan() reads an empty global and can never surface a signal.
