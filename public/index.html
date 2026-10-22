@@ -2292,9 +2292,11 @@ function stccIsOpposite(a,b){return (a==='CALL'&&b==='PUT')||(a==='PUT'&&b==='CA
 function stccCurrentPlan(p){
   const plan=p?.optionPlan||{};
   const action=String(p?.action||'NO TRADE').toUpperCase();
+  const rawDirectionalProbability=p?.directionalProbability??p?.directionalConfidence;
+  const directionalGatePassed=rawDirectionalProbability!=null&&rawDirectionalProbability!==''&&Number.isFinite(Number(rawDirectionalProbability))&&Number(rawDirectionalProbability)>=68;
   const required=['trend','setup','trigger','momentum','volume','strength','options','greeks','news','global','eventSafe'];
   const allConfirmationsPass=required.every(k=>p?.confirmations?.[k]===true);
-  const usable=p?.commandCenterEligible===true && p?.signalState==='CONFIRMED' && ['CALL','PUT'].includes(action) && !!plan.available && plan.candidateOnly!==true && plan.greekStatus==='PASS' && Number(p?.modelConfidence)>=PTD_COMMAND_CENTER_CONFIDENCE && Number(p?.confirmationPct)===100 && allConfirmationsPass && p?.feedComplete===true && p?.exchangeTickVerified===true && p?.eventSafe===true && (p?.noTradeReasons||[]).length===0;
+  const usable=directionalGatePassed && p?.commandCenterEligible===true && p?.signalState==='CONFIRMED' && ['CALL','PUT'].includes(action) && !!plan.available && plan.candidateOnly!==true && plan.greekStatus==='PASS' && Number(p?.modelConfidence)>=PTD_COMMAND_CENTER_CONFIDENCE && Number(p?.confirmationPct)===100 && allConfirmationsPass && p?.feedComplete===true && p?.exchangeTickVerified===true && p?.eventSafe===true && (p?.noTradeReasons||[]).length===0;
   if(!usable)return null;
   return {
     symbol,
