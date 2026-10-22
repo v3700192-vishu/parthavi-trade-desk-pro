@@ -2045,14 +2045,25 @@ app.get('/api/phase10/prediction',async(req,res)=>{
     // Off-session fast path: do not make broker/provider requests when the selected exchange is closed.
     // Historical candles may be shown for context, but every live-trade gate stays closed.
     if(!marketOpen){
-      const cachedRows=candleCache.get(symbol)?.rows||[];
+      // Populate missing/stale cache even off-session so the dashboard can measure the
+      // last completed session. This is historical context only; live prediction and entry
+      // gates remain disabled while the exchange is closed.
+      let cacheEntry=candleCache.get(symbol)||null;
+      if(!Array.isArray(cacheEntry?.rows)||!cacheEntry.rows.length||Date.now()-Number(cacheEntry.at||0)>5*60*1000){
+        try{await loadBase5m(symbol);cacheEntry=candleCache.get(symbol)||cacheEntry;}
+        catch(e){console.warn('[OFF_SESSION_HISTORY]',symbol,e?.message||e);}
+      }
+      const cachedRows=Array.isArray(cacheEntry?.rows)?cacheEntry.rows:[];
       const rows5=dropIncompleteCandle(cachedRows,5);
       const rows15=dropIncompleteCandle(aggregateCandles(rows5,15),15);
       const rows60=dropIncompleteCandle(aggregateCandles(rows5,60),60);
       const h1Rows=rows60.slice(-225),m15Rows=rows15.slice(-500),m5Rows=rows5.slice(-500);
+      const source=String(cacheEntry?.source||cacheEntry?.baseSource||'UNKNOWN');
+      const h1Summary=summarize(h1Rows),m15Summary=summarize(m15Rows),m5Summary=summarize(m5Rows);
+      for(const summary of [h1Summary,m15Summary,m5Summary])summary.candleSource=source;
       const historical=backtestFiveMinute(m5Rows);
       const prediction=buildPrediction({
-        h1:summarize(h1Rows),m15:summarize(m15Rows),m5:summarize(m5Rows),rows5:m5Rows,
+        h1:h1Summary,m15:m15Summary,m5:m5Summary,rows5:m5Rows,
         marketOpen:false,vix:null,news:{connected:false,freshCount:0},
         global:{connected:false,freshInputs:0},events:{connected:false,eventSafe:false},
         options:{connected:false},oi:{connected:false},backtest:historical
