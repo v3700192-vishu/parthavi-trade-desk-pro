@@ -114,7 +114,7 @@ test("prediction cannot emit a trade when option Greeks are missing", () => {
   assert.equal(prediction.finalPlan.available, false);
 });
 
-test("unsafe ATM Greeks allow a scan for a separately verified contract, but never allow a trade by themselves", () => {
+test("unvalidated directional history blocks contract scan and entry even when a contract may have safe Greeks", () => {
   const input = {
     h1: { trend: "BULLISH", last: 101, ema20: 100, ema50: 99 },
     m15: { trend: "BULLISH", last: 101, ema20: 100, ema50: 99 },
@@ -132,7 +132,8 @@ test("unsafe ATM Greeks allow a scan for a separately verified contract, but nev
   const waiting = buildPrediction(input);
   assert.equal(waiting.action, "NO TRADE");
   assert.equal(waiting.confirmations.greeks, false);
-  assert.equal(waiting.contractScanEligible, true, "verified feeds must permit candidate scanning even if momentum and option-direction alignment are false");
+  assert.equal(waiting.directionalForecastEligible, false, "one historical candle cannot establish a calibrated directional edge");
+  assert.equal(waiting.contractScanEligible, false, "no candidate scan until the calibrated 15M direction passes");
   assert.equal(waiting.confirmations.momentum, false);
   assert.equal(waiting.confirmations.options, false);
   assert.equal(waiting.tradeFinder.watchThreshold, 70);
@@ -148,9 +149,9 @@ test("unsafe ATM Greeks allow a scan for a separately verified contract, but nev
       greekRisk: { status: "PASS", message: "Selected live contract passed safeguards." } }
   });
   assert.equal(selected.confirmations.greeks, true);
-  assert.equal(selected.signalState, "WATCH", "a verified contract must not bypass opposing momentum/options confirmations");
+  assert.equal(selected.signalState, "NO TRADE", "a selected contract cannot bypass missing out-of-sample directional validation");
   assert.equal(selected.action, "NO TRADE");
-  assert.equal(selected.finalPlan.available, true);
+  assert.equal(selected.finalPlan.available, false);
 });
 
 test("80% AI Adviser tier may omit only momentum while 90% confirmation remains unconfirmed", () => {
@@ -171,10 +172,11 @@ test("80% AI Adviser tier may omit only momentum while 90% confirmation remains 
   assert.equal(p.confirmations.momentum, false);
   assert.equal(p.confirmations.options, true);
   assert.equal(p.confirmations.trigger, true);
-  assert.equal(p.advisorMomentumExceptionEligible, true);
+  assert.equal(p.directionalForecastEligible, false);
+  assert.equal(p.advisorMomentumExceptionEligible, false, "an attractive setup score cannot bypass missing walk-forward validation");
   assert.ok(p.modelConfidence >= 80);
   assert.ok(p.confirmationPct >= 80 && p.confirmationPct < 100);
-  assert.equal(p.signalState, "WATCH", "missing momentum must prevent 90% Command Center confirmation");
+  assert.equal(p.signalState, "NO TRADE", "missing walk-forward directional validation blocks the adviser tier");
   assert.equal(p.action, "NO TRADE");
   assert.equal(p.commandCenterEligible, undefined, "live contract and exchange tick must be verified by server before tier eligibility");
 });
