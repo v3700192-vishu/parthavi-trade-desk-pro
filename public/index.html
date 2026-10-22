@@ -1015,6 +1015,7 @@ body.chart-fullscreen-open>.app>.bottom{
             <div class="forward-prob-row"><span>Validated 15M direction estimate</span><b id="p10ChartProbability">—</b></div>
             <div class="forward-prob-row"><span>Observed NIFTY</span><b id="p10ChartPrice">—</b></div>
             <p class="forward-forecast-meta" id="p10ChartDrivers">Waiting for chart candles and indicators.</p>
+            <p class="forward-forecast-meta" id="p10ChartPattern">Candlestick / chart-pattern engine waiting for completed OHLC candles.</p>
           </div>
           <div class="forward-horizon">
             <div class="forward-horizon-head"><strong>Recommendation</strong><b id="p10ChartAction" class="wait">WAIT</b></div>
@@ -2640,6 +2641,21 @@ function renderForwardForecast(forecast,movement,decision,marketOpenFlag){
     const cal=horizon.calibration||{};
     parts.push('15M OOS: '+String(cal.status||'UNVERIFIED')+' • '+String(cal.highConfidenceDirectionalSignals??0)+'/'+String(cal.minimumSignals||30)+' high-confidence signals • hit rate '+(cal.outOfSampleHitRate==null?'N/A':String(cal.outOfSampleHitRate)+'%'));
     chartDrivers.textContent=(parts.length?parts.join(' • '):'Chart indicators unavailable.')+' '+(liveFresh?'Live candle verified.':'Historical/unchecked data cannot authorize an entry.');
+  }
+  const patternEl=$('p10ChartPattern');
+  if(patternEl){
+    const analysis=p.chartAnalysis||{};
+    const byTf=p.chartAnalysisByTimeframe||{'5M':analysis};
+    const summary=['5M','15M','1H'].map(tf=>{
+      const a=byTf[tf]||{};
+      const items=[...(Array.isArray(a.latestPatterns)?a.latestPatterns:[]),...(Array.isArray(a.chartPatterns)?a.chartPatterns:[])].slice(0,2);
+      return tf+' '+String(a.direction||'UNKNOWN')+(items.length?' — '+items.map(x=>x.name).join('/'):' — no major pattern');
+    }).join(' • ');
+    const levelText=(analysis.support!=null?'Support '+Number(analysis.support).toLocaleString('en-IN',{maximumFractionDigits:2}):'Support —')+' / '+(analysis.resistance!=null?'Resistance '+Number(analysis.resistance).toLocaleString('en-IN',{maximumFractionDigits:2}):'Resistance —');
+    const votes='Higher-TF pattern adjustment '+String(p.patternTimeframeAdjustment??0)+'; 5M pattern adjustment '+String(analysis.scoreAdjustment??0)+' (bounded confluence points, not probability).';
+    patternEl.textContent=analysis.available
+      ?summary+'. '+votes+' 5M EMA trend '+String(analysis.trend||'UNKNOWN')+'; RSI14 '+String(analysis.rsi14??'—')+'. '+levelText+'. '+String(analysis.reason||'Pattern check is observational only.')
+      :'Candle engine waiting: '+String(analysis.reason||'Need valid completed OHLC candles.')+' '+summary;
   }
   let recommendation='WAIT — NO TRADE';
   let why='Wait for fresh chart data and a new confirmed setup.';
