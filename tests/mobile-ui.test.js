@@ -368,3 +368,13 @@ test("Global Risk ticker uses verified API state and refreshes instead of stayin
   assert.equal(el.textContent, "WAIT");
   assert.match(el.title, /No fresh verified global inputs/);
 });
+
+test("Phase 10 renders the trade timing and signal-expiry panel", () => {
+  for (const id of ["p10TradeTiming", "p10TimingDecision", "p10TimingSignal", "p10TimingEntry", "p10TimingExpiry", "p10TimingTier", "p10TimingReason"]) {
+    assert.ok(html.includes('id="' + id + '"'), "missing timing field " + id);
+  }
+  assert.match(html, /const timing=p\?\.tradeTiming\|\|\{\}/);
+  assert.match(html, /timeZone:'Asia\/Kolkata'/);
+  assert.match(html, /timingDecision==='ENTRY READY'/);
+  assert.match(html, /70% = scan only • 80% = candidate • 90%\+ = all-gates check/);
+});
