@@ -7,7 +7,7 @@ import { fileURLToPath } from "url";
 import { angelStatus, loginAngel, logoutAngel, restoreAngelSessionFromVault, ltp as angelLtp, quote as angelQuote, candles as angelCandles, searchScrip as angelSearchScrip, loadMaster, findContracts, findLightContracts, findLightFutures, findInstrumentByToken, subscribe as angelSubscribe, reconnectWebSocket as angelReconnectWebSocket, quoteInstruments, optionGreeks, getLatestTicks, getTickDiagnostics, rms as angelRms, orderBook as angelOrderBook, placeOrder as angelPlaceOrder, cancelOrder as angelCancelOrder, holdings as angelHoldings, allHoldings as angelAllHoldings, positions as angelPositions, tradeBook as angelTradeBook, modifyOrder as angelModifyOrder } from "./angelone.js";
 import { getLiveIndexCandles } from "./liveIndexCandles.js";
 import { normalizeNews, analyzeNews, normalizeGlobal, analyzeGlobal, analyzeEvents, fuse } from "./fusion.js";
-import { buildPrediction, backtestFiveMinute } from "./prediction.js";
+import { buildPrediction, buildTradeTiming, backtestFiveMinute } from "./prediction.js";
 import { productionReadiness } from "./phase12.js";
 import { isFreshExchangeTick, exchangeTickAgeMs } from "./marketFreshness.js";
 import { fetchUpstoxHistoricalCandles, shouldUseUpstoxFuturesFallback, upstoxConfigStatus } from "./marketDataProviders.js";
@@ -2064,12 +2064,13 @@ app.get('/api/phase10/prediction',async(req,res)=>{
         lastCandleTime:last?.t||null,lastVolume:last?.v??null,
         reason:`${marketExchange} is closed; live futures-volume data was not requested.`};
       prediction.optionPlan={available:false,reason:`${marketExchange} is closed; live option selection is disabled until the next session.`};
+      prediction.tradeTiming=buildTradeTiming(prediction,{marketOpen,now:Date.now()});
       return res.json({ok:true,phase:10,symbol,prediction,
         health:{market:m5Rows.length>0,marketOpen:false,options:false,news:false,global:false,eventBlocked:false,eventDayBlock:false,vix:null},
         greeks:null,greekRisk:{status:'WAIT',message:'Market is closed; live Greeks are not verified.'},
         backtest:historical,optionBacktest:prediction.optionBacktest,checkedAt:nowISO(),mode:'OFF_SESSION_FAST_PATH'});
     }
-    if(!angelStatus().connected){ const prediction=buildPrediction({marketOpen:false}); return res.json({ok:true,phase:10,locked:true,prediction,optionBacktest:prediction.optionBacktest,message:'Connect Angel One before running live prediction.'}); }
+    if(!angelStatus().connected){ const prediction=buildPrediction({marketOpen:false}); prediction.tradeTiming=buildTradeTiming(prediction,{marketOpen,now:Date.now()}); return res.json({ok:true,phase:10,locked:true,prediction,optionBacktest:prediction.optionBacktest,message:'Connect Angel One before running live prediction.'}); }
 
     // Start all independent live-feed work together so futures volume and the
     // option chain do not add their network latency after the candle/news scan.
@@ -2231,6 +2232,7 @@ app.get('/api/phase10/prediction',async(req,res)=>{
       optionPlan.available===true && optionPlan.candidateOnly!==true && optionPlan.greekStatus==='PASS' &&
       (prediction.noTradeReasons||[]).length===0
     );
+    prediction.tradeTiming=buildTradeTiming(prediction,{marketOpen,now:Date.now()});
     const candleConnected=Array.isArray(m5.rows)&&m5.rows.length>0;
     const checkedAt=nowISO();
     try{
@@ -2252,6 +2254,7 @@ app.get('/api/phase10/prediction',async(req,res)=>{
     prediction.feedComplete=false;
     prediction.noTradeReasons=[...(prediction.noTradeReasons||[]),'No Trade: prediction request did not complete all required feed checks.'];
     prediction.reasoning='Prediction is in safe fallback mode because required data could not be completed. No live order signal is available.';
+    prediction.tradeTiming=buildTradeTiming(prediction,{marketOpen,now:Date.now()});
     return res.json({ok:true,phase:10,symbol,prediction,degraded:true,
       health:{market:false,options:false,news:false,global:false,eventBlocked:false,eventDayBlock:false,vix:null},
       greeks:null,greekRisk:{status:'WAIT',message:'Required live data is not verified.'},
