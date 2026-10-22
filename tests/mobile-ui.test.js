@@ -122,6 +122,9 @@ test("candidate contract scanner is single-flight, parallelizes independent quot
   assert.ok(server.includes(")].slice(0,2);"));
   assert.ok(server.includes("boundedFeed(findBuyableOptionPlanCoalesced"));
   assert.ok(server.includes("const contractDisplayConfidence=directionalConfidence;"));
+  assert.match(server, /const rawDirectionalProbability=prediction\\.directionalProbability/);
+  assert.match(server, /const finalRawDirectionalProbability=prediction\\.directionalProbability/);
+  assert.doesNotMatch(server, /rawDirectionalProbability=prediction\\.modelConfidence/);
   assert.ok(server.includes("prediction.finalPlanThreshold=70;"));
   assert.ok(server.includes("prediction.advisorEligible=Boolean("));
   assert.ok(server.includes("prediction.commandCenterEligible=Boolean("));
