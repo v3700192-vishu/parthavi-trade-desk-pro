@@ -2248,6 +2248,9 @@ app.get('/api/phase10/prediction',async(req,res)=>{
     prediction.advisorThreshold=80;
     prediction.commandCenterThreshold=90;
     prediction.advisorEligible=Boolean(
+      prediction.directionalForecastEligible===true &&
+      Number.isFinite(Number(prediction.directionalProbability)) &&
+      Number(prediction.directionalProbability)>=68 &&
       prediction.advisorMomentumExceptionEligible===true &&
       optionPlan.available===true && optionPlan.candidateOnly!==true && optionPlan.greekStatus==='PASS' &&
       prediction.exchangeTickVerified===true && prediction.feedComplete===true &&
@@ -2257,6 +2260,9 @@ app.get('/api/phase10/prediction',async(req,res)=>{
     const ptdRequiredConfirmationKeys=['trend','setup','trigger','momentum','volume','strength','options','greeks','news','global','eventSafe'];
     const ptdAllConfirmationsPass=ptdRequiredConfirmationKeys.every(k=>prediction.confirmations?.[k]===true);
     prediction.commandCenterEligible=Boolean(
+      prediction.directionalForecastEligible===true &&
+      Number.isFinite(Number(prediction.directionalProbability)) &&
+      Number(prediction.directionalProbability)>=68 &&
       prediction.signalState==='CONFIRMED' && ['CALL','PUT'].includes(String(prediction.action||'')) &&
       Number(prediction.modelConfidence)>=90 && Number(prediction.confirmationPct)===100 && ptdAllConfirmationsPass &&
       prediction.feedComplete===true && prediction.exchangeTickVerified===true && prediction.eventSafe===true &&
