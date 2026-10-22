@@ -2314,17 +2314,56 @@ app.get("/api/prediction-report",async(req,res)=>{
   }
 });
 
+const sharedRefreshInflight = new Map();
+function sharedRefresh(key, loader, timeoutMs=15000) {
+  if(sharedRefreshInflight.has(key)) return sharedRefreshInflight.get(key);
+  let timer;
+  const timeout=new Promise((_,reject)=>{
+    timer=setTimeout(()=>reject(new Error('Shared refresh timed out: '+key)),timeoutMs);
+  });
+  const work=Promise.resolve().then(loader);
+  const task=Promise.race([work,timeout]).finally(()=>{
+    clearTimeout(timer);
+    if(sharedRefreshInflight.get(key)===task) sharedRefreshInflight.delete(key);
+  });
+  sharedRefreshInflight.set(key,task);
+  return task;
+}
+const marketSnapshotCache = new Map();
+async function loadMarketSnapshot(key, loader) {
+  const cached=marketSnapshotCache.get(key);
+  if(cached&&Date.now()-cached.at<2000) return cached.data;
+  const data=await sharedRefresh('market:'+key,loader,8000);
+  marketSnapshotCache.set(key,{at:Date.now(),data});
+  return data;
+}
+function boundedAnalysisFeed(loader,fallback,label,ms=6000) {
+  let timer;
+  const work=Promise.resolve().then(loader).catch(error=>{
+    console.warn('[ANALYZE_FEED]',label,error?.message||error);
+    return fallback;
+  });
+  const deadline=new Promise(resolve=>{
+    timer=setTimeout(()=>{
+      console.warn('[ANALYZE_TIMEOUT]',label,ms+'ms');
+      resolve(fallback);
+    },ms);
+  });
+  return Promise.race([work,deadline]).finally(()=>clearTimeout(timer));
+}
+
 app.get("/api/analyze",async(req,res)=>{
   const symbol=String(req.query.symbol||'NIFTY').toUpperCase();
   let h={market:false,options:false,news:false,global:false}, packs={};
   try{
     if(angelStatus().connected){
+      const key=symbol.toUpperCase();
       const [h1,m15,m5,opt,volProxy]=await Promise.all([
-        loadTfSummary(symbol,'ONE_HOUR',10),
-        loadTfSummary(symbol,'FIFTEEN_MINUTE',10),
-        loadTfSummary(symbol,'FIVE_MINUTE',10),
-        options(symbol),
-        loadFuturesVolume(symbol)
+        boundedAnalysisFeed(()=>sharedRefresh('candles:'+key+':1h',()=>loadTfSummary(symbol,'ONE_HOUR',10)),{rows:[],summary:{trend:'WAIT'}},'candles-1h',8000),
+        boundedAnalysisFeed(()=>sharedRefresh('candles:'+key+':15m',()=>loadTfSummary(symbol,'FIFTEEN_MINUTE',10)),{rows:[],summary:{trend:'WAIT'}},'candles-15m',8000),
+        boundedAnalysisFeed(()=>sharedRefresh('candles:'+key+':5m',()=>loadTfSummary(symbol,'FIVE_MINUTE',10)),{rows:[],summary:{trend:'WAIT'}},'candles-5m',8000),
+        boundedAnalysisFeed(()=>sharedRefresh('options:'+key,()=>options(symbol)),{connected:false,error:'Live option feed unavailable'},'options',5000),
+        boundedAnalysisFeed(()=>sharedRefresh('futures-volume:'+key,()=>loadFuturesVolume(symbol)),{ratio10d:null,source:null,benchmarkDays:0,reason:'Futures volume feed timed out'},'futures-volume',9000)
       ]);
       if(volProxy?.ratio10d!=null && Number.isFinite(Number(volProxy.ratio10d)) && volProxy.source){
         m5.summary.volumeRatio10d=Number(volProxy.ratio10d);
@@ -2347,7 +2386,7 @@ app.get("/api/analyze",async(req,res)=>{
   let selectedGreek=null,greeksVerified=false,greekRisk={status:'WAIT',message:'Live option Greeks not verified.'};
   try{
     if(opt.connected&&opt.expiry){
-      const rows=await liveOptionGreeks(symbol,opt.expiry);
+      const rows=await boundedAnalysisFeed(()=>sharedRefresh('option-greeks:'+symbol+':'+opt.expiry,()=>liveOptionGreeks(symbol,opt.expiry)),[],'option-greeks',5000);
       const strike=Number(opt.atm),preferredType=Number(opt.pcr)>=1?'CE':'PE';
       const candidates=rows.filter(x=>Number.isFinite(x.strike)&&Math.abs(x.strike-strike)<0.01);
       selectedGreek=candidates.find(x=>x.optionType===preferredType)||candidates[0]||null;
@@ -2357,7 +2396,16 @@ app.get("/api/analyze",async(req,res)=>{
   }catch{}
   h.greeks=greeksVerified;
   let newsItems=[], global={}, eventItems=[], md=null;
-  try{ [newsItems,global,eventItems,md]=await Promise.all([news(symbol),globalData(),events(),market(symbol)]); packs.md=md||{}; }catch(e){ packs.fusionError=e.message; }
+  try{
+    const key=symbol.toUpperCase();
+    [newsItems,global,eventItems,md]=await Promise.all([
+      boundedAnalysisFeed(()=>sharedRefresh('news:'+key,()=>news(symbol)),[],'news',6000),
+      boundedAnalysisFeed(()=>sharedRefresh('global-data',()=>globalData()),{},'global-data',6000),
+      boundedAnalysisFeed(()=>sharedRefresh('events',()=>events()),[],'events',6000),
+      boundedAnalysisFeed(()=>loadMarketSnapshot(key,()=>market(symbol)),{},'market',5000)
+    ]);
+    packs.md=md||{};
+  }catch(e){ packs.fusionError=e.message; }
   const newsStrat=analyzeNews(newsItems),globalStrat=analyzeGlobal(global),eventStrat=analyzeEvents(eventItems);
   const exchangeTickVerified=Boolean(freshIndexTick(symbol));
   const lastCandleAt=packs.m5?.rows?.at?.(-1)?.t||null;
@@ -2409,6 +2457,9 @@ app.get("/api/analyze",async(req,res)=>{
   const techSigned = h.market ? Number((((bullishVotes-bearishVotes)/Math.max(6,voteDenom))*100).toFixed(1)) : 0;
   const fused=fuse({technicalScore:techSigned,newsScore:newsStrat.score,globalScore:globalStrat.score,eventRisk:eventStrat.hardBlock,marketOpen:marketSession(),feeds:{market:h.market,options:h.options,news:newsStrat.connected,global:globalStrat.connected,eventSafe:eventStrat.eventSafe,eventDayBlock:eventStrat.eventDayBlock}});
   fused.technicalScore=techSigned; fused.newsScore=newsStrat.score; fused.globalScore=globalStrat.score;
+  const momentum5m=h.market&&Number.isFinite(Number(s5?.last))&&Number.isFinite(Number(s5?.prev))&&Number(s5.prev)>0
+    ? Number((((Number(s5.last)-Number(s5.prev))/Number(s5.prev))*100).toFixed(3))
+    : null;
   score=Math.round(Math.abs(fused.score)); confidence=h.market?(score>=67?'SETUP':score>=45?'WATCH':'WAIT'):'LOCKED';
   if(h.market) reason=`Technical confluence ${Math.round(Math.abs(techSigned))} â€¢ News ${newsStrat.bias} â€¢ Global ${globalStrat.bias}. ${eventStrat.reason}`;
   const complete=marketSession()&&exchangeTickVerified&&h.market&&optionFlowVerified&&hasVerifiedVolume&&greeksVerified&&greekRisk.status==='PASS'&&newsStrat.connected&&globalStrat.connected&&eventStrat.eventSafe===true&&!eventStrat.unverifiedHighImpact&&!eventStrat.hardBlock&&!eventStrat.eventDayBlock&&Number.isFinite(vix)&&vix>=12&&vix<=22;
@@ -2417,7 +2468,7 @@ app.get("/api/analyze",async(req,res)=>{
   else {action='NO TRADE'; if(noTradeReasons.length) reason=noTradeReasons.join(' â€¢ '); else if(!marketSession()) reason='Exchange session is closed. No live trade is permitted.'; else if(!eventStrat.eventSafe) reason=eventStrat.reason; else if(!greeksVerified||greekRisk.status!=='PASS') reason=greekRisk.message; else if(!newsStrat.connected||!globalStrat.connected) reason='News/global feeds are not verified fresh. Final decision stays locked.'; else if(!h.options) reason='Option positioning feed is not verified. Final options decision stays locked.';}
   const last=s5?.last||s15?.last||s1?.last; const atr=s5?.atr; const levels={r2:s15?.last&&s15?.atr?(s15.last+s15.atr*2).toFixed(2):'â€”',r1:s15?.last&&s15?.atr?(s15.last+s15.atr).toFixed(2):'â€”',vwap:s15?.vwap?.toFixed?.(2)||'â€”',s1:s15?.last&&s15?.atr?(s15.last-s15.atr).toFixed(2):'â€”',s2:s15?.last&&s15?.atr?(s15.last-s15.atr*2).toFixed(2):'â€”'};
   const bp=action==='CALL'?{direction:'CALL',strike:'',entry:last||'',sl:atr&&last?(last-atr*1.2).toFixed(2):'',t1:atr&&last?(last+atr*1.5).toFixed(2):'',t2:atr&&last?(last+atr*2.5).toFixed(2):''}:action==='PUT'?{direction:'PUT',strike:'',entry:last||'',sl:atr&&last?(last+atr*1.2).toFixed(2):'',t1:atr&&last?(last-atr*1.5).toFixed(2):'',t2:atr&&last?(last-atr*2.5).toFixed(2):''}:{direction:'CALL',strike:'',entry:'',sl:'',t1:'',t2:''};
-  res.json({health:{...h,news:newsStrat.connected,global:globalStrat.connected},marketData:md||{},decision:{action,score,confidence,rr:action==='CALL'||action==='PUT'?'1:2+':'â€”',reason,greeks:selectedGreek?{strike:selectedGreek.strike,optionType:selectedGreek.optionType,delta:selectedGreek.delta,theta:selectedGreek.theta,iv:selectedGreek.iv}:null,greekRisk,trend1h:trend,setup15m:setup,trigger5m:trigger,ema:s5?`20 ${s5.ema20?.toFixed(2)||'â€”'} / 50 ${s5.ema50?.toFixed(2)||'â€”'} / 200 ${s5.ema200?.toFixed(2)||'â€”'}`:'WAIT',rsi:s5?.rsi?.toFixed?.(1)||'â€”',macd:s5?`${s5.macd?.hist>0?'BULLISH':'BEARISH'} ${s5.macd?.hist?.toFixed?.(2)||'â€”'}`:'WAIT',adx:s5?.adx?.toFixed?.(1)||'â€”',vwap:s5?.vwap?.toFixed?.(2)||'â€”',priceAction:s5?.candle||'WAIT',volume:hasVerifiedVolume?'LIVE':'WAIT',volumeSource:hasVerifiedVolume?s5.volumeSource:null,atr:s5?.atr?.toFixed?.(2)||'â€”',momentum:s5?.rsi>50?'BULLISH':s5?.rsi<50?'BEARISH':'WAIT',options:h.options?((opt.resistance&&opt.support)?`LIVE â€¢ R ${opt.resistance} / S ${opt.support}`:'LIVE'):'WAIT',news:newsStrat.bias,global:globalStrat.bias,event:!eventStrat.connected?'UNKNOWN':(eventStrat.eventDayBlock||eventStrat.hardBlock||eventStrat.unverifiedHighImpact)?'HIGH RISK':eventStrat.watch?'CAUTION':'SAFE',levels,blueprint:bp,newsStrategy:newsStrat,globalStrategy:globalStrat,eventStrategy:eventStrat,vix:Number.isFinite(vix)?vix:null,volumeRatio10d:Number.isFinite(volumeRatio10d)?volumeRatio10d:null,noTradeReasons,oi:{resistance:opt?.resistance??null,support:opt?.support??null,ceMaxOi:opt?.ceMaxOi??null,peMaxOi:opt?.peMaxOi??null,pcr:opt?.pcr??null},fusion:{score:fused.score,direction:fused.direction,hardGate:fused.hardGate,technicalScore:fused.technicalScore,newsScore:fused.newsScore,globalScore:fused.globalScore}},candles:s5?.rows||null,multiTf:{h1:s1||null,m15:s15||null,m5:s5||null}});
+  res.json({health:{...h,news:newsStrat.connected,global:globalStrat.connected},marketData:md||{},decision:{action,score,confidence,fusionScore:fused.score,fusionDirection:fused.direction,technicalScore:techSigned,technicalConfluence:Math.round(Math.abs(techSigned)),momentum5m,rr:action==='CALL'||action==='PUT'?'1:2+':'â€”',reason,greeks:selectedGreek?{strike:selectedGreek.strike,optionType:selectedGreek.optionType,delta:selectedGreek.delta,theta:selectedGreek.theta,iv:selectedGreek.iv}:null,greekRisk,trend1h:trend,setup15m:setup,trigger5m:trigger,ema:s5?`20 ${s5.ema20?.toFixed(2)||'â€”'} / 50 ${s5.ema50?.toFixed(2)||'â€”'} / 200 ${s5.ema200?.toFixed(2)||'â€”'}`:'WAIT',rsi:s5?.rsi?.toFixed?.(1)||'â€”',macd:s5?`${s5.macd?.hist>0?'BULLISH':'BEARISH'} ${s5.macd?.hist?.toFixed?.(2)||'â€”'}`:'WAIT',adx:s5?.adx?.toFixed?.(1)||'â€”',vwap:s5?.vwap?.toFixed?.(2)||'â€”',priceAction:s5?.candle||'WAIT',volume:hasVerifiedVolume?'LIVE':'WAIT',volumeSource:hasVerifiedVolume?s5.volumeSource:null,atr:s5?.atr?.toFixed?.(2)||'â€”',momentum:s5?.rsi>50?'BULLISH':s5?.rsi<50?'BEARISH':'WAIT',options:h.options?((opt.resistance&&opt.support)?`LIVE â€¢ R ${opt.resistance} / S ${opt.support}`:'LIVE'):'WAIT',news:newsStrat.bias,global:globalStrat.bias,event:!eventStrat.connected?'UNKNOWN':(eventStrat.eventDayBlock||eventStrat.hardBlock||eventStrat.unverifiedHighImpact)?'HIGH RISK':eventStrat.watch?'CAUTION':'SAFE',levels,blueprint:bp,newsStrategy:newsStrat,globalStrategy:globalStrat,eventStrategy:eventStrat,vix:Number.isFinite(vix)?vix:null,volumeRatio10d:Number.isFinite(volumeRatio10d)?volumeRatio10d:null,noTradeReasons,oi:{resistance:opt?.resistance??null,support:opt?.support??null,ceMaxOi:opt?.ceMaxOi??null,peMaxOi:opt?.peMaxOi??null,pcr:opt?.pcr??null},fusion:{score:fused.score,direction:fused.direction,hardGate:fused.hardGate,technicalScore:fused.technicalScore,newsScore:fused.newsScore,globalScore:fused.globalScore}},candles:s5?.rows||null,multiTf:{h1:s1||null,m15:s15||null,m5:s5||null}});
 });
 
 app.post("/api/order",(req,res)=>res.status(423).json({ok:false,error:"USE_PHASE5_PREVIEW",message:"Phase 5 uses /api/order/preview then explicit /api/order/execute confirmation."}));
