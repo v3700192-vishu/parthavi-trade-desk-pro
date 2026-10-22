@@ -1682,7 +1682,7 @@ function signalTone(value){
  return 'neutral';
 }
 function paintSignal(id,value){const el=$(id);if(!el)return;el.textContent=value??'WAIT';el.classList.remove('bullish','bearish','neutral');el.classList.add(signalTone(value));}
-function resolveDisplayedH1Trend(decision,h1){
+function resolveDisplayedH1Trend(decision, h1) {
  const out={...(decision||{})}, asNum=value=>value==null||value===''||!Number.isFinite(Number(value))?null:Number(value);
  const fast=asNum(h1?.trendFastEma), slow=asNum(h1?.trendSlowEma), ema20=asNum(h1?.ema20), ema50=asNum(h1?.ema50);
  const fastDirection=fast!==null&&slow!==null?(fast>slow?'BULLISH':fast<slow?'BEARISH':null):null;
