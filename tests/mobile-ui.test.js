@@ -134,7 +134,8 @@ test("staged contract visibility thresholds are distinct and the Command Center 
   assert.match(html, /const finalPlanVisible=!!optionPlan\?\.available&&optionConfidence>=PTD_FINAL_PLAN_CONFIDENCE/);
   assert.match(html, /const optionVisible=!!optionPlan\?\.available&&optionConfidence>=PTD_ADVISOR_CONFIDENCE/);
   assert.match(html, /Number\(p\?\.modelConfidence\)>=PTD_COMMAND_CENTER_CONFIDENCE/);
-  assert.match(serviceWorker, /ptd-shell-v21/);
+  assert.match(serviceWorker, /const CACHE='ptd-shell-v\\d+'/);
+  assert.doesNotMatch(serviceWorker, /const CACHE='ptd-shell-v21'/);
 });
 const stccCurrentPlanSource = html.match(/function stccCurrentPlan\(p\)\{[\s\S]*?\n\}/)?.[0] || "";
 function stccCurrentPlanForTest(prediction) {
