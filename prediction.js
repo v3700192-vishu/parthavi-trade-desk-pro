@@ -65,6 +65,28 @@ function tfDirection(tf){
   return explicit||emaDirection||'NEUTRAL';
 }
 
+export function buildTradeTiming(p={}, {marketOpen=p.marketOpen===true,now=Date.now()}={}) {
+  const stamp=Number.isFinite(Date.parse(p.signalBarTime||''))?Date.parse(p.signalBarTime):NaN;
+  const entryAt=Number.isFinite(stamp)?stamp+5*60_000:null;
+  const validUntil=Number.isFinite(stamp)?stamp+10*60_000:null;
+  const expired=validUntil==null||now>=validUntil;
+  const confidence=Number(p.modelConfidence)||0;
+  const confidenceTier=confidence>=90?'90%+ • COMMAND CENTER CHECK':confidence>=80?'80%+ • ADVISER CANDIDATE':confidence>=70?'70%+ • CONTRACT SCAN ONLY':'BELOW 70% • WAIT';
+  const hasAction=['CALL','PUT'].includes(String(p.action||'').toUpperCase());
+  const reasons=Array.isArray(p.noTradeReasons)?p.noTradeReasons:[];
+  let status='WAIT • CONFIRMATION REQUIRED';
+  let reason='Wait for a confirmed 5M trigger; confidence alone is not an entry signal.';
+  if(!marketOpen){status='NO TRADE • MARKET CLOSED';reason='The exchange session is closed; no entry window is active.';}
+  else if(!Number.isFinite(stamp)){status='WAIT • VERIFY LIVE CANDLE';reason='A timestamped 5M candle is required before timing can be trusted.';}
+  else if(expired){status='MISSED • SIGNAL EXPIRED';reason='The five-minute entry window has expired. Do not chase this signal; wait for a new setup.';}
+  else if(p.candlesVerified!==true){status='WAIT • VERIFY LIVE CANDLE';reason='A fresh, authenticated completed 5M candle is required before timing can be trusted.';}
+  else if(now<entryAt){status='WAIT • 5M CANDLE NOT CLOSED';reason='Wait for the current five-minute candle to close and for all entry checks to pass.';}
+  else if(p.exchangeTickVerified!==true||p.feedComplete!==true||p.eventSafe!==true||reasons.length>0){status='WAIT • SAFETY GATE BLOCKED';reason=reasons[0]||'Live exchange tick, complete verified feeds, event safety and all risk gates must pass.';}
+  else if(p.signalState!=='CONFIRMED'||!hasAction||p.commandCenterEligible!==true||confidence<90||Number(p.confirmationPct)!==100||p.optionPlan?.available!==true||p.optionPlan?.candidateOnly===true||p.optionPlan?.greekStatus!=='PASS'){status='WAIT • 90% + ALL CHECKS REQUIRED';reason='70% and 80% tiers are analysis candidates only. ENTRY READY needs 90%+, all 11 confirmations, a verified live tick, complete feeds and the selected contract passing Greeks.';}
+  else {status='ENTRY READY';reason='All server-side gates passed. Re-check the live quote and spread immediately before any manual decision.';}
+  return {status,reason,confidenceTier,confidence,signalGeneratedAt:new Date(now).toISOString(),signalBarTime:Number.isFinite(stamp)?new Date(stamp).toISOString():null,entryWindowStart:entryAt==null?null:new Date(entryAt).toISOString(),validUntil:validUntil==null?null:new Date(validUntil).toISOString(),remainingSeconds:validUntil==null?null:Math.max(0,Math.floor((validUntil-now)/1000)),timeframe:'5M',windowMinutes:5,requiresManualReview:true};
+}
+
 function finalTradePlan(prediction, last, atr){
   if(!['BULLISH','BEARISH'].includes(prediction) || !Number.isFinite(last) || !Number.isFinite(atr) || atr<=0){
     return {available:false,direction:'NO TRADE',entry:null,sl:null,target1:null,target2:null,riskPerUnit:null,rr1:null,rr2:null,mode:'WAIT',breakEvenTriggerR:1};
