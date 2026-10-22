@@ -1190,7 +1190,7 @@ app.get('/api/phase11/signal-token',async(req,res)=>{
     const historical=backtestFiveMinute(m5.rows||[]);
     const vixRaw=md?.VIX?.ltp;
     const vix=vixRaw==null||vixRaw===''?NaN:Number(vixRaw);
-    const prediction=buildPrediction({h1:h1.summary,m15:m15.summary,m5:m5.summary,rows5:m5.rows,news:ns,global:gs,events:es,options:opt,marketOpen:true,backtest:historical,vix:Number.isFinite(vix)?vix:null,oi:opt});
+    const prediction=buildPrediction({h1:h1.summary,m15:m15.summary,m5:m5.summary,rows5:m5.rows,rows15:m15.rows,rows60:h1.rows,news:ns,global:gs,events:es,options:opt,marketOpen:true,backtest:historical,vix:Number.isFinite(vix)?vix:null,oi:opt});
     prediction.vwapVerified=!!m5.summary.vwapVerified;
     prediction.vwapSource=m5.summary.vwapSource||null;
     prediction.volumeBenchmark={
@@ -2073,7 +2073,7 @@ app.get('/api/phase10/prediction',async(req,res)=>{
       for(const summary of [h1Summary,m15Summary,m5Summary])summary.candleSource=source;
       const historical=backtestFiveMinute(m5Rows);
       const prediction=buildPrediction({
-        h1:h1Summary,m15:m15Summary,m5:m5Summary,rows5:m5Rows,
+        h1:h1Summary,m15:m15Summary,m5:m5Summary,rows5:m5Rows,rows15:m15Rows,rows60:h1Rows,
         marketOpen:false,vix:null,news:{connected:false,freshCount:0},
         global:{connected:false,freshInputs:0},events:{connected:false,eventSafe:false},
         options:{connected:false},oi:{connected:false},backtest:historical
@@ -2169,7 +2169,7 @@ app.get('/api/phase10/prediction',async(req,res)=>{
       m5.summary.vwapVerified=false;
       m5.summary.vwapSource=null;
     }
-    let prediction=buildPrediction({h1:h1.summary,m15:m15.summary,m5:m5.summary,rows5:m5.rows,news:ns,global:gs,events:es,options:opt,marketOpen,backtest:historical,vix:Number.isFinite(vix)?vix:null,oi:opt});
+    let prediction=buildPrediction({h1:h1.summary,m15:m15.summary,m5:m5.summary,rows5:m5.rows,rows15:m15.rows,rows60:h1.rows,news:ns,global:gs,events:es,options:opt,marketOpen,backtest:historical,vix:Number.isFinite(vix)?vix:null,oi:opt});
     prediction.vwapVerified=!!m5.summary.vwapVerified;
     prediction.vwapSource=m5.summary.vwapSource||null;
     // Directional percentage must come from the calibrated 15M forecast, never the setup score.
@@ -2207,7 +2207,7 @@ app.get('/api/phase10/prediction',async(req,res)=>{
             : 'NO TRADE: selected contract Theta is too high; it is displayed only as a risk-blocked candidate.';
         opt={...opt,delta:selectedDelta,theta:selectedTheta,greeks:selectedGreeks,
           greekRisk:{status:selectedGreekStatus,message:selectedGreekMessage}};
-        const verifiedSelection=buildPrediction({h1:h1.summary,m15:m15.summary,m5:m5.summary,rows5:m5.rows,
+        const verifiedSelection=buildPrediction({h1:h1.summary,m15:m15.summary,m5:m5.summary,rows5:m5.rows,rows15:m15.rows,rows60:h1.rows,
           news:ns,global:gs,events:es,options:opt,marketOpen,backtest:historical,vix:Number.isFinite(vix)?vix:null,oi:opt});
         Object.assign(prediction,verifiedSelection);
         // Refresh from the final forecast after option-flow/Greek inputs are incorporated.
