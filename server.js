@@ -1762,7 +1762,12 @@ async function loadBase5m(symbol){
       const fallbackJob=(async()=>{
         const end=new Date(), start=new Date(end.getTime()-5*86400000);
         const alternate=await loadUpstoxIndexFallback(key,start,end);
-        if(alternate.ok) return alternate.rows;
+        if(alternate.ok){
+          const entry={at:Date.now(),fetchedAt:Date.now(),rows:alternate.rows,source:'UPSTOX_HISTORICAL',baseSource:'UPSTOX_HISTORICAL'};
+          candleCache.set(key,entry);
+          console.log('[CANDLE_CACHE] '+key+' cached independent UPSTOX history rows='+alternate.rows.length);
+          return mergeLiveCandlesIntoCache(key,entry);
+        }
         return await loadCachedOrYahooFallback(key,cached,indexFeedMeta(key).token);
       })();
       candleInflight.set(key,fallbackJob);
@@ -1798,7 +1803,12 @@ async function loadBase5m(symbol){
     }
     // Primary history failed: try the independent provider, then a clearly labelled last resort.
     const alternate=await loadUpstoxIndexFallback(key,start,end);
-    if(alternate.ok) return alternate.rows;
+    if(alternate.ok){
+      const entry={at:Date.now(),fetchedAt:Date.now(),rows:alternate.rows,source:'UPSTOX_HISTORICAL',baseSource:'UPSTOX_HISTORICAL'};
+      candleCache.set(key,entry);
+      console.log('[CANDLE_CACHE] '+key+' cached independent UPSTOX history rows='+alternate.rows.length);
+      return mergeLiveCandlesIntoCache(key,entry);
+    }
     return await loadCachedOrYahooFallback(key,cached,ins.token);
   })();
   candleInflight.set(key,job);
