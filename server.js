@@ -2222,10 +2222,12 @@ app.get('/api/phase10/prediction',async(req,res)=>{
         prediction.reasoning=prediction.noTradeReasons.join(' • ');
       }
     }
-    optionPlan.threshold=70;
+    optionPlan.threshold=70; // setup-score tier; the validated probability is separate.
     optionPlan.directionalConfidence=directionalConfidence;
     const contractDisplayConfidence=directionalConfidence;
-    optionPlan.displayEligible=contractDisplayConfidence>=70&&optionPlan.available===true;
+    const contractSetupScore=Number(prediction.modelConfidence);
+    optionPlan.displayEligible=Number.isFinite(contractSetupScore)&&contractSetupScore>=70&&
+      contractDisplayConfidence!==null&&contractDisplayConfidence>=68&&optionPlan.available===true;
     // This endpoint suggests/analyses contracts only; it never unlocks order placement.
     optionPlan.tradeReady=false;
     prediction.optionPlan=optionPlan;
