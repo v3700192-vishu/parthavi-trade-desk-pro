@@ -1,1 +1,74 @@
-
+{
+    "name":  "parthavi-trade-desk-pro",
+    "version":  "2.1.0-desktop",
+    "private":  true,
+    "type":  "module",
+    "main":  "electron/main.cjs",
+    "scripts":  {
+                    "start":  "node --max-old-space-size=320 server.js",
+                    "desktop:start":  "electron .",
+                    "desktop:build":  "electron-builder --win --x64",
+                    "test":  "node --test tests/*.test.js",
+                    "check":  "node --check candlePatterns.js && node --check server.js \u0026\u0026 node --check marketDataProviders.js \u0026\u0026 node --check angelone.js \u0026\u0026 node --check liveIndexCandles.js \u0026\u0026 node --check fusion.js \u0026\u0026 node --check phase12.js \u0026\u0026 node --check forwardForecast.js \u0026\u0026 node --check prediction.js \u0026\u0026 node --check riskGuard.js \u0026\u0026 node --check marketFreshness.js \u0026\u0026 node --check marketCalendar.js \u0026\u0026 node --check angelSessionVault.js \u0026\u0026 node --check contractAnalysis.js \u0026\u0026 node --check predictionReport.js \u0026\u0026 node --check electron/main.cjs \u0026\u0026 node --check public/sw.js \u0026\u0026 node --check public/mobile-haptics.js"
+                },
+    "dependencies":  {
+                         "dotenv":  "^16.4.7",
+                         "express":  "^4.21.2",
+                         "smartapi-javascript":  "^1.0.27",
+                         "address":  "^2.0.3"
+                     },
+    "devDependencies":  {
+                            "electron":  "44.6.0",
+                            "electron-builder":  "26.15.3"
+                        },
+    "build":  {
+                  "appId":  "com.parthavi.tradedesk.pro",
+                  "productName":  "PARTHAVI Trade Desk Pro",
+                  "directories":  {
+                                      "output":  "dist-desktop"
+                                  },
+                  "asar":  false,
+                  "files":  [
+                                "electron/**/*",
+                                "server.js",
+                                "marketDataProviders.js",
+                                "angelone.js",
+                                "liveIndexCandles.js",
+                                "candlePatterns.js",
+                                "fusion.js",
+                                "phase12.js",
+                                "forwardForecast.js",
+                                "prediction.js",
+                                "riskGuard.js",
+                                "marketFreshness.js",
+                                "marketCalendar.js",
+                                "angelSessionVault.js",
+                                "contractAnalysis.js",
+                                "predictionReport.js",
+                                "data/**/*",
+                                "public/**/*",
+                                "package.json",
+                                ".env.example"
+                            ],
+                  "win":  {
+                              "target":  [
+                                             {
+                                                 "target":  "nsis",
+                                                 "arch":  [
+                                                              "x64"
+                                                          ]
+                                             }
+                                         ],
+                              "artifactName":  "PARTHAVI-Trade-Desk-Pro-${version}-${arch}.${ext}"
+                          },
+                  "nsis":  {
+                               "oneClick":  false,
+                               "perMachine":  false,
+                               "allowToChangeInstallationDirectory":  true,
+                               "createDesktopShortcut":  true,
+                               "createStartMenuShortcut":  true
+                           }
+              },
+    "description":  "PARTHAVI Trade Desk Pro Windows desktop application",
+    "author":  "PARTHAVI Trade Desk Pro"
+}
