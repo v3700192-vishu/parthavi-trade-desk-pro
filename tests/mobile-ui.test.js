@@ -99,6 +99,8 @@ test("free smart advisor gives a buy recommendation only when every final live g
   assert.match(html, /const strictConfirmed=!marketClosed&&directionalGatePassed&&p\?\.commandCenterEligible===true&&state==='CONFIRMED'/);
   assert.match(html, /p\?\.exchangeTickVerified===true&&p\?\.feedComplete===true/);
   assert.match(html, /const setupScore=Number\(p\?\.modelConfidence\)\|\|0/);
+  assert.match(html, /const rawDirectionalProbability=p\?\.directionalProbability;/);
+  assert.doesNotMatch(html, /directionalProbability\?\?p\?\.directionalConfidence/);
   assert.match(html, /setupScore>=PTD_COMMAND_CENTER_CONFIDENCE/);
   assert.match(html, /NO TRADE • MARKET CLOSED/);
   assert.match(html, /WAIT • CANDIDATE ONLY/);
@@ -278,7 +280,7 @@ test("chart reports stale candle fallback and preserves selected historical day 
 });
 
 test("service-worker cache version is bumped and never caches live API responses", () => {
-  assert.match(serviceWorker, /const CACHE='ptd-shell-v39'/);
+  assert.match(serviceWorker, /const CACHE='ptd-shell-v40'/);
   assert.match(serviceWorker, /prediction-report\.html/);
   assert.match(serviceWorker, /if\(u\.pathname\.startsWith\('\/api\/'\)\) return/);
   assert.doesNotMatch(serviceWorker, /const CACHE='ptd-shell-v3[0-6]'/);
