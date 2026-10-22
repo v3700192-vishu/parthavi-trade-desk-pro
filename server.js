@@ -2172,8 +2172,11 @@ app.get('/api/phase10/prediction',async(req,res)=>{
     let prediction=buildPrediction({h1:h1.summary,m15:m15.summary,m5:m5.summary,rows5:m5.rows,news:ns,global:gs,events:es,options:opt,marketOpen,backtest:historical,vix:Number.isFinite(vix)?vix:null,oi:opt});
     prediction.vwapVerified=!!m5.summary.vwapVerified;
     prediction.vwapSource=m5.summary.vwapSource||null;
-    // Keep directional setup confidence separate from the final contract-safety score.
-    const directionalConfidence=Number(prediction.modelConfidence)||0;
+    // Directional percentage must come from the calibrated 15M forecast, never the setup score.
+    // Preserve UNVERIFIED as null rather than coercing it into a numeric probability.
+    const rawDirectionalProbability=prediction.directionalProbability;
+    let directionalConfidence=rawDirectionalProbability==null||rawDirectionalProbability===''||!Number.isFinite(Number(rawDirectionalProbability))
+      ? null : Number(rawDirectionalProbability);
     prediction.directionalConfidence=directionalConfidence;
     prediction.volumeBenchmark={
       ratio10d:futuresVol?.ratio10d??null,source:futuresVol?.source??null,
@@ -2207,6 +2210,11 @@ app.get('/api/phase10/prediction',async(req,res)=>{
         const verifiedSelection=buildPrediction({h1:h1.summary,m15:m15.summary,m5:m5.summary,rows5:m5.rows,
           news:ns,global:gs,events:es,options:opt,marketOpen,backtest:historical,vix:Number.isFinite(vix)?vix:null,oi:opt});
         Object.assign(prediction,verifiedSelection);
+        // Refresh from the final forecast after option-flow/Greek inputs are incorporated.
+        const finalRawDirectionalProbability=prediction.directionalProbability;
+        directionalConfidence=finalRawDirectionalProbability==null||finalRawDirectionalProbability===''||!Number.isFinite(Number(finalRawDirectionalProbability))
+          ? null : Number(finalRawDirectionalProbability);
+        prediction.directionalConfidence=directionalConfidence;
         prediction.vwapVerified=!!m5.summary.vwapVerified;
         prediction.vwapSource=m5.summary.vwapSource||null;
       }else{
