@@ -1047,7 +1047,7 @@ body.chart-fullscreen-open>.app>.bottom{
             <div class="forward-forecast-meta" id="p10ForecastMeta15">Waiting for sufficient past outcomes.</div>
           </div>
         </div>
-        <p class="forward-forecast-note" id="p10ForecastNote">Only validated out-of-sample directional percentages are displayed; setup confluence scores are not probabilities. NIFTY direction does not equal CE/PE profit probability.</p>
+        <p class="forward-forecast-note" id="p10ForecastNote">Historical analogue estimates are shown only when the recent out-of-sample validation gate passes. Setup confluence scores are not probabilities. Not an entry signal or an option-premium win rate.</p>
       </div>
       <div class="setup-tier-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin:10px 0">
         <section class="forward-horizon" aria-live="polite"><div class="forward-horizon-head"><strong>EARLY SETUP · observation only</strong><b id="p10EarlySetupStatus" class="wait">WAIT / MIXED</b></div><p id="p10EarlySetupDetail" class="forward-forecast-meta">Early directional bias; never an entry signal.</p></section>
@@ -2755,7 +2755,7 @@ function renderPredictionPanel(resp){
       if(fsl)fsl.textContent=!levelsAvailable?'WAIT':candidatePreview?Number(optionPlan.stopLoss).toFixed(2):p?.finalPlan?.sl!=null?Number(p.finalPlan.sl).toFixed(2):'—';
       if(ft1)ft1.textContent=!levelsAvailable?'WAIT':candidatePreview?Number(optionPlan.target1).toFixed(2):p?.finalPlan?.target1!=null?Number(p.finalPlan.target1).toFixed(2):'—';
       if(ft2)ft2.textContent=!levelsAvailable?'WAIT':candidatePreview?Number(optionPlan.target2).toFixed(2):p?.finalPlan?.target2!=null?Number(p.finalPlan.target2).toFixed(2):'—';
-      if(frr)frr.textContent=candidatePreview?`1:${optionPlan.rr1} / 1:${optionPlan.rr2}`:p?.finalPlan?.rr1!=null?`1:${p.finalPlan.rr1} / 1:${p.finalPlan.rr2}`:'—';
+      if(frr)frr.textContent=!levelsAvailable?'WAIT':candidatePreview?`1:${optionPlan.rr1} / 1:${optionPlan.rr2}`:p?.finalPlan?.rr1!=null?`1:${p.finalPlan.rr1} / 1:${p.finalPlan.rr2}`:'—';
       if(fc){
         fc.textContent=finalPlanVisible?String(optionPlan.contract):'WAIT';
         fc.className=finalPlanVisible?(optionPlan.optionType==='PE'?'bearish':'bullish'):'wait';
