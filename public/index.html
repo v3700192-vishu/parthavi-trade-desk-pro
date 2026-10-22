@@ -1683,7 +1683,8 @@ function signalTone(value){
 }
 function paintSignal(id,value){const el=$(id);if(!el)return;el.textContent=value??'WAIT';el.classList.remove('bullish','bearish','neutral');el.classList.add(signalTone(value));}
 function resolveDisplayedH1Trend(decision,h1){
- const out={...(decision||{})}, fast=numericTrendEma(h1?.trendFastEma), slow=numericTrendEma(h1?.trendSlowEma), ema20=numericTrendEma(h1?.ema20), ema50=numericTrendEma(h1?.ema50);
+ const out={...(decision||{})}, asNum=value=>value==null||value===''||!Number.isFinite(Number(value))?null:Number(value);
+ const fast=asNum(h1?.trendFastEma), slow=asNum(h1?.trendSlowEma), ema20=asNum(h1?.ema20), ema50=asNum(h1?.ema50);
  const fastDirection=fast!==null&&slow!==null?(fast>slow?'BULLISH':fast<slow?'BEARISH':null):null;
  const slowDirection=ema20!==null&&ema50!==null?(ema20>ema50?'BULLISH':ema20<ema50?'BEARISH':null):null;
  if(fastDirection&&slowDirection&&fastDirection!==slowDirection){
@@ -1694,10 +1695,6 @@ function resolveDisplayedH1Trend(decision,h1){
    delete out.trend1hReason;
  }
  return out;
-}
-function numericTrendEma(value){
- if(value==null||value===''||!Number.isFinite(Number(value)))return null;
- return Number(value);
 }
 function renderDecision(d){
  d=resolveDisplayedH1Trend(d,d?.multiTf?.h1||d?.h1||{});
@@ -2675,7 +2672,8 @@ function renderPredictionPanel(resp){
   const optionPlan=p?.optionPlan||{};
   const directionalConfidence=Number(p?.directionalConfidence??conf)||0;
   const optionConfidence=directionalConfidence;
-  const finalPlanVisible=!!optionPlan?.available&&optionConfidence>=PTD_FINAL_PLAN_CONFIDENCE;
+  const levelsAvailable=optionPlan.riskPlanAvailable!==false;
+  const finalPlanVisible=!!optionPlan?.available&&optionConfidence>=PTD_FINAL_PLAN_CONFIDENCE&&levelsAvailable;
   const optionVisible=!!optionPlan?.available&&optionConfidence>=PTD_ADVISOR_CONFIDENCE;
   const candidatePreview=finalPlanVisible&&(optionPlan?.candidateOnly===true||!['CONFIRMED','WATCH'].includes(state));
   const pct=p?.confirmationPct;
@@ -2754,9 +2752,9 @@ function renderPredictionPanel(resp){
     if(state==='CONFIRMED' || state==='WATCH' || candidatePreview){
       if(fd){fd.textContent=candidatePreview?`${optionPlan.optionType} CANDIDATE • NO TRADE`:state==='CONFIRMED'?action:displayAction;fd.className=(optionPlan.optionType==='CE'||displayAction==='CALL'||displayAction==='CE WATCH')?'bullish':(optionPlan.optionType==='PE'||displayAction==='PUT'||displayAction==='PE WATCH')?'bearish':'neutral';}
       if(fe)fe.textContent=candidatePreview?Number(optionPlan.entry).toFixed(2):p?.finalPlan?.entry!=null?Number(p.finalPlan.entry).toFixed(2):'—';
-      if(fsl)fsl.textContent=candidatePreview?Number(optionPlan.stopLoss).toFixed(2):p?.finalPlan?.sl!=null?Number(p.finalPlan.sl).toFixed(2):'—';
-      if(ft1)ft1.textContent=candidatePreview?Number(optionPlan.target1).toFixed(2):p?.finalPlan?.target1!=null?Number(p.finalPlan.target1).toFixed(2):'—';
-      if(ft2)ft2.textContent=candidatePreview?Number(optionPlan.target2).toFixed(2):p?.finalPlan?.target2!=null?Number(p.finalPlan.target2).toFixed(2):'—';
+      if(fsl)fsl.textContent=!levelsAvailable?'WAIT':candidatePreview?Number(optionPlan.stopLoss).toFixed(2):p?.finalPlan?.sl!=null?Number(p.finalPlan.sl).toFixed(2):'—';
+      if(ft1)ft1.textContent=!levelsAvailable?'WAIT':candidatePreview?Number(optionPlan.target1).toFixed(2):p?.finalPlan?.target1!=null?Number(p.finalPlan.target1).toFixed(2):'—';
+      if(ft2)ft2.textContent=!levelsAvailable?'WAIT':candidatePreview?Number(optionPlan.target2).toFixed(2):p?.finalPlan?.target2!=null?Number(p.finalPlan.target2).toFixed(2):'—';
       if(frr)frr.textContent=candidatePreview?`1:${optionPlan.rr1} / 1:${optionPlan.rr2}`:p?.finalPlan?.rr1!=null?`1:${p.finalPlan.rr1} / 1:${p.finalPlan.rr2}`:'—';
       if(fc){
         fc.textContent=finalPlanVisible?String(optionPlan.contract):'WAIT';
@@ -2770,7 +2768,7 @@ function renderPredictionPanel(resp){
       if(fn){
         fn.textContent=finalPlanVisible
           ? `${candidatePreview?'Candidate only. ':'Contract candidate. '}Premium Entry ₹${Number(optionPlan.entry).toFixed(2)} • SL ₹${Number(optionPlan.stopLoss).toFixed(2)} • T1 ₹${Number(optionPlan.target1).toFixed(2)} • T2 ₹${Number(optionPlan.target2).toFixed(2)} • R:R 1:${optionPlan.rr1}/1:${optionPlan.rr2}. Delta ${Number(optionPlan.delta).toFixed(3)}, Theta ${Number(optionPlan.theta).toFixed(2)} (${optionPlan.greekStatus||'UNVERIFIED'}). Setup score ${directionalConfidence.toFixed(0)}/100 (not probability); validated direction ${p?.directionalProbability==null?'NOT VALIDATED':Number(p.directionalProbability).toFixed(0)+'%'}. Live execution remains OFF and all failed gates remain NO TRADE.`
-          : 'No contract candidate until the 15M direction estimate and recent out-of-sample hit rate both validate at >=68% with >=30 resolved forecasts. The scanner keeps monitoring; failed gates remain NO TRADE.';
+          : !levelsAvailable?'SL/T1/T2/R:R WAIT — live risk levels are not verified; no trade.':'No contract candidate until the 15M direction estimate and recent out-of-sample hit rate both validate at >=68% with >=30 resolved forecasts. The scanner keeps monitoring; failed gates remain NO TRADE.';
       }
       if(fb)fb.textContent=candidatePreview?'NO TRADE • CANDIDATE ONLY':state==='CONFIRMED'?'CONFIRMED TRADE PLAN':'WATCH • WAIT FOR FINAL GATES';
     }else{
