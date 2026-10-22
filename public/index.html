@@ -2514,7 +2514,7 @@ function renderFreeAdvisor(p,resp={}){
     else checks.textContent=(reasons.slice(0,6).join(' • ')||p?.reasoning||'Waiting for verified market data, fresh exchange tick and all safety gates.');
   }
 }
-function renderForwardForecast(forecast,movement){
+function renderForwardForecast(forecast,movement,decision,marketOpenFlag){
   const status=$('p10ForecastStatus');
   const note=$('p10ForecastNote');
   const horizons=forecast?.horizons||{};
@@ -2573,10 +2573,60 @@ function renderForwardForecast(forecast,movement){
       observed.textContent=freshness+'. '+sessionText+windowsText+(monitor.warning||'');
     }
   }
+  const chartBias=$('p10ChartBias'), chartDirection=$('p10ChartDirection');
+  const chartProbability=$('p10ChartProbability'), chartPrice=$('p10ChartPrice');
+  const chartDrivers=$('p10ChartDrivers'), freshness=$('p10DecisionFreshness');
+  const chartAction=$('p10ChartAction'), actionReason=$('p10ChartActionReason');
+  const entryTime=$('p10ChartEntryTime'), expiryTime=$('p10ChartExpiryTime'), invalidation=$('p10ChartInvalidation');
+  const p=decision||{}, timing=p.tradeTiming||{}, early=p.earlySetup||{}, strong=p.strongSetup||{};
+  const marketOpen=marketOpenFlag===true;
+  const liveFresh=!!movement?.available&&movement?.verified===true&&movement?.dataStatus==='FRESH CANDLE'&&movement?.stale!==true;
+  const horizon=forecast?.horizons?.['15']||{};
+  const up=Number(horizon.probabilities?.up), down=Number(horizon.probabilities?.down), range=Number(horizon.probabilities?.sideways);
+  let bias='NEUTRAL / WAIT', direction='MIXED';
+  if(horizon.available&&horizon.direction==='UPWARD BIAS') {bias='BULLISH';direction='UPWARD BIAS';}
+  else if(horizon.available&&horizon.direction==='DOWNWARD BIAS') {bias='BEARISH';direction='DOWNWARD BIAS';}
+  else if(horizon.available&&horizon.direction==='RANGE / MIXED') {bias='RANGE / MIXED';direction='SIDEWAYS';}
+  if(early.direction==='BULLISH'||early.direction==='BEARISH'){
+    if(horizon.available&&((early.direction==='BULLISH'&&horizon.direction==='DOWNWARD BIAS')||(early.direction==='BEARISH'&&horizon.direction==='UPWARD BIAS'))){bias='CONFLICT — WAIT';direction='INDICATORS DISAGREE';}
+    else if(!horizon.available){bias=early.direction+' (EARLY ONLY)';direction=early.direction+' EARLY BIAS';}
+  }
+  if(chartBias){chartBias.textContent=bias;chartBias.className=(bias.startsWith('BULLISH')?'bullish':bias.startsWith('BEARISH')?'bearish':'wait');}
+  if(chartDirection)chartDirection.textContent=direction;
+  if(chartProbability)chartProbability.textContent=horizon.available&&Number.isFinite(up)&&Number.isFinite(down)&&Number.isFinite(range)?('UP '+up+'% / DOWN '+down+'% / RANGE '+range+'%'):'NO VERIFIED ESTIMATE';
+  if(chartPrice)chartPrice.textContent=movement?.available&&Number.isFinite(Number(movement.latestPrice))?Number(movement.latestPrice).toLocaleString('en-IN',{maximumFractionDigits:2}):'NO CANDLE DATA';
+  if(freshness){freshness.textContent=!marketOpen?'MARKET CLOSED':!liveFresh?'LIVE DATA NOT VERIFIED':'FRESH CANDLE';freshness.className='forward-forecast-badge';}
+  if(chartDrivers){
+    const parts=[];
+    if(p.trend1h)parts.push('1H '+p.trend1h);
+    if(p.setup15m)parts.push('15M '+p.setup15m);
+    if(p.trigger5m)parts.push('5M '+p.trigger5m);
+    if(p.rsi!=null)parts.push('RSI '+Number(p.rsi).toFixed(1));
+    if(p.adx!=null)parts.push('ADX '+Number(p.adx).toFixed(1));
+    if(movement?.available)parts.push('15M move '+(Number(movement.change15m)>0?'+':'')+movement.change15m+' pt');
+    if(horizon.available)parts.push('historical sample '+horizon.sampleSize+' ('+(horizon.sampleQuality||'limited')+')');
+    chartDrivers.textContent=(parts.length?parts.join(' • '):'Chart indicators unavailable.')+' '+(liveFresh?'Live candle verified.':'Historical/unchecked data cannot authorize an entry.');
+  }
+  let recommendation='WAIT — NO TRADE';
+  let why='Wait for fresh chart data and a new confirmed setup.';
+  if(!marketOpen){recommendation='WAIT — MARKET CLOSED';why='The NSE session is closed. Use the chart for review only; no current entry time is active.';}
+  else if(!liveFresh){recommendation='WAIT — VERIFY LIVE FEED';why='The latest chart candle is not verified as fresh. Do not trust a trade time until the live candle/feed is restored.';}
+  else if(timing.status==='ENTRY READY'&&['CALL','PUT'].includes(String(p.action||'').toUpperCase())){recommendation='MANUAL REVIEW — '+p.action;why='Server-side checks report ENTRY READY. Re-check the live quote, spread, stop-loss and risk before any manual order. No order is placed by this panel.';}
+  else if(strong.status==='WATCH'||strong.status==='CONFIRMED'){recommendation='WAIT — SETUP FORMING';why=(Array.isArray(strong.blockers)&&strong.blockers.length?strong.blockers.slice(0,3).join(' '):Array.isArray(p.noTradeReasons)&&p.noTradeReasons.length?p.noTradeReasons.slice(0,3).join(' '):timing.reason||'Wait for all entry gates to pass.')+' Do not chase a missed candle.';}
+  else if(bias==='BULLISH'||bias==='BEARISH'){recommendation='WATCH ONLY — '+bias;why='Direction is an observation, not a confirmed trade. Wait for the 5M trigger and every risk/data gate to pass.';}
+  if(chartAction){chartAction.textContent=recommendation;chartAction.className=recommendation.includes('MANUAL REVIEW')?'bullish':recommendation.includes('BEARISH')?'bearish':'wait';}
+  if(actionReason)actionReason.textContent=why;
+  const now=Date.now(), start=Date.parse(timing.entryWindowStart||''), end=Date.parse(timing.validUntil||'');
+  const hasValidWindow=marketOpen&&liveFresh&&Number.isFinite(start)&&Number.isFinite(end)&&now<end;
+  const fmtIST=value=>{const d=new Date(value);return Number.isNaN(d.getTime())?'—':new Intl.DateTimeFormat('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hour12:true}).format(d)+' IST';};
+  if(entryTime)entryTime.textContent=hasValidWindow?(fmtIST(start)+' — window only'):'NO ENTRY TIME — WAIT';
+  if(expiryTime)expiryTime.textContent=hasValidWindow?fmtIST(end):'No active window';
+  if(invalidation)invalidation.textContent=hasValidWindow?'This is only a candle window, not permission to enter. Cancel if the 5M trigger reverses, live data goes stale, risk/reward fails, or any safety gate is blocked.':(timing.reason||'No valid entry window. Wait for a new, verified 5-minute setup.');
+
 }
 function renderPredictionPanel(resp){
   const p=resp?.prediction||resp||{};
-  renderForwardForecast(p?.forwardForecast,p?.movementDiagnostics);
+  renderForwardForecast(p?.forwardForecast,p?.movementDiagnostics,p,resp?.health?.marketOpen);
   renderFreeAdvisor(p,resp);
   // Keep the Command Center connected to each fresh prediction result. Without this
   // handoff, stccCurrentPlan() reads an empty global and can never surface a signal.
