@@ -381,6 +381,38 @@ test("conflicting declared trend and EMA structure do not force a directional vo
   assert.equal(prediction.action, "NO TRADE");
 });
 
+test("current-session 1H trend cannot pass before the first full hourly candle closes", () => {
+  const prediction = buildPrediction({
+    h1: { trend: "BEARISH", last: 99, ema20: 100, ema50: 101, currentSessionHourConfirmed: false },
+    m15: { trend: "BEARISH", last: 99, ema20: 100, ema50: 101 },
+    m5: { trend: "BEARISH", candle: "BEARISH CANDLE", last: 99, rsi: 40, macd: { hist: -1 }, adx: 25, atr: 2 },
+    rows5: [{ t: new Date(Date.now() - 6 * 60_000).toISOString(), o: 100, h: 101, l: 98, c: 99, v: 100 }],
+    marketOpen: true, vix: 15, news: {}, global: {}, options: {}, events: {}
+  });
+  assert.equal(prediction.trend1h, "NEUTRAL");
+  assert.equal(prediction.currentSessionHourConfirmed, false);
+  assert.equal(prediction.h1TrendStatus, "WAIT - FIRST 1H CANDLE CLOSE");
+  assert.equal(prediction.confirmations.trend, false);
+  assert.ok(prediction.noTradeReasons.some(x => x.includes("current-session 1H candle has not closed")));
+  assert.equal(prediction.action, "NO TRADE");
+});
+
+test("missing current-session 1H data is unavailable, not confirmed", () => {
+  const prediction = buildPrediction({
+    marketOpen: true,
+    h1: { trend: "WAIT", currentSessionHourConfirmed: false, unavailable: true },
+    m15: { trend: "BEARISH", last: 99, ema20: 100, ema50: 101 },
+    m5: { trend: "BEARISH", candle: "BEARISH CANDLE", last: 99, rsi: 40, macd: { hist: -1 }, adx: 25, atr: 2 },
+    rows5: [{ t: new Date(Date.now() - 6 * 60_000).toISOString(), o: 100, h: 101, l: 98, c: 99, v: 100 }],
+    vix: 15, news: {}, global: {}, options: {}, events: {}
+  });
+  assert.equal(prediction.trend1h, "NEUTRAL");
+  assert.equal(prediction.currentSessionHourConfirmed, false);
+  assert.equal(prediction.h1TrendStatus, "WAIT - 1H DATA UNAVAILABLE");
+  assert.ok(prediction.noTradeReasons.some(x => x.includes("verified 1H candle data is unavailable")));
+  assert.equal(prediction.action, "NO TRADE");
+});
+
 test("connected option feed with no valid PCR or OI is not a verified option signal", () => {
   const prediction = buildPrediction({
     h1: { trend: "BEARISH", last: 99, ema20: 100, ema50: 101 },

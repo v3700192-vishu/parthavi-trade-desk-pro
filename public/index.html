@@ -1685,6 +1685,12 @@ function signalTone(value){
 function paintSignal(id,value){const el=$(id);if(!el)return;el.textContent=value??'WAIT';el.classList.remove('bullish','bearish','neutral');el.classList.add(signalTone(value));}
 function resolveDisplayedH1Trend(decision, h1) {
  const out={...(decision||{})}, asNum=value=>value==null||value===''||!Number.isFinite(Number(value))?null:Number(value);
+ if(h1?.currentSessionHourConfirmed===false){
+   out.trend1h='WAIT';
+   out.trend1hReason='The current-session 1H candle is still forming; the prior-session trend is historical only.';
+   out.h1TrendStatus='WAIT - FIRST 1H CANDLE CLOSE';
+   return out;
+ }
  const fast=asNum(h1?.trendFastEma), slow=asNum(h1?.trendSlowEma), ema20=asNum(h1?.ema20), ema50=asNum(h1?.ema50);
  const fastDirection=fast!==null&&slow!==null?(fast>slow?'BULLISH':fast<slow?'BEARISH':null):null;
  const slowDirection=ema20!==null&&ema50!==null?(ema20>ema50?'BULLISH':ema20<ema50?'BEARISH':null):null;
@@ -1711,6 +1717,7 @@ function renderDecision(d){
  const gateList=$('fusionGateList');
  if(gateList){gateList.replaceChildren();const blockers=Array.isArray(d.noTradeReasons)?d.noTradeReasons:[];const display=blockers.length?blockers.slice(0,4):(d.fusion?.hardGate===true?['At least one critical live-data, event, option or risk gate is blocked.']:['Review all live feeds and contract safeguards before acting.']);for(const text of display){const li=document.createElement('li');li.textContent=String(text);gateList.appendChild(li);}}
  const diag=[
+   d.h1TrendStatus&&d.h1TrendStatus!=='CONFIRMED'?`1H ${d.h1TrendStatus}`:'',
    d.vix!=null?`VIX ${Number(d.vix).toFixed(2)}`:'',
    d.adx!=null?`ADX ${Number(d.adx).toFixed(1)}`:'',
    d.volumeRatio10d!=null?`Vol ${Number(d.volumeRatio10d).toFixed(2)}x 10D`:'',
@@ -2633,6 +2640,7 @@ function renderForwardForecast(forecast,movement,decision,marketOpenFlag){
   if(chartDrivers){
     const parts=[];
     if(p.trend1h)parts.push('1H '+p.trend1h);
+    if(p.h1TrendStatus&&p.h1TrendStatus!=='CONFIRMED')parts.push('1H gate '+p.h1TrendStatus);
     if(p.setup15m)parts.push('15M '+p.setup15m);
     if(p.trigger5m)parts.push('5M '+p.trigger5m);
     if(p.rsi!=null)parts.push('RSI '+Number(p.rsi).toFixed(1));
@@ -2650,7 +2658,8 @@ function renderForwardForecast(forecast,movement,decision,marketOpenFlag){
     const summary=['5M','15M','1H'].map(tf=>{
       const a=byTf[tf]||{};
       const items=[...(Array.isArray(a.latestPatterns)?a.latestPatterns:[]),...(Array.isArray(a.chartPatterns)?a.chartPatterns:[])].slice(0,2);
-      return tf+' '+String(a.direction||'UNKNOWN')+(items.length?' — '+items.map(x=>x.name).join('/'):' — no major pattern');
+      const detail=tf+' '+String(a.direction||'UNKNOWN')+(items.length?' — '+items.map(x=>x.name).join('/'):' — no major pattern');
+      return tf==='1H'&&p.currentSessionHourConfirmed!==true?'1H HISTORICAL / WAIT — '+String(a.direction||'UNKNOWN')+(items.length?' — '+items.map(x=>x.name).join('/'):' — no major pattern'):detail;
     }).join(' • ');
     const levelText=(analysis.support!=null?'Support '+Number(analysis.support).toLocaleString('en-IN',{maximumFractionDigits:2}):'Support —')+' / '+(analysis.resistance!=null?'Resistance '+Number(analysis.resistance).toLocaleString('en-IN',{maximumFractionDigits:2}):'Resistance —');
     const votes='Higher-TF pattern adjustment '+String(p.patternTimeframeAdjustment??0)+'; 5M pattern adjustment '+String(analysis.scoreAdjustment??0)+' (bounded confluence points, not probability).';

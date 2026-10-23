@@ -283,7 +283,7 @@ test("chart reports stale candle fallback and preserves selected historical day 
 });
 
 test("service-worker cache version is bumped and never caches live API responses", () => {
-  assert.match(serviceWorker, /const CACHE='ptd-shell-v41'/);
+  assert.match(serviceWorker, /const CACHE='ptd-shell-v42'/);
   assert.match(serviceWorker, /prediction-report\.html/);
   assert.match(serviceWorker, /if\(u\.pathname\.startsWith\('\/api\/'\)\) return/);
   assert.doesNotMatch(serviceWorker, /const CACHE='ptd-shell-v3[0-6]'/);
@@ -426,4 +426,7 @@ test("chart analysis UI shows candle-pattern analysis across 5M, 15M and 1H with
   assert.match(html, /const byTf=p\.chartAnalysisByTimeframe\|\|\{'5M':analysis\}/);
   assert.match(html, /Higher-TF pattern adjustment/);
   assert.match(html, /bounded confluence points, not probability/);
+  assert.ok(html.includes("currentSessionHourConfirmed===false"));
+  assert.ok(html.includes("1H HISTORICAL / WAIT"));
+  assert.ok(html.includes("p.h1TrendStatus"));
 });

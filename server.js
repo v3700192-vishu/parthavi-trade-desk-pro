@@ -1679,8 +1679,20 @@ function aggregateCandles(rows, minutes){
 }
 function dropIncompleteCandle(rows, minutes){
   if(!Array.isArray(rows)||!rows.length) return [];
-  const boundary=bucketStart(new Date(),minutes);
-  return rows.filter(r=>Date.parse(r.t)<boundary);
+  const spanMinutes=Math.max(1,Number(minutes)||1);
+  const boundary=bucketStart(new Date(),spanMinutes);
+  const sessionOpenMinute=9*60+15, sessionCloseMinute=15*60+30;
+  return rows.filter(r=>{
+    const stamp=Date.parse(r?.t);
+    if(!Number.isFinite(stamp)||stamp>=boundary) return false;
+    // NSE/BSE can end with a shortened final bucket (for example, 15:15-15:30).
+    // Never pass that partial bucket off as a completed 1H/30M/4H candle.
+    const ist=new Date(stamp+330*60000);
+    const minuteOfDay=ist.getUTCHours()*60+ist.getUTCMinutes();
+    if(minuteOfDay>=sessionOpenMinute && minuteOfDay<sessionCloseMinute &&
+      minuteOfDay+spanMinutes>sessionCloseMinute) return false;
+    return true;
+  });
 }
 function yahooTicker(symbol){
   const map={NIFTY:'^NSEI',BANKNIFTY:'^NSEBANK',FINNIFTY:'NIFTY_FIN_SERVICE.NS',MIDCPNIFTY:'NIFTY_MID_SELECT.NS',VIX:'^INDIAVIX',SENSEX:'^BSESN'};
@@ -2006,12 +2018,34 @@ async function loadFuturesVolume(symbol){
   try{return await job;}finally{futuresVolumeInflight.delete(key);}
 }
 
+function hasCompleteCurrentSessionHour(baseRows, hourRows, now=Date.now()){
+  const istNow=new Date(now+330*60000);
+  const dayStartUtc=Date.UTC(istNow.getUTCFullYear(),istNow.getUTCMonth(),istNow.getUTCDate())-330*60000;
+  const sessionOpenUtc=dayStartUtc+555*60000; // 09:15 IST
+  const sessionCloseUtc=dayStartUtc+930*60000; // 15:30 IST
+  if(now<sessionOpenUtc+60*60000) return false;
+  const baseTimes=new Set((baseRows||[]).map(r=>Date.parse(r?.t)).filter(Number.isFinite));
+  return (hourRows||[]).some(row=>{
+    const start=Date.parse(row?.t);
+    if(!Number.isFinite(start)||start<sessionOpenUtc||start+60*60000>now||start+60*60000>sessionCloseUtc) return false;
+    // An H1 confirmation requires all twelve completed 5M candles in that hour.
+    for(let offset=0;offset<60;offset+=5) if(!baseTimes.has(start+offset*60000)) return false;
+    return true;
+  });
+}
 async function loadTfSummary(symbol, interval, days){
-  const ins=await resolveIndexToken(symbol); let rows=[];
-  if(interval==='FIVE_MINUTE') rows=dropIncompleteCandle(await loadBase5m(symbol),5);
-  else if(interval==='FIFTEEN_MINUTE') rows=dropIncompleteCandle(aggregateCandles(await loadBase5m(symbol),15),15);
-  else if(interval==='ONE_HOUR') rows=dropIncompleteCandle(aggregateCandles(await loadBase5m(symbol),60),60);
-  else {
+  const ins=await resolveIndexToken(symbol); let rows=[],baseRows=null,currentSessionHourConfirmed=null;
+  if(interval==='FIVE_MINUTE'){
+    baseRows=await loadBase5m(symbol);
+    rows=dropIncompleteCandle(baseRows,5);
+  }else if(interval==='FIFTEEN_MINUTE'){
+    baseRows=await loadBase5m(symbol);
+    rows=dropIncompleteCandle(aggregateCandles(baseRows,15),15);
+  }else if(interval==='ONE_HOUR'){
+    baseRows=dropIncompleteCandle(await loadBase5m(symbol),5);
+    rows=dropIncompleteCandle(aggregateCandles(baseRows,60),60);
+    currentSessionHourConfirmed=hasCompleteCurrentSessionHour(baseRows,rows);
+  }else {
     const end=new Date(), lookbackDays=Math.max(2,Math.min(Number(days)||15,365)), from=new Date(end.getTime()-lookbackDays*86400000);
     const f=x=>{const d=new Date(x),p=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(d),m=Object.fromEntries(p.map(z=>[z.type,z.value]));return m.year+'-'+m.month+'-'+m.day+' '+m.hour+':'+m.minute;};
     rows=candleRows(await angelCandles({exchange:ins.exchange||'NSE',symboltoken:ins.token,interval,fromdate:f(from),todate:f(end)}));
@@ -2022,7 +2056,13 @@ async function loadTfSummary(symbol, interval, days){
     :interval==='ONE_DAY'?Math.max(20,Math.ceil((days||15)*1.2))
     :Math.max(60,Math.ceil((days||10)*75));
   const trimmed=rows.slice(-wanted);
-  return {ins,rows:trimmed,summary:{...summarize(trimmed,interval==='ONE_HOUR'?{trendFast:8,trendSlow:20}:{}),candleSource:candleCache.get(String(symbol||'NIFTY').toUpperCase())?.source||'UNKNOWN'},closed:true};
+  const summary={...summarize(trimmed,interval==='ONE_HOUR'?{trendFast:8,trendSlow:20}:{}),
+    candleSource:candleCache.get(String(symbol||'NIFTY').toUpperCase())?.source||'UNKNOWN'};
+  if(interval==='ONE_HOUR'){
+    summary.currentSessionHourConfirmed=currentSessionHourConfirmed===true;
+    summary.timeframeAsOf=trimmed.at(-1)?.t||null;
+  }
+  return {ins,rows:trimmed,summary,closed:true};
 }
 
 // Chart data bridge: prefer Angel candles, then use the existing verified fallback adapter.
@@ -2096,7 +2136,7 @@ app.get('/api/phase10/prediction',async(req,res)=>{
         backtest:historical,optionBacktest:prediction.optionBacktest,checkedAt:nowISO(),mode:'OFF_SESSION_FAST_PATH'});
     }
     if(!angelStatus().connected){
-      const prediction=buildPrediction({marketOpen});
+      const prediction=buildPrediction({marketOpen,h1:{trend:'WAIT',currentSessionHourConfirmed:false,unavailable:true},m15:{trend:'WAIT'},m5:{trend:'WAIT'},options:{connected:false},news:{connected:false,freshCount:0},global:{connected:false,freshInputs:0},events:{connected:false,eventSafe:false},vix:null});
       prediction.marketOpen=marketOpen;
       prediction.tradeTiming=buildTradeTiming(prediction,{marketOpen,now:Date.now()});
       return res.json({
@@ -2128,7 +2168,7 @@ app.get('/api/phase10/prediction',async(req,res)=>{
       // Historical candles are fetched immediately on a cold app open. Give the broker
       // backfill enough time to return instead of timing out at 2.8s and analysing empty rows.
       // This wait is network latency only; it does not wait for the next 5M/15M candle close.
-      boundedFeed(loadTfSummary(symbol,'ONE_HOUR',45),{rows:[],summary:{trend:'WAIT'}},'candles-1h',12000),
+      boundedFeed(loadTfSummary(symbol,'ONE_HOUR',45),{rows:[],summary:{trend:'WAIT',currentSessionHourConfirmed:false,unavailable:true}},'candles-1h',12000),
       boundedFeed(loadTfSummary(symbol,'FIFTEEN_MINUTE',30),{rows:[],summary:{trend:'WAIT'}},'candles-15m',12000),
       boundedFeed(loadTfSummary(symbol,'FIVE_MINUTE',15),{rows:[],summary:{trend:'WAIT'}},'candles-5m',12000),
       boundedFeed(news(symbol),[],'news'),
@@ -2139,7 +2179,7 @@ app.get('/api/phase10/prediction',async(req,res)=>{
       boundedFeed(loadFuturesVolume(symbol),{ratio10d:null,source:null,benchmarkDays:0,reason:'Futures volume feed timed out'},'futures-volume',18000)
     ]);
     const val=(i,f)=>settled[i]?.status==='fulfilled'?settled[i].value:f;
-    const h1=val(0,{rows:[],summary:{trend:'WAIT'}}), m15=val(1,{rows:[],summary:{trend:'WAIT'}}), m5=val(2,{rows:[],summary:{trend:'WAIT'}});
+    const h1=val(0,{rows:[],summary:{trend:'WAIT',currentSessionHourConfirmed:false,unavailable:true}}), m15=val(1,{rows:[],summary:{trend:'WAIT'}}), m5=val(2,{rows:[],summary:{trend:'WAIT'}});
     const ni=val(3,[]), gd=val(4,{}), ev=val(5,[]), md=val(6,{});
     const ns=analyzeNews(ni), gs=analyzeGlobal(gd), es=analyzeEvents(ev);
     let opt=val(7,{connected:false}), greeks=[];
@@ -2374,7 +2414,7 @@ app.get("/api/analyze",async(req,res)=>{
     if(angelStatus().connected){
       const key=symbol.toUpperCase();
       const [h1,m15,m5,opt,volProxy]=await Promise.all([
-        boundedAnalysisFeed(()=>sharedRefresh('candles:'+key+':1h',()=>loadTfSummary(symbol,'ONE_HOUR',10)),{rows:[],summary:{trend:'WAIT'}},'candles-1h',8000),
+        boundedAnalysisFeed(()=>sharedRefresh('candles:'+key+':1h',()=>loadTfSummary(symbol,'ONE_HOUR',10)),{rows:[],summary:{trend:'WAIT',currentSessionHourConfirmed:false,unavailable:true}},'candles-1h',8000),
         boundedAnalysisFeed(()=>sharedRefresh('candles:'+key+':15m',()=>loadTfSummary(symbol,'FIFTEEN_MINUTE',10)),{rows:[],summary:{trend:'WAIT'}},'candles-15m',8000),
         boundedAnalysisFeed(()=>sharedRefresh('candles:'+key+':5m',()=>loadTfSummary(symbol,'FIVE_MINUTE',10)),{rows:[],summary:{trend:'WAIT'}},'candles-5m',8000),
         boundedAnalysisFeed(()=>sharedRefresh('options:'+key,()=>options(symbol)),{connected:false,error:'Live option feed unavailable'},'options',5000),
@@ -2451,6 +2491,13 @@ app.get("/api/analyze",async(req,res)=>{
   h.options=optionFlowVerified;
   h.optionFlowVerified=optionFlowVerified;
   const noTradeReasons=[];
+  const h1TrendReady=s1?.currentSessionHourConfirmed===true;
+  const h1TrendVerified=!marketSession() || h1TrendReady;
+  if(marketSession()&&!h1TrendReady) noTradeReasons.push(s1?.unavailable===true||!s1
+    ? 'No Trade: verified 1H candle data is unavailable; refresh broker history before confirming trend.'
+    : s1?.currentSessionHourConfirmed===false
+      ? 'No Trade: the current-session 1H trend is unconfirmed; wait until the first full hourly candle closes at 10:15 IST.'
+      : 'No Trade: verified 1H candle data is unavailable; refresh broker history before confirming trend.');
   if(marketSession() && !exchangeTickVerified) noTradeReasons.push('No Trade: fresh exchange-timestamped WebSocket tick is unavailable.');
   if(!candlesFresh) noTradeReasons.push('No Trade: latest completed 5-minute candle is stale or unavailable.');
   else if(!candleSourceVerified) noTradeReasons.push('No Trade: technical candles are from an unverified, fallback, or stale source.');
@@ -2465,7 +2512,7 @@ app.get("/api/analyze",async(req,res)=>{
   else if(eventStrat.unverifiedHighImpact) noTradeReasons.push('No Trade: a high-impact event has no verified timestamp.');
   else if(eventStrat.eventDayBlock||eventStrat.hardBlock) noTradeReasons.push(eventStrat.reason);
   let action='NO TRADE',reason='Live Angel One connection is required before indicator analysis can run.',score=0,confidence='LOCKED';
-  let trend=s1?.trend||'WAIT',setup=s15?.trend||'WAIT',trigger=s5?.candle||'WAIT';
+  let trend=marketSession()&&s1?.currentSessionHourConfirmed===false?'WAIT':s1?.trend||'WAIT',setup=s15?.trend||'WAIT',trigger=s5?.candle||'WAIT';
   const bullishVotes=[trend==='BULLISH',setup==='BULLISH',['BULLISH CANDLE','BULLISH ENGULFING','HAMMER'].includes(String(trigger||'')),s5?.rsi>50,s5?.macd?.hist>0,s5?.last!=null&&s5?.vwap!=null&&s5.last>s5.vwap].filter(Boolean).length;
   const bearishVotes=[trend==='BEARISH',setup==='BEARISH',['BEARISH CANDLE','BEARISH ENGULFING','SHOOTING STAR'].includes(String(trigger||'')),s5?.rsi<50,s5?.macd?.hist<0,s5?.last!=null&&s5?.vwap!=null&&s5.last<s5.vwap].filter(Boolean).length;
   const voteDenom=Math.max(1,bullishVotes+bearishVotes);
@@ -2477,13 +2524,14 @@ app.get("/api/analyze",async(req,res)=>{
     : null;
   score=Math.round(Math.abs(fused.score)); confidence=h.market?(score>=67?'SETUP':score>=45?'WATCH':'WAIT'):'LOCKED';
   if(h.market) reason=`Technical confluence ${Math.round(Math.abs(techSigned))} â€¢ News ${newsStrat.bias} â€¢ Global ${globalStrat.bias}. ${eventStrat.reason}`;
-  const complete=marketSession()&&exchangeTickVerified&&h.market&&optionFlowVerified&&hasVerifiedVolume&&greeksVerified&&greekRisk.status==='PASS'&&newsStrat.connected&&globalStrat.connected&&eventStrat.eventSafe===true&&!eventStrat.unverifiedHighImpact&&!eventStrat.hardBlock&&!eventStrat.eventDayBlock&&Number.isFinite(vix)&&vix>=12&&vix<=22;
+  const complete=marketSession()&&h1TrendVerified&&exchangeTickVerified&&h.market&&optionFlowVerified&&hasVerifiedVolume&&greeksVerified&&greekRisk.status==='PASS'&&newsStrat.connected&&globalStrat.connected&&eventStrat.eventSafe===true&&!eventStrat.unverifiedHighImpact&&!eventStrat.hardBlock&&!eventStrat.eventDayBlock&&Number.isFinite(vix)&&vix>=12&&vix<=22;
   fused.hardGate=!complete||noTradeReasons.length>0;
   if(complete && score>=67 && noTradeReasons.length===0){action=fused.direction==='BULLISH'?'CALL':fused.direction==='BEARISH'?'PUT':'NO TRADE';}
   else {action='NO TRADE'; if(noTradeReasons.length) reason=noTradeReasons.join(' â€¢ '); else if(!marketSession()) reason='Exchange session is closed. No live trade is permitted.'; else if(!eventStrat.eventSafe) reason=eventStrat.reason; else if(!greeksVerified||greekRisk.status!=='PASS') reason=greekRisk.message; else if(!newsStrat.connected||!globalStrat.connected) reason='News/global feeds are not verified fresh. Final decision stays locked.'; else if(!h.options) reason='Option positioning feed is not verified. Final options decision stays locked.';}
   const last=s5?.last||s15?.last||s1?.last; const atr=s5?.atr; const levels={r2:s15?.last&&s15?.atr?(s15.last+s15.atr*2).toFixed(2):'â€”',r1:s15?.last&&s15?.atr?(s15.last+s15.atr).toFixed(2):'â€”',vwap:s15?.vwap?.toFixed?.(2)||'â€”',s1:s15?.last&&s15?.atr?(s15.last-s15.atr).toFixed(2):'â€”',s2:s15?.last&&s15?.atr?(s15.last-s15.atr*2).toFixed(2):'â€”'};
   const bp=action==='CALL'?{direction:'CALL',strike:'',entry:last||'',sl:atr&&last?(last-atr*1.2).toFixed(2):'',t1:atr&&last?(last+atr*1.5).toFixed(2):'',t2:atr&&last?(last+atr*2.5).toFixed(2):''}:action==='PUT'?{direction:'PUT',strike:'',entry:last||'',sl:atr&&last?(last+atr*1.2).toFixed(2):'',t1:atr&&last?(last-atr*1.5).toFixed(2):'',t2:atr&&last?(last-atr*2.5).toFixed(2):''}:{direction:'CALL',strike:'',entry:'',sl:'',t1:'',t2:''};
-  res.json({health:{...h,news:newsStrat.connected,global:globalStrat.connected},marketData:md||{},decision:{action,score,confidence,fusionScore:fused.score,fusionDirection:fused.direction,technicalScore:techSigned,technicalConfluence:Math.round(Math.abs(techSigned)),momentum5m,rr:action==='CALL'||action==='PUT'?'1:2+':'â€”',reason,greeks:selectedGreek?{strike:selectedGreek.strike,optionType:selectedGreek.optionType,delta:selectedGreek.delta,theta:selectedGreek.theta,iv:selectedGreek.iv}:null,greekRisk,trend1h:trend,setup15m:setup,trigger5m:trigger,ema:s5?`20 ${s5.ema20?.toFixed(2)||'â€”'} / 50 ${s5.ema50?.toFixed(2)||'â€”'} / 200 ${s5.ema200?.toFixed(2)||'â€”'}`:'WAIT',rsi:s5?.rsi?.toFixed?.(1)||'â€”',macd:s5?`${s5.macd?.hist>0?'BULLISH':'BEARISH'} ${s5.macd?.hist?.toFixed?.(2)||'â€”'}`:'WAIT',adx:s5?.adx?.toFixed?.(1)||'â€”',vwap:s5?.vwap?.toFixed?.(2)||'â€”',priceAction:s5?.candle||'WAIT',volume:hasVerifiedVolume?'LIVE':'WAIT',volumeSource:hasVerifiedVolume?s5.volumeSource:null,atr:s5?.atr?.toFixed?.(2)||'â€”',momentum:s5?.rsi>50?'BULLISH':s5?.rsi<50?'BEARISH':'WAIT',options:h.options?((opt.resistance&&opt.support)?`LIVE â€¢ R ${opt.resistance} / S ${opt.support}`:'LIVE'):'WAIT',news:newsStrat.bias,global:globalStrat.bias,event:!eventStrat.connected?'UNKNOWN':(eventStrat.eventDayBlock||eventStrat.hardBlock||eventStrat.unverifiedHighImpact)?'HIGH RISK':eventStrat.watch?'CAUTION':'SAFE',levels,blueprint:bp,newsStrategy:newsStrat,globalStrategy:globalStrat,eventStrategy:eventStrat,vix:Number.isFinite(vix)?vix:null,volumeRatio10d:Number.isFinite(volumeRatio10d)?volumeRatio10d:null,noTradeReasons,oi:{resistance:opt?.resistance??null,support:opt?.support??null,ceMaxOi:opt?.ceMaxOi??null,peMaxOi:opt?.peMaxOi??null,pcr:opt?.pcr??null},fusion:{score:fused.score,direction:fused.direction,hardGate:fused.hardGate,technicalScore:fused.technicalScore,newsScore:fused.newsScore,globalScore:fused.globalScore}},candles:s5?.rows||null,multiTf:{h1:s1||null,m15:s15||null,m5:s5||null}});
+  const h1TrendStatus=!marketSession()?'MARKET CLOSED':h1TrendReady?'CONFIRMED':s1?.unavailable===true||!s1?'WAIT - 1H DATA UNAVAILABLE':s1?.currentSessionHourConfirmed===false?'WAIT - FIRST 1H CANDLE CLOSE':'WAIT - 1H DATA UNAVAILABLE';
+  res.json({health:{...h,news:newsStrat.connected,global:globalStrat.connected},marketData:md||{},decision:{action,score,confidence,h1TrendStatus,currentSessionHourConfirmed:s1?.currentSessionHourConfirmed===true,fusionScore:fused.score,fusionDirection:fused.direction,technicalScore:techSigned,technicalConfluence:Math.round(Math.abs(techSigned)),momentum5m,rr:action==='CALL'||action==='PUT'?'1:2+':'â€”',reason,greeks:selectedGreek?{strike:selectedGreek.strike,optionType:selectedGreek.optionType,delta:selectedGreek.delta,theta:selectedGreek.theta,iv:selectedGreek.iv}:null,greekRisk,trend1h:trend,setup15m:setup,trigger5m:trigger,ema:s5?`20 ${s5.ema20?.toFixed(2)||'â€”'} / 50 ${s5.ema50?.toFixed(2)||'â€”'} / 200 ${s5.ema200?.toFixed(2)||'â€”'}`:'WAIT',rsi:s5?.rsi?.toFixed?.(1)||'â€”',macd:s5?`${s5.macd?.hist>0?'BULLISH':'BEARISH'} ${s5.macd?.hist?.toFixed?.(2)||'â€”'}`:'WAIT',adx:s5?.adx?.toFixed?.(1)||'â€”',vwap:s5?.vwap?.toFixed?.(2)||'â€”',priceAction:s5?.candle||'WAIT',volume:hasVerifiedVolume?'LIVE':'WAIT',volumeSource:hasVerifiedVolume?s5.volumeSource:null,atr:s5?.atr?.toFixed?.(2)||'â€”',momentum:s5?.rsi>50?'BULLISH':s5?.rsi<50?'BEARISH':'WAIT',options:h.options?((opt.resistance&&opt.support)?`LIVE â€¢ R ${opt.resistance} / S ${opt.support}`:'LIVE'):'WAIT',news:newsStrat.bias,global:globalStrat.bias,event:!eventStrat.connected?'UNKNOWN':(eventStrat.eventDayBlock||eventStrat.hardBlock||eventStrat.unverifiedHighImpact)?'HIGH RISK':eventStrat.watch?'CAUTION':'SAFE',levels,blueprint:bp,newsStrategy:newsStrat,globalStrategy:globalStrat,eventStrategy:eventStrat,vix:Number.isFinite(vix)?vix:null,volumeRatio10d:Number.isFinite(volumeRatio10d)?volumeRatio10d:null,noTradeReasons,oi:{resistance:opt?.resistance??null,support:opt?.support??null,ceMaxOi:opt?.ceMaxOi??null,peMaxOi:opt?.peMaxOi??null,pcr:opt?.pcr??null},fusion:{score:fused.score,direction:fused.direction,hardGate:fused.hardGate,technicalScore:fused.technicalScore,newsScore:fused.newsScore,globalScore:fused.globalScore}},candles:s5?.rows||null,multiTf:{h1:s1||null,m15:s15||null,m5:s5||null}});
 });
 
 app.post("/api/order",(req,res)=>res.status(423).json({ok:false,error:"USE_PHASE5_PREVIEW",message:"Phase 5 uses /api/order/preview then explicit /api/order/execute confirmation."}));
@@ -2501,5 +2549,18 @@ const server=app.listen(PORT,HOST,()=>{
 server.requestTimeout=30000;
 server.headersTimeout=35000;
 server.keepAliveTimeout=5000;
+// Bind a second listener only to the explicitly configured private Tailscale IP.
+// The primary listener remains loopback-only; never bind this service to all interfaces.
+const TAILSCALE_HOST = String(process.env.TAILSCALE_HOST || "").trim();
+let tailscaleServer = null;
+if (TAILSCALE_HOST && TAILSCALE_HOST !== HOST && TAILSCALE_HOST !== "127.0.0.1" && TAILSCALE_HOST !== "localhost") {
+  tailscaleServer = app.listen(PORT, TAILSCALE_HOST, () => {
+    console.log(`PARTHAVI TRADE DESK PRO private Tailscale listener on http://${TAILSCALE_HOST}:${PORT}`);
+  });
+  tailscaleServer.requestTimeout = 30000;
+  tailscaleServer.headersTimeout = 35000;
+  tailscaleServer.keepAliveTimeout = 5000;
+  tailscaleServer.on("error", error => console.error(`[TAILSCALE_LISTENER] bind failed on ${TAILSCALE_HOST}:${PORT}: ${String(error?.message || error)}`));
+}
 process.on("SIGTERM",()=>server.close(()=>process.exit(0)));
 process.on("SIGINT",()=>server.close(()=>process.exit(0)));

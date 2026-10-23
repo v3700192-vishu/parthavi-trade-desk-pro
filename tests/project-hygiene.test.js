@@ -12,7 +12,7 @@ function collectBackupFiles(directory, relativeTo) {
   for (const item of fs.readdirSync(directory, { withFileTypes: true })) {
     const absolute = path.join(directory, item.name);
     if (item.isDirectory()) found.push(...collectBackupFiles(absolute, relativeTo));
-    else if (item.isFile() && /\.bak$/i.test(item.name)) {
+    else if (item.isFile() && /\.bak(?:$|[-_.])/i.test(item.name)) {
       found.push(path.relative(relativeTo, absolute));
     }
   }
@@ -75,6 +75,14 @@ test("cold-start candle backfill does not wait for the next candle close and ali
   assert.ok(serverSource.includes("'candles-5m',12000"),
     "the first historical candle fetch must not silently time out at the old 2.8s limit");
   assert.ok(serverSource.includes("'candles-15m',12000"));
+});
+
+test("legacy analysis waits for a complete current-session 1H candle before passing trend", () => {
+  const serverSource = fs.readFileSync(path.join(projectRoot, "server.js"), "utf8");
+  assert.ok(serverSource.includes("currentSessionHourConfirmed===true"));
+  assert.ok(serverSource.includes("currentSessionHourConfirmed===false?'WAIT'"));
+  assert.ok(serverSource.includes("h1TrendVerified&&exchangeTickVerified"));
+  assert.ok(serverSource.includes("WAIT - FIRST 1H CANDLE CLOSE"));
 });
 
 test("reconnected Angel One bypasses an offline fallback cache immediately", () => {

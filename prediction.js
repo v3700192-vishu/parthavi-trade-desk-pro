@@ -237,7 +237,11 @@ export function buildPrediction({h1,m15,m5,rows5=[],rows15=[],rows60=[],news={},
   x5.volumeBreakout=hasVerifiedVolume&&verifiedVolumeRatio>=1.5;
   x5.volumeUnavailable=!hasVerifiedVolume;
   x5.volumeSource=hasVerifiedVolume?String(m5.volumeSource):null;
-  const h1d=tfDirection(h1), m15d=tfDirection(m15);
+  const h1DataUnavailable=h1?.unavailable===true||!h1;
+  const h1SessionConfirmed=h1?.currentSessionHourConfirmed!==false&&!h1DataUnavailable;
+  // A prior-session hourly trend is background context only; it cannot pass the live-session
+  // trend gate until a full 09:15-10:15 IST candle has closed and its 12 five-minute bars exist.
+  const h1d=marketOpen&&!h1SessionConfirmed?'NEUTRAL':tfDirection(h1), m15d=tfDirection(m15);
   const rsi=n(x5.rsi), adx=n(x5.adx), atr=n(x5.atr), vwap=x5.vwap==null||x5.vwap===''||!Number.isFinite(Number(x5.vwap))?null:Number(x5.vwap), last=n(x5.last);
   const macdHist=n(x5.macd?.hist);
   const vr=n(x5.volumeRatio);
@@ -323,6 +327,9 @@ export function buildPrediction({h1,m15,m5,rows5=[],rows15=[],rows60=[],news={},
 
   const noTradeReasons=[];
   if(!marketOpen) noTradeReasons.push('No Trade: NSE session is closed; live entries and live probabilities are disabled.');
+  if(marketOpen&&!h1SessionConfirmed) noTradeReasons.push(h1DataUnavailable
+    ?'No Trade: verified 1H candle data is unavailable; refresh broker history before confirming trend.'
+    :'No Trade: the current-session 1H candle has not closed; wait until at least 10:15 IST for the first confirmed 1H trend.');
   if(!hasVix) noTradeReasons.push('No Trade: India VIX is not verified live.');
   else if(Number(vix)<SIGNAL_THRESHOLDS.vixMin || Number(vix)>SIGNAL_THRESHOLDS.vixMax) noTradeReasons.push('No Trade: Market is too slow or too volatile.');
   if(!candlesFresh) noTradeReasons.push('No Trade: the latest completed 5-minute candle is stale or unavailable.');
@@ -392,7 +399,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],rows15=[],rows60=[],news={},
     noTradeReasons.push("No Trade: futures volume is " + vr10.toFixed(2) + "x; breakout requires " + SIGNAL_THRESHOLDS.volumeBreakout.toFixed(2) + "x, while continuation needs >=" + SIGNAL_THRESHOLDS.volumeContinuation.toFixed(2) + "x plus aligned 1H/15M/5M trigger, ADX >=" + SIGNAL_THRESHOLDS.adxMin + ", RSI and MACD.");
 
   const confirmations={
-    trend: prediction!=='NEUTRAL' && h1d===prediction,
+    trend: prediction!=='NEUTRAL' && h1SessionConfirmed && h1d===prediction,
     setup: prediction!=='NEUTRAL' && m15d===prediction,
     trigger: prediction==='BULLISH'?bullTrigger:prediction==='BEARISH'?bearTrigger:false,
     momentum: prediction==='BULLISH'?(rsi!=null&&rsi>50&&macdHist!=null&&macdHist>0):(prediction==='BEARISH'?(rsi!=null&&rsi<50&&macdHist!=null&&macdHist<0):false),
@@ -525,7 +532,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],rows15=[],rows60=[],news={},
     candidatePlan,
     modelConfidenceBand:eliteSetup?'COMMAND CENTER READY':advisorMomentumExceptionEligible?'AI ADVISER':contractScanEligible?'CONTRACT SCAN':watchEligible?'WATCH ONLY':'NO TRADE',
     confirmationPct, confirmedCount, confirmationTotal:required.length,
-    confirmations, trend1h:h1d, setup15m:m15d, trigger5m:String(m5?.candle||'WAIT'), optionFlowConflict,
+    confirmations, trend1h:h1d, h1TrendStatus:!marketOpen?'MARKET CLOSED':h1SessionConfirmed?'CONFIRMED':h1DataUnavailable?'WAIT - 1H DATA UNAVAILABLE':'WAIT - FIRST 1H CANDLE CLOSE', currentSessionHourConfirmed:h1SessionConfirmed, setup15m:m15d, trigger5m:String(m5?.candle||'WAIT'), optionFlowConflict,
     volumeRatio:vr, volumeRatio10d:vr10, volumeBreakout:!!x5.volumeBreakout, volumeSource:x5.volumeSource||null, volumeUnavailable:!hasVerifiedVolume, candleAgeMinutes, candlesFresh, candlesVerified, candleSource, futureCandleTimestamp, optionDataVerified:optionFlowVerified, eventCalendarConnected:!!events?.connected, eventTimestampsVerified:!events?.unverifiedTimes, eventSafetyStatus, eventSafe, rsi, adx, atr, vwap, last, vix:hasVix?Number(vix):null, delta:hasGreeks?delta:null, theta:hasGreeks?theta:null, greekRisk:options?.greekRisk||null, oi:oi||null, noTradeReasons, rrGate:'1:2 MINIMUM',
     finalPlan:plan,
     signalBarTime:rows5?.at?.(-1)?.t||null,
