@@ -2794,7 +2794,8 @@ function renderPredictionPanel(resp){
   renderP10OpportunityCount();
   recordP10Opportunity(p);
 
-  // Final Plan starts at 70%; Advisor at 80%; Command Center at 90%, all under independent live safety gates.
+  // Final Plan scans from 70/100 setup score; this is not a win probability and cannot bypass validation or risk gates.
+  const finalPlanBlockers=Array.isArray(p?.noTradeReasons)?p.noTradeReasons.filter(Boolean):[];
   try{
     const fd=$('finalPlanDirection'), fc=$('finalPlanContract'), fm=$('finalPlanContractMeta');
     const fe=$('finalPlanEntry'), fsl=$('finalPlanSL'), ft1=$('finalPlanT1'), ft2=$('finalPlanT2'), frr=$('finalPlanRR'), fn=$('finalPlanNote'), fb=$('finalPlanBar');
@@ -2823,10 +2824,14 @@ function renderPredictionPanel(resp){
     }else{
       if(fd){fd.textContent='NO TRADE';fd.className='neutral';}
       if(fc){fc.textContent='—';fc.className='neutral';}
-      if(fm)fm.textContent='Live option premium target band ₹25–₹50';
+      if(fm)fm.textContent=setupScore>=PTD_FINAL_PLAN_CONFIDENCE
+        ? `Setup score ${setupScore.toFixed(0)}/100 • 70/100 unlocks scan only, not a win probability. Final Trade also requires validated 15M direction, resolved out-of-sample history and all live risk gates.`
+        : 'Live option premium target band ₹25–₹50';
       if(fe)fe.textContent='—'; if(fsl)fsl.textContent='—'; if(ft1)ft1.textContent='—'; if(ft2)ft2.textContent='—'; if(frr)frr.textContent='—';
-      if(fn)fn.textContent='No actionable plan yet. Wait for a directional WATCH/CONFIRMED state.';
-      if(fb)fb.textContent='WAIT • SCANNING';
+      if(fn)fn.textContent=setupScore>=PTD_FINAL_PLAN_CONFIDENCE
+        ? `Setup score ${setupScore.toFixed(0)}/100 reached the scan tier, but FINAL TRADE is blocked. ${finalPlanBlockers.slice(0,3).join(' ')||p?.tradeTiming?.reason||p?.reasoning||'Required validation or safety checks remain incomplete.'} No entry is authorized until every gate passes.`
+        : 'No actionable plan yet. Wait for a directional WATCH/CONFIRMED state; setup score alone does not authorize a trade.';
+      if(fb)fb.textContent=setupScore>=PTD_FINAL_PLAN_CONFIDENCE?'NO TRADE • GATES BLOCKED':'WAIT • SCANNING';
     }
 
     if(optionVisible && optionPlan?.available && optionPlan.candidateOnly!==true && (state==='WATCH'||state==='CONFIRMED')){

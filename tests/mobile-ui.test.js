@@ -425,6 +425,14 @@ test("Phase 10 renders the trade timing and signal-expiry panel", () => {
   assert.match(html, /Setup score \/100: 70 = scan tier • 80 = adviser review • 90\+ = final-gate review/);
 });
 
+test("Final Trade plan explains why a 70/100 setup score is not trade authorization", () => {
+  assert.ok(html.includes("70/100 unlocks scan only, not a win probability."));
+  assert.ok(html.includes("FINAL TRADE is blocked."));
+  assert.ok(html.includes("finalPlanBlockers.slice(0,3).join(' ')"));
+  assert.ok(html.includes("NO TRADE • GATES BLOCKED"));
+  assert.ok(html.includes("all live risk gates"));
+});
+
 test("chart analysis UI shows candle-pattern analysis across 5M, 15M and 1H without presenting it as probability", () => {
   assert.match(html, /id="p10ChartPattern"/);
   assert.match(html, /const byTf=p\.chartAnalysisByTimeframe\|\|\{'5M':analysis\}/);
