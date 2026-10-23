@@ -2612,7 +2612,8 @@ function renderForwardForecast(forecast,movement,decision,marketOpenFlag){
   const chartAction=$('p10ChartAction'), actionReason=$('p10ChartActionReason');
   const entryTime=$('p10ChartEntryTime'), expiryTime=$('p10ChartExpiryTime'), invalidation=$('p10ChartInvalidation');
   const p=decision||{}, timing=p.tradeTiming||{}, early=p.earlySetup||{}, strong=p.strongSetup||{};
-  const marketOpen=marketOpenFlag===true;
+  // The server's /api/status response is authoritative; prediction payload flags may lag.
+  const marketOpen=typeof window.__ptdExchangeSessionOpen==='boolean'?window.__ptdExchangeSessionOpen:marketOpenFlag===true;
   const liveFresh=!!movement?.available&&movement?.verified===true&&movement?.dataStatus==='FRESH CANDLE'&&movement?.stale!==true;
   const horizon=forecast?.horizons?.['15']||{};
   const up=Number(horizon.probabilities?.up), down=Number(horizon.probabilities?.down), range=Number(horizon.probabilities?.sideways);
@@ -2676,11 +2677,23 @@ function renderForwardForecast(forecast,movement,decision,marketOpenFlag){
 }
 function renderPredictionPanel(resp){
   const p=resp?.prediction||resp||{};
-  renderForwardForecast(p?.forwardForecast,p?.movementDiagnostics,p,resp?.health?.marketOpen??p?.marketOpen);
+  const payloadMarketOpen=resp?.health?.marketOpen??p?.marketOpen;
+  renderForwardForecast(p?.forwardForecast,p?.movementDiagnostics,p,payloadMarketOpen);
   renderFreeAdvisor(p,resp);
   // Keep the Command Center connected to each fresh prediction result. Without this
   // handoff, stccCurrentPlan() reads an empty global and can never surface a signal.
-  window.__lastPrediction={...p,marketOpen:resp?.health?.marketOpen??p?.marketOpen??null,__updatedAt:Date.now()};
+  window.__lastPrediction={...p,marketOpen:payloadMarketOpen??null,__updatedAt:Date.now()};
+  // Independently refresh the exchange session; stale/missing prediction flags must not
+  // leave the chart panel on MARKET CLOSED when the NSE session endpoint says it is open.
+  // This only updates display status. Data freshness and all trade-safety gates remain mandatory.
+  fetch('/api/status?refresh='+Date.now(),{cache:'no-store',headers:{'Cache-Control':'no-cache'}})
+    .then(response=>response.ok?response.json():null)
+    .then(session=>{
+      if(typeof session?.open!=='boolean')return;
+      window.__ptdExchangeSessionOpen=session.open;
+      const latest=window.__lastPrediction;
+      if(latest)renderForwardForecast(latest.forwardForecast,latest.movementDiagnostics,latest,session.open);
+    }).catch(()=>{});
   stccEvaluate(window.__lastPrediction);
   stccRender(stccLoad());
   const bt=resp?.optionBacktest||p?.optionBacktest||resp?.backtest||p?.historical||{};
