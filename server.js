@@ -2095,7 +2095,7 @@ app.get('/api/phase10/prediction',async(req,res)=>{
         greeks:null,greekRisk:{status:'WAIT',message:'Market is closed; live Greeks are not verified.'},
         backtest:historical,optionBacktest:prediction.optionBacktest,checkedAt:nowISO(),mode:'OFF_SESSION_FAST_PATH'});
     }
-    if(!angelStatus().connected){ const prediction=buildPrediction({marketOpen:false}); prediction.tradeTiming=buildTradeTiming(prediction,{marketOpen,now:Date.now()}); return res.json({ok:true,phase:10,locked:true,prediction,optionBacktest:prediction.optionBacktest,message:'Connect Angel One before running live prediction.'}); }
+    if(!angelStatus().connected){ const prediction=buildPrediction({marketOpen}); prediction.tradeTiming=buildTradeTiming(prediction,{marketOpen,now:Date.now()}); return res.json({ok:true,phase:10,locked:true,prediction,optionBacktest:prediction.optionBacktest,message:'Connect Angel One before running live prediction.'}); }
 
     // Start all independent live-feed work together so futures volume and the
     // option chain do not add their network latency after the candle/news scan.
