@@ -36,7 +36,7 @@ test("safety gate and 67-point entry threshold remain mandatory", () => {
 });
 
 test("updated shell cache invalidates the old mobile UI cache", () => {
-  assert.match(sw, /ptd-shell-v42/);
+  assert.match(sw, /ptd-shell-v43/);
 });
 
 test("legacy analysis API bounds slow feeds and fails closed", () => {
