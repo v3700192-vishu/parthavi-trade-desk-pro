@@ -77,6 +77,23 @@ test("cold-start candle backfill does not wait for the next candle close and ali
   assert.ok(serverSource.includes("'candles-15m',12000"));
 });
 
+test("data-health freshness uses the latest completed candle, not a forming 5M candle", () => {
+  const serverSource = fs.readFileSync(path.join(projectRoot, "server.js"), "utf8");
+  const bucket = serverSource.match(/function bucketStart\(ts, minutes\)\s*\{[\s\S]*?\n\}/)?.[0];
+  const drop = serverSource.match(/function dropIncompleteCandle\(rows, minutes, now=new Date\(\)\)\s*\{[\s\S]*?\n\}/)?.[0];
+  assert.ok(bucket && drop, "completed-candle helpers must exist");
+  const filterCompleted = vm.runInNewContext(bucket + "\n" + drop + "\ndropIncompleteCandle");
+  const rows = [
+    { t: "2026-10-23T04:30:00.000Z", o: 100, h: 102, l: 99, c: 101 },
+    { t: "2026-10-23T04:35:00.000Z", o: 101, h: 103, l: 100, c: 102 }
+  ];
+  const completed = filterCompleted(rows, 5, "2026-10-23T04:39:00.000Z");
+  assert.equal(completed.length, 1);
+  assert.equal(completed[0].t, "2026-10-23T04:30:00.000Z");
+  assert.ok(serverSource.includes("const rows=dropIncompleteCandle(sourceRows,5);"),
+    "data-health must assess only completed provider candles");
+});
+
 test("legacy analysis waits for a complete current-session 1H candle before passing trend", () => {
   const serverSource = fs.readFileSync(path.join(projectRoot, "server.js"), "utf8");
   assert.ok(serverSource.includes("currentSessionHourConfirmed===true"));

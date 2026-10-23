@@ -799,7 +799,9 @@ app.get("/api/data-health",(req,res)=>{
   const symbol=String(req.query.symbol||'NIFTY').toUpperCase();
   const session=angelStatus();
   const cache=candleCache.get(symbol)||null;
-  const rows=Array.isArray(cache?.rows)?cache.rows:[];
+  // Health must measure the last completed 5M candle, not the still-forming candle in provider cache.
+  const sourceRows=Array.isArray(cache?.rows)?cache.rows:[];
+  const rows=dropIncompleteCandle(sourceRows,5);
   const last=rows.at(-1)||null;
   const lastAt=last?.t&&Number.isFinite(Date.parse(last.t))?Date.parse(last.t):null;
   // Five-minute source candles are timestamped at open; evaluate freshness from close.
@@ -1677,10 +1679,10 @@ function aggregateCandles(rows, minutes){
   if(cur) out.push(cur);
   return out;
 }
-function dropIncompleteCandle(rows, minutes){
+function dropIncompleteCandle(rows, minutes, now=new Date()){
   if(!Array.isArray(rows)||!rows.length) return [];
   const spanMinutes=Math.max(1,Number(minutes)||1);
-  const boundary=bucketStart(new Date(),spanMinutes);
+  const boundary=bucketStart(now,spanMinutes);
   const sessionOpenMinute=9*60+15, sessionCloseMinute=15*60+30;
   return rows.filter(r=>{
     const stamp=Date.parse(r?.t);
