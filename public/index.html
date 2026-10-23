@@ -2676,7 +2676,7 @@ function renderForwardForecast(forecast,movement,decision,marketOpenFlag){
 }
 function renderPredictionPanel(resp){
   const p=resp?.prediction||resp||{};
-  renderForwardForecast(p?.forwardForecast,p?.movementDiagnostics,p,resp?.health?.marketOpen);
+  renderForwardForecast(p?.forwardForecast,p?.movementDiagnostics,p,resp?.health?.marketOpen??p?.marketOpen);
   renderFreeAdvisor(p,resp);
   // Keep the Command Center connected to each fresh prediction result. Without this
   // handoff, stccCurrentPlan() reads an empty global and can never surface a signal.
