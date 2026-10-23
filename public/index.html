@@ -1029,7 +1029,7 @@ body.chart-fullscreen-open>.app>.bottom{
       </section>
       <div class="forward-forecast" id="p10ForwardForecast" aria-live="polite">
         <div class="forward-forecast-head">
-          <div><strong>Forward outlook • calibrated 5M / 15M direction</strong><small>Directional percentages appear only after the recent out-of-sample validation gate passes.</small></div>
+          <div><strong>Forward outlook • calibrated 5M / 15M direction</strong><small>If validation fails, bars show raw analogue mix only—not calibrated probabilities.</small></div>
           <span class="forward-forecast-badge" id="p10ForecastStatus">WAITING FOR VALIDATION</span>
         </div>
         <div class="forward-forecast-grid">
@@ -2560,12 +2560,15 @@ function renderForwardForecast(forecast,movement,decision,marketOpenFlag){
   const horizons=forecast?.horizons||{};
   const asOf=forecast?.asOf?p10Clock(forecast.asOf):'time unavailable';
   const available=!!forecast?.available;
-  if(status)status.textContent=available?('VALIDATED DIRECTION • '+asOf):(forecast?.historyAvailable?'WAIT • 68% WALK-FORWARD GATE NOT PASSED':'INSUFFICIENT VERIFIED HISTORY');
+  if(status)status.textContent=available?('VALIDATED DIRECTION • '+asOf):(forecast?.historyAvailable?'RAW ANALOGUE MIX • GATE NOT PASSED':'INSUFFICIENT VERIFIED HISTORY');
   for(const minutes of [5,15]){
     const h=horizons[String(minutes)]||{},suffix=String(minutes);
-    const direction=$('p10ForecastDirection'+suffix),meta=$('p10ForecastMeta'+suffix),values=h.probabilities||{};
+    const direction=$('p10ForecastDirection'+suffix),meta=$('p10ForecastMeta'+suffix);
+    const rawValues=h.rawProbabilities||{};
+    const hasRawMix=!!h.historyAvailable&&['up','down','sideways'].every(k=>Number.isFinite(Number(rawValues[k]))&&Number(rawValues[k])>=0)&&Math.round(['up','down','sideways'].reduce((sum,k)=>sum+Number(rawValues[k]),0))===100;
+    const values=h.available?(h.probabilities||{}):(hasRawMix?rawValues:{});
     if(direction){
-      direction.textContent=h.available?(String(h.direction||'RANGE / MIXED')+' • '+String(h.leadingProbability??'—')+'%'):'NO ESTIMATE';
+      direction.textContent=h.available?(String(h.direction||'RANGE / MIXED')+' • '+String(h.leadingProbability??'—')+'%'):(hasRawMix?'RAW MIX ONLY':'NO ESTIMATE');
       direction.className='wait';
       if(h.available&&String(h.direction).includes('UPWARD'))direction.className='up';
       else if(h.available&&String(h.direction).includes('DOWNWARD'))direction.className='down';
@@ -2573,15 +2576,15 @@ function renderForwardForecast(forecast,movement,decision,marketOpenFlag){
     }
     for(const [key,name] of [['up','Up'],['down','Down'],['sideways','Range']]){
       const valueEl=$('p10Forecast'+name+suffix),bar=$('p10ForecastBar'+name+suffix),value=Number(values[key]);
-      if(valueEl)valueEl.textContent=h.available&&Number.isFinite(value)?value+'%':'—';
-      if(bar)bar.style.width=h.available&&Number.isFinite(value)?Math.max(0,Math.min(100,value))+'%':'0%';
+      if(valueEl)valueEl.textContent=(h.available||hasRawMix)&&Number.isFinite(value)?value+'%':'—';
+      if(bar)bar.style.width=(h.available||hasRawMix)&&Number.isFinite(value)?Math.max(0,Math.min(100,value))+'%':'0%';
     }
     if(meta){
-      if(!h.available)meta.textContent=h.reason||'Not enough completed historical outcomes.';
+      if(!h.available)meta.textContent=hasRawMix?('RAW ANALOGUE MIX ONLY • '+h.sampleSize+' similar patterns • NOT VALIDATED. '+(h.reason||'Do not use this mix as trade confidence.')):(h.reason||'Not enough completed historical outcomes.');
       else{const base=h.baseRates||{};meta.textContent='Similar past patterns: '+h.sampleSize+' • '+h.sampleQuality+' sample • Past base rate U/D/R: '+(base.up??'—')+'/'+(base.down??'—')+'/'+(base.sideways??'—')+'%.';}
     }
   }
-  if(note){const calibration=forecast?.calibrationStatus||'Historical pattern estimate; not calibrated.';note.textContent=(forecast?.interpretation||'Forecast unavailable until enough completed candles are loaded.')+' '+calibration+' Not an entry signal or an option-premium win rate.';}
+  if(note){const calibration=forecast?.calibrationStatus||'Historical pattern estimate; not calibrated.';const context=available?(forecast?.interpretation||'Validated directional estimate.'):'Raw UP/DOWN/RANGE shares are diagnostic only, not validated probabilities. The system withholds a trade-grade direction while the walk-forward gate fails.';note.textContent=context+' '+calibration+' Not an entry signal or an option-premium win rate.';}
   const radar=forecast?.largeMoveRadar||{};
   const radarStatus=$('p10MoveRadarStatus');
   if(radarStatus)radarStatus.textContent=radar.available?'HISTORICAL ANALOGUE':'NO ESTIMATE';

@@ -283,7 +283,7 @@ test("chart reports stale candle fallback and preserves selected historical day 
 });
 
 test("service-worker cache version is bumped and never caches live API responses", () => {
-  assert.match(serviceWorker, /const CACHE='ptd-shell-v43'/);
+  assert.match(serviceWorker, /const CACHE='ptd-shell-v44'/);
   assert.match(serviceWorker, /prediction-report\.html/);
   assert.match(serviceWorker, /if\(u\.pathname\.startsWith\('\/api\/'\)\) return/);
   assert.doesNotMatch(serviceWorker, /const CACHE='ptd-shell-v3[0-6]'/);
@@ -398,6 +398,10 @@ test("Phase 10 shows forward 5M/15M probabilities separately from setup confluen
   assert.match(html, /Setup confluence score • not probability/);
   assert.match(html, /historical analogue estimates/i);
   assert.match(html, /Not an entry signal or an option-premium win rate/);
+  assert.ok(html.includes("RAW ANALOGUE MIX • GATE NOT PASSED"), "show the diagnostic mix while keeping the validation gate visible");
+  assert.ok(html.includes("RAW MIX ONLY"), "an unvalidated mix must never be labelled as a validated direction");
+  assert.ok(html.includes("hasRawMix?rawValues:{}"), "raw shares render only when history exists and percentages normalize");
+  assert.ok(html.includes("Raw UP/DOWN/RANGE shares are diagnostic only, not validated probabilities."));
 });
 
 test("Phase 10 has a chart-only action panel with direction, guarded timing and invalidation", () => {
