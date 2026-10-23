@@ -257,6 +257,10 @@ function exchangeSessionOpen(exchange='NSE'){
   const x=istParts(), date=`${x.year}-${x.month}-${x.day}`, day=x.weekday, mins=Number(x.hour)*60+Number(x.minute);
   if(['Sat','Sun'].includes(day) || mins<555 || mins>=940) return false;
   const ex=String(exchange||'NSE').toUpperCase();
+  // A verified, date-scoped regular-session override prevents stale holiday config from falsely closing NSE.
+  // Weekend and regular-session time boundaries above remain hard gates; live-data/trade gates are unchanged.
+  const configuredOpenDays=new Set(String(process.env.NSE_OPEN_DAYS_IST||'').split(',').map(x=>x.trim()).filter(x=>/^\\d{4}-\\d{2}-\\d{2}$/.test(x)));
+  if(ex==='NSE' && configuredOpenDays.has(date)) return true;
   const extra=configuredHolidays();
   if(ex==='NSE' && (NSE_HOLIDAYS_2026.has(date)||extra.has(date))) return false;
   if(ex==='BSE'){
