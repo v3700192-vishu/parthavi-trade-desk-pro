@@ -259,7 +259,7 @@ function exchangeSessionOpen(exchange='NSE'){
   const ex=String(exchange||'NSE').toUpperCase();
   // A verified, date-scoped regular-session override prevents stale holiday config from falsely closing NSE.
   // Weekend and regular-session time boundaries above remain hard gates; live-data/trade gates are unchanged.
-  const configuredOpenDays=new Set(String(process.env.NSE_OPEN_DAYS_IST||'').split(',').map(x=>x.trim()).filter(x=>/^\\d{4}-\\d{2}-\\d{2}$/.test(x)));
+  const configuredOpenDays=new Set(String(process.env.NSE_OPEN_DAYS_IST||'').split(',').map(x=>x.trim()).filter(x=>/^\d{4}-\d{2}-\d{2}$/.test(x)));
   if(ex==='NSE' && configuredOpenDays.has(date)) return true;
   const extra=configuredHolidays();
   if(ex==='NSE' && (NSE_HOLIDAYS_2026.has(date)||extra.has(date))) return false;
