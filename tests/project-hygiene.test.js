@@ -66,10 +66,12 @@ test("cold-start candle backfill does not wait for the next candle close and ali
   // At 10:15 IST a new hourly bar begins, aligned to the exchange session.
   assert.equal(asIso("2026-10-12T04:45:00.000Z", 60), "2026-10-12T04:45:00.000Z");
 
-  assert.ok(serverSource.includes("start=new Date(end.getTime()-5*86400000)"),
-    "index candle history is intentionally capped at five calendar days");
+  assert.ok(serverSource.includes("start=new Date(end.getTime()-29*86400000)"),
+    "index candle history uses a rolling 30-calendar-day lookback");
+  assert.ok(serverSource.includes("?interval=5m&range=1mo"),
+    "Yahoo last-resort fallback also requests a month of five-minute history");
   assert.ok(serverSource.includes("interval==='ONE_HOUR'?{trendFast:8,trendSlow:20}:{}"),
-    "one-hour trend uses a short, explicit EMA pair when the five-day history is limited");
+    "one-hour trend keeps its explicit EMA pair on the aggregated 5-minute history");
   assert.ok(serverSource.includes("'candles-5m',12000"),
     "the first historical candle fetch must not silently time out at the old 2.8s limit");
   assert.ok(serverSource.includes("'candles-15m',12000"));
