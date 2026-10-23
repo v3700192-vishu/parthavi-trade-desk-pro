@@ -75,3 +75,37 @@ export function summarizeContractMetrics(contract = {}, greeks = null) {
   };
   return values;
 }
+
+
+/**
+ * Verify the top-of-book spread from a broker FULL quote.
+ * Missing or malformed depth is UNVERIFIED and must never pass a buyable-contract gate.
+ */
+export function assessOptionQuoteSpread(quote = {}, maxSpreadPct = 1.25) {
+  const depth = quote?.bestFive ?? quote?.depth ?? {};
+  const firstPrice = (side) => {
+    const levels = Array.isArray(side) ? side : [];
+    const level = levels[0];
+    return positiveOrNull(level?.price ?? level?.Price ?? level?.rate ?? level?.Rate);
+  };
+  const bid = firstPrice(depth?.buy ?? depth?.Buy ?? depth?.bids ?? depth?.Bids);
+  const ask = firstPrice(depth?.sell ?? depth?.Sell ?? depth?.asks ?? depth?.Asks);
+  const validSides = bid !== null && ask !== null && ask >= bid;
+  const spreadPoints = validSides ? Number((ask - bid).toFixed(4)) : null;
+  const midpoint = validSides ? (bid + ask) / 2 : null;
+  const spreadPct = midpoint !== null && midpoint > 0
+    ? Number((spreadPoints / midpoint * 100).toFixed(3))
+    : null;
+  const limit = Number.isFinite(Number(maxSpreadPct)) && Number(maxSpreadPct) >= 0
+    ? Number(maxSpreadPct)
+    : 1.25;
+  const spreadStatus = !validSides
+    ? "UNVERIFIED"
+    : spreadPct > limit
+      ? "WIDE"
+      : "PASS";
+  return {
+    bid, ask, spreadPoints, spreadPct, maxSpreadPct: limit, spreadStatus,
+    spreadPass: spreadStatus === "PASS"
+  };
+}

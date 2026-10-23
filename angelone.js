@@ -3,6 +3,7 @@ import address from "address";
 import { createReadStream, statSync } from "node:fs";
 import { Readable } from "node:stream";
 import { exchangeTimestampMs, isFreshExchangeTick } from "./marketFreshness.js";
+import { exchangeSessionOpen } from "./marketCalendar.js";
 import { recordLiveIndexTick } from "./liveIndexCandles.js";
 import { saveSecureRefreshToken, loadSecureRefreshToken, deleteSecureRefreshToken, hasSecureRefreshToken,
   saveSecureFeedToken, loadSecureFeedToken, deleteSecureFeedToken, hasSecureFeedToken } from "./angelSessionVault.js";
@@ -696,8 +697,7 @@ export async function loadMaster(force=false){
   if(!force && masterCache.items.length && Date.now()-masterCache.loadedAt < 6*60*60*1000) return masterCache.items;
   if(masterInflight) return await masterInflight;
 
-  masterInflight=(async()=>{
-    const r=await fetch(MASTER_URL,{headers:{accept:'application/json','user-agent':'PARTHAVI-TRADE-DESK-PRO/2.0'}});
+  masterInflight=(async()=>{    const r=await fetch(MASTER_URL,{headers:{accept:'application/json','user-agent':'PARTHAVI-TRADE-DESK-PRO/2.0'}});
     if(!r.ok) throw new Error(`Instrument master HTTP ${r.status}`);
 
     // Avoid response.json(): parsing the entire multi-MB broker master into a
@@ -797,15 +797,12 @@ function jwtExpiryMs(token){
     const part=String(token||'').split('.')[1];
     if(!part) return 0;
     const json=JSON.parse(Buffer.from(part.replace(/-/g,'+').replace(/_/g,'/'),'base64').toString('utf8'));
-    const exp=Number(json?.exp||0);    return exp>0?exp*1000:0;
+    const exp=Number(json?.exp||0);
+    return exp>0?exp*1000:0;
   }catch{return 0;}
 }
 function marketHoursNow(){
-  const d=new Date();
-  const s=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',weekday:'short',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(d);
-  const m=Object.fromEntries(s.map(x=>[x.type,x.value]));
-  const mins=Number(m.hour)*60+Number(m.minute);
-  return !['Sat','Sun'].includes(m.weekday) && mins>=555 && mins<940;
+  return exchangeSessionOpen('NSE');
 }
 async function refreshSessionTokens(){
   if(refreshPromise) return await refreshPromise;

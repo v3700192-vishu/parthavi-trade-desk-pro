@@ -119,8 +119,14 @@ export async function fetchUpstoxHistoricalCandles({
   }
   if (!key) return { ok: false, provider: "UPSTOX", rows: [], error: `${envKeyName(symbol, role)} not configured` };
   const interval = Number(intervalMinutes);
-  if (!Number.isInteger(interval) || interval < 1 || interval > 300)
-    return { ok: false, provider: "UPSTOX", rows: [], error: "Upstox minute interval must be an integer from 1 to 300" };
+  // V3 supports native hour candles (1-5 hours). The public helper keeps
+  // intervalMinutes for compatibility but maps multiples of 60 to unit=hours.
+  const useHours = Number.isInteger(interval) && interval >= 60 && interval % 60 === 0 && interval / 60 <= 5;
+  const apiUnit = useHours ? "hours" : "minutes";
+  const apiInterval = useHours ? interval / 60 : interval;
+  if (!Number.isInteger(interval) || interval < 1 || interval > 300 ||
+      (interval >= 60 && !useHours && interval !== 60))
+    return { ok: false, provider: "UPSTOX", rows: [], error: "Upstox interval must be 1-59 minutes or 1-5 whole hours expressed as 60-300 minutes" };
   if (typeof fetchImpl !== "function")
     return { ok: false, provider: "UPSTOX", rows: [], error: "Fetch is unavailable in this runtime" };
 
@@ -133,7 +139,7 @@ export async function fetchUpstoxHistoricalCandles({
     return { ok: false, provider: "UPSTOX", rows: [], error: String(error?.message || error).slice(0, 200) };
   }
 
-  const url = `https://api.upstox.com/v3/historical-candle/${encodeURIComponent(key)}/minutes/${interval}/${to}/${from}`;
+  const url = `https://api.upstox.com/v3/historical-candle/${encodeURIComponent(key)}/${apiUnit}/${apiInterval}/${to}/${from}`;
   try {
     const response = await fetchImpl(url, {
       method: "GET",
@@ -151,15 +157,16 @@ export async function fetchUpstoxHistoricalCandles({
     let rows = normalizeUpstoxCandles(payload);
     if (rows.length < 20) throw new Error(`Upstox historical returned only ${rows.length} valid candles; at least 20 required`);
 
-    // Upstox V3 separates historical ranges from today's live-session bars.
-    // Pull today's intraday candles for futures so the same-time volume and
-    // session-VWAP gates never rely on yesterday's closing bar during market hours.
+    // Upstox V3 separates the historical range from today's live-session bars.
+    // Pull today's intraday candles for index charts as well as futures, so an
+    // active index WebSocket cannot coexist with a chart stuck on the last older history bar.
+    // Futures use the same current-session request for verified volume/VWAP gates.
     let intradayRows = 0;
     let intradayError = null;
     const today = istDate(new Date());
-    if (role === "futures" && to === today) {
+    if (to === today) {
       try {
-        const intradayUrl = `https://api.upstox.com/v3/historical-candle/intraday/${encodeURIComponent(key)}/minutes/${interval}`;
+        const intradayUrl = `https://api.upstox.com/v3/historical-candle/intraday/${encodeURIComponent(key)}/${apiUnit}/${apiInterval}`;
         const intradayResponse = await fetchImpl(intradayUrl, {
           method: "GET",
           headers: { Accept: "application/json", Authorization: `Bearer ${token}` },

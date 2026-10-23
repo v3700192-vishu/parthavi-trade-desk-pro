@@ -39,9 +39,29 @@ export function createPredictionReportStore(filePath, { now = () => Date.now() }
   }
   async function saveAll(rows) {
     await fs.mkdir(path.dirname(filePath), { recursive: true });
-    const temp = filePath + "." + process.pid + ".tmp";
-    await fs.writeFile(temp, JSON.stringify(rows, null, 2), "utf8");
-    await fs.rename(temp, filePath);
+    // A unique temp file prevents collisions if a prior server instance left a stale temp behind.
+    const temp = filePath + "." + process.pid + "." + crypto.randomUUID() + ".tmp";
+    await fs.writeFile(temp, JSON.stringify(rows, null, 2), { encoding: "utf8", flag: "wx" });
+    let lastError;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        await fs.rename(temp, filePath);
+        return;
+      } catch (error) {
+        lastError = error;
+        if (!["EPERM", "EACCES", "EBUSY"].includes(error?.code) || attempt === 4) break;
+        await new Promise(resolve => setTimeout(resolve, 75 * (attempt + 1)));
+      }
+    }
+    // Windows security scanners can briefly hold the destination during rename. A direct copy
+    // is a last-resort persistence path; preserve the temp file if even that is denied.
+    try {
+      await fs.copyFile(temp, filePath);
+      await fs.unlink(temp);
+    } catch (copyError) {
+      copyError.cause = lastError;
+      throw copyError;
+    }
   }
   function serial(work) {
     const task = queue.then(work, work);
