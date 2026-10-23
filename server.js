@@ -1684,7 +1684,7 @@ function yahooTicker(symbol){
 }
 async function loadYahoo5m(symbol){
   const ticker=encodeURIComponent(yahooTicker(symbol));
-  const url=`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=5m&range=5d`;
+  const url=`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=5m&range=1mo`;
   const r=await fetch(url,{headers:{accept:'application/json','user-agent':'PARTHAVI-TRADE-DESK-PRO/1.0'},signal:AbortSignal.timeout(10000)});
   if(!r.ok) throw new Error(`Yahoo candle HTTP ${r.status}`);
   const j=await r.json();
@@ -1760,7 +1760,7 @@ async function loadBase5m(symbol){
       // Keep the primary provider in cooldown, but still try the independent provider once.
       // Share this fallback job across concurrent dashboard panels to avoid a new request burst.
       const fallbackJob=(async()=>{
-        const end=new Date(), start=new Date(end.getTime()-5*86400000);
+        const end=new Date(), start=new Date(end.getTime()-29*86400000);
         const alternate=await loadUpstoxIndexFallback(key,start,end);
         if(alternate.ok){
           const entry={at:Date.now(),fetchedAt:Date.now(),rows:alternate.rows,source:'UPSTOX_HISTORICAL',baseSource:'UPSTOX_HISTORICAL'};
@@ -1775,7 +1775,7 @@ async function loadBase5m(symbol){
     }
   }
   const job=(async()=>{
-    const ins=await resolveIndexToken(key), end=new Date(), start=new Date(end.getTime()-5*86400000);
+    const ins=await resolveIndexToken(key), end=new Date(), start=new Date(end.getTime()-29*86400000);
     const f=x=>{const d=new Date(x),p=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(d),m=Object.fromEntries(p.map(z=>[z.type,z.value]));return m.year+'-'+m.month+'-'+m.day+' '+m.hour+':'+m.minute;};
     let rows=[];
     try{
