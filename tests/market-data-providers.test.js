@@ -128,6 +128,32 @@ test("Upstox historical futures fetch resolves the front month dynamically if no
   assert.match(urls[1], /historical-candle\/NSE_FO%7Cfuture123\/minutes\/5/);
 });
 
+test("Upstox V3 uses native hourly endpoints for 1H indicator history", async () => {
+  const urls = [];
+  const now = Date.now();
+  const currentRows = [
+    [new Date(now - 3_600_000).toISOString(), 23000, 23020, 22980, 23010, 5000, 0],
+    [new Date(now - 60_000).toISOString(), 23010, 23025, 22995, 23015, 5200, 0]
+  ];
+  const result = await fetchUpstoxHistoricalCandles({
+    symbol: "NIFTY", role: "index",
+    fromDate: new Date(now - 45 * 86_400_000), toDate: new Date(now),
+    intervalMinutes: 60,
+    env: { UPSTOX_ACCESS_TOKEN: "test-token", UPSTOX_NIFTY_INDEX_KEY: "NSE_INDEX|Nifty 50" },
+    fetchImpl: async (url) => {
+      urls.push(String(url));
+      if (String(url).includes("/historical-candle/intraday/")) {
+        return { ok: true, status: 200, text: async () => JSON.stringify({ status: "success", data: { candles: currentRows } }) };
+      }
+      return { ok: true, status: 200, text: async () => JSON.stringify({ status: "success", data: { candles: candleRows(25) } }) };
+    }
+  });
+  assert.equal(result.ok, true, result.error);
+  assert.equal(result.rows.length >= 25, true);
+  assert.ok(urls.some(url => url.includes("/historical-candle/NSE_INDEX%7CNifty%2050/hours/1/")));
+  assert.ok(urls.some(url => url.includes("/historical-candle/intraday/NSE_INDEX%7CNifty%2050/hours/1")));
+});
+
 test("unconfigured Upstox fallback fails fast without calling the network", async () => {
   let calls = 0;
   const result = await fetchUpstoxHistoricalCandles({
@@ -141,6 +167,34 @@ test("unconfigured Upstox fallback fails fast without calling the network", asyn
   assert.equal(result.ok, false);
   assert.match(result.error, /UPSTOX_ACCESS_TOKEN not configured/);
   assert.equal(calls, 0);
+});
+
+test("Upstox index historical backfill merges current-session V3 intraday candles", async () => {
+  const urls = [];
+  const now = Date.now();
+  const base = Math.floor((now - 12 * 60_000) / (5 * 60_000)) * (5 * 60_000);
+  const currentRows = [0, 5].map((m, i) => [
+    new Date(base + m * 60_000).toISOString(),
+    23000 + i, 23002 + i, 22999 + i, 23001 + i, 0, 0
+  ]);
+  const result = await fetchUpstoxHistoricalCandles({
+    symbol: "NIFTY", role: "index",
+    fromDate: new Date(now - 15 * 86_400_000), toDate: new Date(now),
+    intervalMinutes: 5,
+    env: { UPSTOX_ACCESS_TOKEN: "test-token", UPSTOX_NIFTY_INDEX_KEY: "NSE_INDEX|Nifty 50" },
+    fetchImpl: async (url) => {
+      urls.push(String(url));
+      if (String(url).includes("/historical-candle/intraday/")) {
+        return { ok: true, status: 200, text: async () => JSON.stringify({ status: "success", data: { candles: currentRows } }) };
+      }
+      return { ok: true, status: 200, text: async () => JSON.stringify({ status: "success", data: { candles: candleRows(25) } }) };
+    }
+  });
+  assert.equal(result.ok, true, result.error);
+  assert.equal(result.intradayRows, 2);
+  assert.equal(result.intradayError, null);
+  assert.ok(result.rows.some(row => row.t === new Date(base).toISOString()));
+  assert.ok(urls.some(url => url.includes("/historical-candle/intraday/NSE_INDEX%7CNifty%2050/minutes/5")));
 });
 
 test("Upstox futures historical backfill merges current-session V3 intraday candles", async () => {
