@@ -1,0 +1,7 @@
+{
+  "versionCode": 9,
+  "versionName": "1.5.3",
+  "apkUrl": "https://github.com/v3700192-vishu/parthavi-trade-desk-pro/releases/latest/download/app-render-debug.apk",
+  "releaseUrl": "https://github.com/v3700192-vishu/parthavi-trade-desk-pro/releases/tag/android-v1.5.3-build-35",
+  "notes": "Render edition. Opens the hosted Render web app. The PC edition remains a separate install."
+}
