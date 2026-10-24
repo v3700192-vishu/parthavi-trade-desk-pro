@@ -23,7 +23,7 @@ android {
             dimension "deployment"
             applicationId "com.parthavi.tradedesk"
             buildConfigField "String", "START_URL", '"https://kirankhoradiya.taile3cd6d.ts.net/?source=android_app&mobile=full"'
-            buildConfigField "String", "UPDATE_JSON_URL", '"https://parthavi-trade-desk-pro.onrender.com/app-update.json"'
+            buildConfigField "String", "UPDATE_JSON_URL", '"https://parthavi-trade-desk-pro.onrender.com/app-update-pc.json"'
             manifestPlaceholders = [appName: "PARTHAVI TRADE DESK PRO PC"]
         }
         render {

@@ -1,0 +1,7 @@
+{
+  "versionCode": 0,
+  "versionName": "PC update channel paused",
+  "apkUrl": "https://github.com/v3700192-vishu/parthavi-trade-desk-pro/releases/latest/download/app-pc-debug.apk",
+  "releaseUrl": "https://github.com/v3700192-vishu/parthavi-trade-desk-pro/releases",
+  "notes": "PC edition update channel. PC APK updates are managed separately; this manifest intentionally does not trigger automatic updates."
+}
