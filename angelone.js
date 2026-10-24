@@ -535,7 +535,9 @@ function normalizeUnderlyingName(value){
 // Separate per-index/per-instrument loaders used to download and parse the same
 // large file concurrently, which could exceed Render's 512 MB memory limit.
 async function loadSharedIndexMaster(){
-  if(indexMasterCache.loadedAt && Date.now()-indexMasterCache.loadedAt<15*60*1000) return indexMasterCache.byUnderlying;
+  // The instrument master changes on a daily cadence, not every 15 minutes.
+  // Re-scanning the full broker file churned V8 memory on Render's 512 MiB tier.
+  if(indexMasterCache.loadedAt && Date.now()-indexMasterCache.loadedAt<6*60*60*1000) return indexMasterCache.byUnderlying;
   if(indexMasterInflight) return await indexMasterInflight;
   const job=(async()=>{
     const byUnderlying=new Map([...INDEX_UNDERLYINGS].map(k=>[k,[]]));
@@ -619,7 +621,8 @@ async function loadSharedIndexMaster(){
     if(tail) consume(tail);
     if(![...byUnderlying.values()].some(items=>items.length)) throw new Error('Instrument master contained no supported index futures/options; parsed rows='+parsed);
     indexMasterCache={loadedAt:Date.now(),byUnderlying};
-    console.log('[ANGEL_MASTER] streamed index cache loaded rows='+parsed+' counts='+[...byUnderlying].map(([k,v])=>k+':'+v.length).join(','));
+    const mem=process.memoryUsage();
+    console.log('[ANGEL_MASTER] streamed index cache loaded rows='+parsed+' counts='+[...byUnderlying].map(([k,v])=>k+':'+v.length).join(',')+' rssMb='+Number((mem.rss/1048576).toFixed(1))+' heapUsedMb='+Number((mem.heapUsed/1048576).toFixed(1)));
     return byUnderlying;
   })();
   indexMasterInflight=job;

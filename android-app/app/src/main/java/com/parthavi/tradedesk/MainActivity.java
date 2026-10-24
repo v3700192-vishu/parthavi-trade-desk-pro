@@ -11,6 +11,10 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.graphics.Color;
 import android.net.Uri;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
 import android.os.Build;
 import android.os.Bundle;
 import android.Manifest;
@@ -26,6 +30,7 @@ import android.view.HapticFeedbackConstants;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceError;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -51,11 +56,20 @@ public class MainActivity extends Activity {
     private BroadcastReceiver downloadReceiver;
     private boolean receiverRegistered = false;
     private boolean updateDialogShown = false;
+    private final Handler reconnectHandler = new Handler(Looper.getMainLooper());
+    private Runnable reconnectRunnable;
+    private int reconnectAttempt = 0;
+    private boolean mainFrameLoadFailed = false;
+    private boolean reconnectToastShown = false;
+    private ConnectivityManager connectivityManager;
+    private ConnectivityManager.NetworkCallback connectivityCallback;
+    private String lastMainFrameUrl;
 
     private static final String START_URL = BuildConfig.START_URL;
     private static final String UPDATE_JSON_URL = BuildConfig.UPDATE_JSON_URL;
     private static final String APK_FILE_NAME = "parthavi-trade-desk-pro-update.apk";
     private static final int APP_VERSION_CODE = BuildConfig.VERSION_CODE;
+    private static final long[] RECONNECT_DELAYS_MS = {2000L, 4000L, 8000L, 15000L, 30000L, 60000L};
     private static final int NOTIFICATION_PERMISSION_REQUEST = 701;
     private static final String NOTIFICATION_CHANNEL_ID = "ptd_live_alerts";
 
@@ -102,9 +116,45 @@ public class MainActivity extends Activity {
             }
 
             @Override
+            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                super.onPageStarted(view, url, favicon);
+                if (isWebUrl(url)) lastMainFrameUrl = url;
+            }
+
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                super.onReceivedError(view, request, error);
+                if (request != null && request.isForMainFrame()) {
+                    handleMainFrameLoadFailure(request.getUrl().toString());
+                }
+            }
+
+            @Override
+            public void onReceivedHttpError(WebView view, WebResourceRequest request, android.webkit.WebResourceResponse response) {
+                super.onReceivedHttpError(view, request, response);
+                if (request != null && request.isForMainFrame()) {
+                    int code = response == null ? 0 : response.getStatusCode();
+                    if (code == 408 || code == 429 || code >= 500) {
+                        handleMainFrameLoadFailure(request.getUrl().toString());
+                    }
+                }
+            }
+
+            @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 installHapticClickScript(view);
+                if (!mainFrameLoadFailed && isWebUrl(url)) {
+                    reconnectAttempt = 0;
+                    if (reconnectRunnable != null) {
+                        reconnectHandler.removeCallbacks(reconnectRunnable);
+                        reconnectRunnable = null;
+                    }
+                    if (reconnectToastShown) {
+                        reconnectToastShown = false;
+                        Toast.makeText(MainActivity.this, "Connection restored.", Toast.LENGTH_SHORT).show();
+                    }
+                }
             }
         });
         webView.setWebChromeClient(new WebChromeClient());
@@ -139,6 +189,8 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT
         ));
         setContentView(webView);
+        lastMainFrameUrl = START_URL;
+        registerConnectivityCallback();
         createNotificationChannel();
         requestNotificationPermissionIfNeeded();
 
@@ -149,6 +201,92 @@ public class MainActivity extends Activity {
         }
 
         new Handler(Looper.getMainLooper()).postDelayed(this::checkForUpdate, 3500);
+    }
+
+
+    private boolean isWebUrl(String url) {
+        if (url == null) return false;
+        Uri uri = Uri.parse(url);
+        String scheme = uri.getScheme();
+        return "http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme);
+    }
+
+    private boolean isNetworkAvailable() {
+        try {
+            ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm == null) return false;
+            Network network = cm.getActiveNetwork();
+            if (network == null) return false;
+            NetworkCapabilities caps = cm.getNetworkCapabilities(network);
+            return caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private void registerConnectivityCallback() {
+        try {
+            connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (connectivityManager == null) return;
+            connectivityCallback = new ConnectivityManager.NetworkCallback() {
+                @Override
+                public void onAvailable(Network network) {
+                    super.onAvailable(network);
+                    retryImmediatelyIfNeeded();
+                }
+            };
+            NetworkRequest request = new NetworkRequest.Builder()
+                    .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    .build();
+            connectivityManager.registerNetworkCallback(request, connectivityCallback);
+        } catch (Exception ignored) {
+            // Scheduled retry still works if Android does not allow a network callback.
+        }
+    }
+
+    private void handleMainFrameLoadFailure(String failedUrl) {
+        mainFrameLoadFailed = true;
+        if (isWebUrl(failedUrl)) lastMainFrameUrl = failedUrl;
+        if (!reconnectToastShown) {
+            reconnectToastShown = true;
+            Toast.makeText(this, "Connection interrupted. Reconnecting automatically...", Toast.LENGTH_LONG).show();
+        }
+        scheduleReconnect();
+    }
+
+    private void scheduleReconnect() {
+        if (webView == null || !mainFrameLoadFailed || reconnectRunnable != null) return;
+        int index = Math.min(reconnectAttempt, RECONNECT_DELAYS_MS.length - 1);
+        long delay = RECONNECT_DELAYS_MS[index];
+        reconnectAttempt = Math.min(reconnectAttempt + 1, RECONNECT_DELAYS_MS.length - 1);
+        reconnectRunnable = () -> {
+            reconnectRunnable = null;
+            attemptReconnect();
+        };
+        reconnectHandler.postDelayed(reconnectRunnable, delay);
+    }
+
+    private void retryImmediatelyIfNeeded() {
+        reconnectHandler.post(() -> {
+            if (webView == null || !mainFrameLoadFailed || !isNetworkAvailable()) return;
+            if (reconnectRunnable != null) {
+                reconnectHandler.removeCallbacks(reconnectRunnable);
+                reconnectRunnable = null;
+            }
+            reconnectAttempt = 0;
+            attemptReconnect();
+        });
+    }
+
+    private void attemptReconnect() {
+        if (webView == null || !mainFrameLoadFailed) return;
+        if (!isNetworkAvailable()) {
+            scheduleReconnect();
+            return;
+        }
+        String target = isWebUrl(lastMainFrameUrl) ? lastMainFrameUrl : START_URL;
+        mainFrameLoadFailed = false;
+        webView.loadUrl(target);
     }
 
     private void installHapticClickScript(WebView view) {
@@ -423,6 +561,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        if (mainFrameLoadFailed) retryImmediatelyIfNeeded();
         java.io.File apk = new java.io.File(
                 getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS),
                 APK_FILE_NAME
@@ -449,6 +588,15 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        reconnectHandler.removeCallbacksAndMessages(null);
+        reconnectRunnable = null;
+        if (connectivityManager != null && connectivityCallback != null) {
+            try {
+                connectivityManager.unregisterNetworkCallback(connectivityCallback);
+            } catch (Exception ignored) {
+            }
+            connectivityCallback = null;
+        }
         if (receiverRegistered && downloadReceiver != null) {
             try {
                 unregisterReceiver(downloadReceiver);

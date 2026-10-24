@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { createSharedRefresh } from "./sharedRefresh.js";
 import express from "express";
 import path from "path";
 import crypto from "crypto";
@@ -2371,21 +2372,7 @@ app.get("/api/prediction-report",async(req,res)=>{
   }
 });
 
-const sharedRefreshInflight = new Map();
-function sharedRefresh(key, loader, timeoutMs=15000) {
-  if(sharedRefreshInflight.has(key)) return sharedRefreshInflight.get(key);
-  let timer;
-  const timeout=new Promise((_,reject)=>{
-    timer=setTimeout(()=>reject(new Error('Shared refresh timed out: '+key)),timeoutMs);
-  });
-  const work=Promise.resolve().then(loader);
-  const task=Promise.race([work,timeout]).finally(()=>{
-    clearTimeout(timer);
-    if(sharedRefreshInflight.get(key)===task) sharedRefreshInflight.delete(key);
-  });
-  sharedRefreshInflight.set(key,task);
-  return task;
-}
+const sharedRefresh = createSharedRefresh();
 const marketSnapshotCache = new Map();
 async function loadMarketSnapshot(key, loader) {
   const cached=marketSnapshotCache.get(key);
