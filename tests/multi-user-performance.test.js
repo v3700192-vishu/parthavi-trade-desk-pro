@@ -7,10 +7,10 @@ const refreshModule = fs.readFileSync(new URL('../sharedRefresh.js', import.meta
 const ui = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
 
 test('multi-user requests share concurrent market, news, and global-feed refreshes', () => {
-  assert.match(server, /import \\{ createSharedRefresh \\} from "\\.\\/sharedRefresh\\.js"/);
-  assert.match(server, /const sharedRefresh = createSharedRefresh\\(\\)/);
-  assert.match(refreshModule, /const current = inflight\\.get\\(key\\)/);
-  assert.match(refreshModule, /work\\.then\\(cleanup, cleanup\\)/);
+  assert.ok(server.includes('import { createSharedRefresh } from "./sharedRefresh.js";'));
+  assert.ok(server.includes("const sharedRefresh = createSharedRefresh();"));
+  assert.ok(refreshModule.includes("const current = inflight.get(key);"));
+  assert.ok(refreshModule.includes("work.then(cleanup, cleanup);"));
   assert.match(server, /sharedRefresh\('market:'\+key/);
   assert.match(server, /sharedRefresh\('news:'\+key/);
   assert.match(server, /sharedRefresh\('global-data'/);
