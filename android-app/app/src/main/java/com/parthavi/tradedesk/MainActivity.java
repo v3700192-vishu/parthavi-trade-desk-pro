@@ -52,12 +52,10 @@ public class MainActivity extends Activity {
     private boolean receiverRegistered = false;
     private boolean updateDialogShown = false;
 
-    private static final String START_URL =
-            "https://kirankhoradiya.taile3cd6d.ts.net/?source=android_app&mobile=full";
-    private static final String UPDATE_JSON_URL =
-            "https://parthavi-trade-desk-pro.onrender.com/app-update.json";
+    private static final String START_URL = BuildConfig.START_URL;
+    private static final String UPDATE_JSON_URL = BuildConfig.UPDATE_JSON_URL;
     private static final String APK_FILE_NAME = "parthavi-trade-desk-pro-update.apk";
-    private static final int APP_VERSION_CODE = 8;
+    private static final int APP_VERSION_CODE = BuildConfig.VERSION_CODE;
     private static final int NOTIFICATION_PERMISSION_REQUEST = 701;
     private static final String NOTIFICATION_CHANNEL_ID = "ptd_live_alerts";
 

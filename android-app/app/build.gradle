@@ -7,11 +7,32 @@ android {
     compileSdk 35
 
     defaultConfig {
-        applicationId "com.parthavi.tradedesk"
         minSdk 23
         targetSdk 35
-        versionCode 8
-        versionName "1.5.2"
+        versionCode 9
+        versionName "1.5.3"
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    flavorDimensions "deployment"
+    productFlavors {
+        pc {
+            dimension "deployment"
+            applicationId "com.parthavi.tradedesk"
+            buildConfigField "String", "START_URL", '"https://kirankhoradiya.taile3cd6d.ts.net/?source=android_app&mobile=full"'
+            buildConfigField "String", "UPDATE_JSON_URL", '"https://parthavi-trade-desk-pro.onrender.com/app-update.json"'
+            manifestPlaceholders = [appName: "PARTHAVI TRADE DESK PRO PC"]
+        }
+        render {
+            dimension "deployment"
+            applicationId "com.parthavi.tradedesk.render"
+            buildConfigField "String", "START_URL", '"https://parthavi-trade-desk-pro.onrender.com/?source=android_app&mobile=full"'
+            buildConfigField "String", "UPDATE_JSON_URL", '"https://parthavi-trade-desk-pro.onrender.com/app-update-render.json"'
+            manifestPlaceholders = [appName: "PARTHAVI TRADE DESK PRO Render"]
+        }
     }
 
     buildTypes {
