@@ -2,16 +2,20 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const [pkgText, angel, server, desktop] = await Promise.all([
+const [pkgText, angel, server, desktop, start] = await Promise.all([
   readFile(new URL("../package.json", import.meta.url), "utf8"),
   readFile(new URL("../angelone.js", import.meta.url), "utf8"),
   readFile(new URL("../server.js", import.meta.url), "utf8"),
-  readFile(new URL("../electron/main.cjs", import.meta.url), "utf8")
+  readFile(new URL("../electron/main.cjs", import.meta.url), "utf8"),
+  readFile(new URL("../start.js", import.meta.url), "utf8")
 ]);
 const pkg = JSON.parse(pkgText);
 
-test("Render starts Node with a conservative heap and smaller young generation", () => {
-  assert.equal(pkg.scripts.start, "node --max-old-space-size=192 --max-semi-space-size=8 --expose-gc server.js");
+test("Render starts Node with a conservative heap while local npm start keeps its original cap", () => {
+  assert.equal(pkg.scripts.start, "node start.js");
+  assert.ok(start.includes('["--max-old-space-size=192", "--max-semi-space-size=8", "--expose-gc", "server.js"]'));
+  assert.ok(start.includes('["--max-old-space-size=320", "server.js"]'));
+  assert.ok(start.includes("const isRenderRuntime ="));
 });
 
 test("Render refuses the legacy full instrument-master allocation", () => {

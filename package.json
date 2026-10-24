@@ -5,11 +5,11 @@
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
-    "start": "node --max-old-space-size=192 --max-semi-space-size=8 --expose-gc server.js",
+    "start": "node start.js",
     "desktop:start": "electron .",
     "desktop:build": "electron-builder --win --x64",
     "test": "node --test tests/*.test.js",
-    "check": "node --check candlePatterns.js && node --check server.js && node --check marketDataProviders.js && node --check angelone.js && node --check liveIndexCandles.js && node --check fusion.js && node --check phase12.js && node --check forwardForecast.js && node --check prediction.js && node --check riskGuard.js && node --check marketFreshness.js && node --check marketCalendar.js && node --check angelSessionVault.js && node --check contractAnalysis.js && node --check predictionReport.js && node --check electron/main.cjs && node --check public/sw.js && node --check public/mobile-haptics.js"
+    "check": "node --check start.js && node --check candlePatterns.js && node --check server.js && node --check marketDataProviders.js && node --check angelone.js && node --check liveIndexCandles.js && node --check fusion.js && node --check phase12.js && node --check forwardForecast.js && node --check prediction.js && node --check riskGuard.js && node --check marketFreshness.js && node --check marketCalendar.js && node --check angelSessionVault.js && node --check contractAnalysis.js && node --check predictionReport.js && node --check electron/main.cjs && node --check public/sw.js && node --check public/mobile-haptics.js"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
@@ -30,6 +30,7 @@
     "asar": false,
     "files": [
       "electron/**/*",
+      "start.js",
       "server.js",
       "sharedRefresh.js",
       "marketDataProviders.js",
