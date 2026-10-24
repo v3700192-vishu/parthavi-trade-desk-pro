@@ -5,7 +5,7 @@ import path from "path";
 import crypto from "crypto";
 import { createPredictionReportStore } from "./predictionReport.js";
 import { fileURLToPath } from "url";
-import { angelStatus, loginAngel, logoutAngel, restoreAngelSessionFromVault, ltp as angelLtp, quote as angelQuote, candles as angelCandles, searchScrip as angelSearchScrip, loadMaster, findContracts, findLightContracts, findLightFutures, findInstrumentByToken, subscribe as angelSubscribe, reconnectWebSocket as angelReconnectWebSocket, quoteInstruments, optionGreeks, getLatestTicks, getTickDiagnostics, rms as angelRms, orderBook as angelOrderBook, placeOrder as angelPlaceOrder, cancelOrder as angelCancelOrder, holdings as angelHoldings, allHoldings as angelAllHoldings, positions as angelPositions, tradeBook as angelTradeBook, modifyOrder as angelModifyOrder } from "./angelone.js";
+import { angelStatus, loginAngel, logoutAngel, restoreAngelSessionFromVault, ltp as angelLtp, quote as angelQuote, candles as angelCandles, searchScrip as angelSearchScrip, loadMaster, findContracts, findLightContracts, findLightFutures, findInstrumentByToken, subscribe as angelSubscribe, reconnectWebSocket as angelReconnectWebSocket, quoteInstruments, optionGreeks, getLatestTicks, getTickDiagnostics, trimAngelMemoryCaches, rms as angelRms, orderBook as angelOrderBook, placeOrder as angelPlaceOrder, cancelOrder as angelCancelOrder, holdings as angelHoldings, allHoldings as angelAllHoldings, positions as angelPositions, tradeBook as angelTradeBook, modifyOrder as angelModifyOrder } from "./angelone.js";
 import { getLiveIndexCandles } from "./liveIndexCandles.js";
 import { normalizeNews, analyzeNews, normalizeGlobal, analyzeGlobal, analyzeEvents, fuse } from "./fusion.js";
 import { buildPrediction, buildTradeTiming, backtestFiveMinute } from "./prediction.js";
@@ -18,6 +18,10 @@ import { status as phase11ProtectionStatus, evaluate as phase11Evaluate, onOrder
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const app = express();
+const IS_RENDER_MEMORY_LIMITED_RUNTIME = /^(1|true|yes|on)$/i.test(String(process.env.RENDER||'')) || Boolean(String(process.env.RENDER_SERVICE_ID||'').trim());
+const RENDER_MEMORY_WARN_BYTES = 280 * 1024 * 1024;
+const RENDER_MEMORY_GATE_BYTES = 320 * 1024 * 1024;
+let lastRenderMemoryLogAt = 0;
 
 // Cross-origin access for the static GitHub Pages frontend and configured production frontend.
 const allowedOrigins = new Set(String(process.env.FRONTEND_ORIGINS || "https://v3700192-vishu.github.io,https://parthavi-trade-desk-pro.onrender.com").split(",").map(x=>x.trim()).filter(Boolean));
@@ -60,6 +64,25 @@ app.use((req,res,next)=>{
   }
   next();
 });
+// Render-only fail-safe: preserve health/status access, but stop starting new
+// data-heavy API work well before the container's 512 MiB OOM threshold.
+const MEMORY_SAFE_API_PATHS = new Set([
+  "/api/health", "/api/angel/status", "/api/angel/config-status",
+  "/api/data-health", "/api/phase12/readiness"
+]);
+app.use((req,res,next)=>{
+  if(!IS_RENDER_MEMORY_LIMITED_RUNTIME || !req.path.startsWith("/api/")) return next();
+  const rss=process.memoryUsage().rss;
+  if(rss < RENDER_MEMORY_GATE_BYTES || MEMORY_SAFE_API_PATHS.has(req.path)) return next();
+  return res.status(503).json({
+    ok:false,
+    error:"RENDER_MEMORY_PRESSURE",
+    action:"WAIT / NO TRADE",
+    message:"The Render server is reducing memory pressure. Retry shortly; trading remains blocked while this guard is active.",
+    memory:{rssMiB:Number((rss/1048576).toFixed(1)),guardMiB:320}
+  });
+});
+
 app.use(express.static(path.join(__dirname, "public"), {
   setHeaders(res, filePath){
     if(filePath.endsWith("index.html") || filePath.endsWith("prediction-report.html") || filePath.endsWith("app-update.json")){
@@ -2526,6 +2549,66 @@ app.get("/api/analyze",async(req,res)=>{
 app.post("/api/order",(req,res)=>res.status(423).json({ok:false,error:"USE_PHASE5_PREVIEW",message:"Phase 5 uses /api/order/preview then explicit /api/order/execute confirmation."}));
 
 app.get("*",(req,res)=>res.sendFile(path.join(__dirname,"public","index.html")));
+function trimRenderMemoryCaches(){
+  const now=Date.now();
+  const pruneByAge=(map,ttl)=>{
+    for(const [key,value] of map){
+      const at=Number(value?.at||0);
+      if(at>0 && now-at>ttl) map.delete(key);
+    }
+  };
+  pruneByAge(optionChainCache,30000);
+  pruneByAge(greekCache,60000);
+  pruneByAge(greekFailureCache,60000);
+  pruneByAge(newsCache,300000);
+  pruneByAge(futuresVolumeCache,600000);
+  pruneByAge(marketSnapshotCache,15000);
+  for(const [key,value] of candleCache){
+    if(Array.isArray(value?.rows) && value.rows.length>1500){
+      value.rows=value.rows.slice(-1500);
+    }
+  }
+  for(const [key,value] of candleProviderDiagnostics){
+    const at=Date.parse(String(value?.at||''));
+    if(Number.isFinite(at) && now-at>24*60*60*1000) candleProviderDiagnostics.delete(key);
+  }
+  for(const [key,value] of rateBuckets){
+    const minute=Number(key.slice(key.lastIndexOf(':')+1));
+    if(!Number.isFinite(minute) || Math.floor(now/60000)-minute>1) rateBuckets.delete(key);
+  }
+  while(rateBuckets.size>4000) rateBuckets.delete(rateBuckets.keys().next().value);
+  const trimOldest=(map,max)=>{
+    while(map.size>max) map.delete(map.keys().next().value);
+  };
+  trimOldest(candleCache,8);
+  trimOldest(futuresVolumeCache,8);
+  trimOldest(marketSnapshotCache,6);
+  trimOldest(optionChainCache,6);
+  trimOldest(greekCache,12);
+  trimOldest(greekFailureCache,20);
+  trimOldest(newsCache,6);
+  try{trimAngelMemoryCaches(now);}catch(e){console.warn('[MEMORY_GUARD] Angel cache trim failed:',e?.message||e);}
+  try{trimPreviewStore();}catch{}
+  if(IS_RENDER_MEMORY_LIMITED_RUNTIME && typeof global.gc==='function'){
+    try{global.gc();}catch{}
+  }
+}
+
+if(IS_RENDER_MEMORY_LIMITED_RUNTIME){
+  const memoryMonitor=setInterval(()=>{
+    const before=process.memoryUsage();
+    if(before.rss<RENDER_MEMORY_WARN_BYTES) return;
+    trimRenderMemoryCaches();
+    const after=process.memoryUsage();
+    const now=Date.now();
+    if(now-lastRenderMemoryLogAt>=30000){
+      lastRenderMemoryLogAt=now;
+      console.warn('[MEMORY_GUARD] Render RSS MiB before='+Number((before.rss/1048576).toFixed(1))+' after='+Number((after.rss/1048576).toFixed(1))+' heapUsedMiB='+Number((after.heapUsed/1048576).toFixed(1))+' externalMiB='+Number((after.external/1048576).toFixed(1))+' gateMiB=320');
+    }
+  },5000);
+  memoryMonitor.unref();
+}
+
 const HOST = String(process.env.HOST || "0.0.0.0");
 const server=app.listen(PORT,HOST,()=>{
   console.log(`PARTHAVI TRADE DESK PRO on http://${HOST}:${PORT}`);

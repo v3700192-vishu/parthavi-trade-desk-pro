@@ -5,7 +5,7 @@
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
-    "start": "node --max-old-space-size=320 server.js",
+    "start": "node --max-old-space-size=192 --max-semi-space-size=8 --expose-gc server.js",
     "desktop:start": "electron .",
     "desktop:build": "electron-builder --win --x64",
     "test": "node --test tests/*.test.js",

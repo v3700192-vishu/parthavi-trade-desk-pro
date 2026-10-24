@@ -10,6 +10,10 @@ import { saveSecureRefreshToken, loadSecureRefreshToken, deleteSecureRefreshToke
 
 const { SmartAPI, WebSocketV2 } = SmartApiPackage;
 
+function isRenderMemoryLimitedRuntime(){
+  return /^(1|true|yes|on)$/i.test(String(process.env.RENDER||'')) || Boolean(String(process.env.RENDER_SERVICE_ID||'').trim());
+}
+
 function angelApiKey(){
   return String(process.env.ANGEL_API_KEY || process.env.ANGELONE_API_KEY || '').trim();
 }
@@ -52,6 +56,38 @@ function pruneStaleTicks(now = Date.now()) {
   for (const [token, tick] of latestTicks) {
     if (!isFreshExchangeTick(tick?.data, now)) latestTicks.delete(token);
   }
+}
+
+// Remove only expendable/stale in-memory response caches when the Render runtime
+// approaches its 512 MiB container limit. Never clear authenticated session state,
+// the current index master, or active in-flight requests.
+export function trimAngelMemoryCaches(now = Date.now()) {
+  pruneStaleTicks(now);
+  for (const [key, value] of historicalRequestCache) {
+    if (!value || now - Number(value.at || 0) > 15000) historicalRequestCache.delete(key);
+  }
+  while (historicalRequestCache.size > 12) historicalRequestCache.delete(historicalRequestCache.keys().next().value);
+  for (const [key, value] of optionGreekCache) {
+    if (!value || now - Number(value.at || 0) > 30000) optionGreekCache.delete(key);
+  }
+  while (optionGreekCache.size > 12) optionGreekCache.delete(optionGreekCache.keys().next().value);
+  for (const [token, times] of tickWindows) {
+    if (!latestTicks.has(token) || !Array.isArray(times) || !times.length || now - times[times.length - 1] > 60000) {
+      tickWindows.delete(token);
+    } else if (times.length > 60) {
+      tickWindows.set(token, times.slice(-60));
+    }
+  }
+  while (tickWindows.size > 200) {
+    const token = tickWindows.keys().next().value;
+    tickWindows.delete(token);
+  }
+  return {
+    ticks: latestTicks.size,
+    tickWindows: tickWindows.size,
+    historicalResponses: historicalRequestCache.size,
+    greekResponses: optionGreekCache.size
+  };
 }
 
 export function angelStatus(){
@@ -621,6 +657,9 @@ async function loadSharedIndexMaster(){
     if(tail) consume(tail);
     if(![...byUnderlying.values()].some(items=>items.length)) throw new Error('Instrument master contained no supported index futures/options; parsed rows='+parsed);
     indexMasterCache={loadedAt:Date.now(),byUnderlying};
+    if(isRenderMemoryLimitedRuntime() && typeof global.gc==='function'){
+      try{global.gc();}catch{}
+    }
     const mem=process.memoryUsage();
     console.log('[ANGEL_MASTER] streamed index cache loaded rows='+parsed+' counts='+[...byUnderlying].map(([k,v])=>k+':'+v.length).join(',')+' rssMb='+Number((mem.rss/1048576).toFixed(1))+' heapUsedMb='+Number((mem.heapUsed/1048576).toFixed(1)));
     return byUnderlying;
@@ -696,6 +735,7 @@ export async function findLightFutures({underlying='',expiry='',query=''}={}){
 }
 
 export async function loadMaster(force=false){
+  if(isRenderMemoryLimitedRuntime()) throw new Error('Full instrument master is disabled on Render to protect the 512 MiB runtime. Use the light index contract lookup.');
   if(String(process.env.ALLOW_FULL_MASTER||'false').toLowerCase()!=='true') throw new Error('Full instrument master is disabled on the memory-constrained runtime. Use the light contract lookup.');
   if(!force && masterCache.items.length && Date.now()-masterCache.loadedAt < 6*60*60*1000) return masterCache.items;
   if(masterInflight) return await masterInflight;
