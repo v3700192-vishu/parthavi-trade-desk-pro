@@ -22,7 +22,7 @@ test("Render refuses the legacy full instrument-master allocation", () => {
 test("API memory gate and GC monitor are conditional on Render only", () => {
   assert.ok(server.includes("if(!IS_RENDER_MEMORY_LIMITED_RUNTIME || !req.path.startsWith(\"/api/\")) return next();"));
   assert.ok(server.includes("const RENDER_MEMORY_GATE_BYTES = 320 * 1024 * 1024;"));
-  assert.ok(server.includes("if(IS_RENDER_MEMORY_LIMITED_RUNTIME){\n  const memoryMonitor=setInterval"));
+  assert.ok(server.includes("const memoryMonitor=setInterval"));\n  assert.ok(server.includes("memoryMonitor.unref()"));
 });
 
 test("Electron desktop starts its local server directly and does not use npm start flags", () => {
