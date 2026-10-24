@@ -3,10 +3,14 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const server = fs.readFileSync(new URL('../server.js', import.meta.url), 'utf8');
+const refreshModule = fs.readFileSync(new URL('../sharedRefresh.js', import.meta.url), 'utf8');
 const ui = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
 
 test('multi-user requests share concurrent market, news, and global-feed refreshes', () => {
-  assert.match(server, /const sharedRefreshInflight = new Map\(\)/);
+  assert.match(server, /import \\{ createSharedRefresh \\} from "\\.\\/sharedRefresh\\.js"/);
+  assert.match(server, /const sharedRefresh = createSharedRefresh\\(\\)/);
+  assert.match(refreshModule, /const current = inflight\\.get\\(key\\)/);
+  assert.match(refreshModule, /work\\.then\\(cleanup, cleanup\\)/);
   assert.match(server, /sharedRefresh\('market:'\+key/);
   assert.match(server, /sharedRefresh\('news:'\+key/);
   assert.match(server, /sharedRefresh\('global-data'/);
