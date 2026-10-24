@@ -19,9 +19,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const app = express();
 const IS_RENDER_MEMORY_LIMITED_RUNTIME = /^(1|true|yes|on)$/i.test(String(process.env.RENDER||'')) || Boolean(String(process.env.RENDER_SERVICE_ID||'').trim());
-const RENDER_MEMORY_WARN_BYTES = 280 * 1024 * 1024;
-const RENDER_MEMORY_GATE_BYTES = 320 * 1024 * 1024;
+const RENDER_MEMORY_WARN_BYTES = 230 * 1024 * 1024;
+const RENDER_MEMORY_GATE_BYTES = 280 * 1024 * 1024;
 let lastRenderMemoryLogAt = 0;
+let renderActiveApiRequests = 0;
 
 // Cross-origin access for the static GitHub Pages frontend and configured production frontend.
 const allowedOrigins = new Set(String(process.env.FRONTEND_ORIGINS || "https://v3700192-vishu.github.io,https://parthavi-trade-desk-pro.onrender.com").split(",").map(x=>x.trim()).filter(Boolean));
@@ -71,16 +72,38 @@ const MEMORY_SAFE_API_PATHS = new Set([
   "/api/data-health", "/api/phase12/readiness"
 ]);
 app.use((req,res,next)=>{
-  if(!IS_RENDER_MEMORY_LIMITED_RUNTIME || !req.path.startsWith("/api/")) return next();
+  if(!IS_RENDER_MEMORY_LIMITED_RUNTIME || !req.path.startsWith("/api/") || MEMORY_SAFE_API_PATHS.has(req.path)) return next();
   const rss=process.memoryUsage().rss;
-  if(rss < RENDER_MEMORY_GATE_BYTES || MEMORY_SAFE_API_PATHS.has(req.path)) return next();
-  return res.status(503).json({
-    ok:false,
-    error:"RENDER_MEMORY_PRESSURE",
-    action:"WAIT / NO TRADE",
-    message:"The Render server is reducing memory pressure. Retry shortly; trading remains blocked while this guard is active.",
-    memory:{rssMiB:Number((rss/1048576).toFixed(1)),guardMiB:320}
-  });
+  if(rss >= RENDER_MEMORY_GATE_BYTES){
+    return res.status(503).json({
+      ok:false,
+      error:"RENDER_MEMORY_PRESSURE",
+      action:"WAIT / NO TRADE",
+      message:"The Render server is reducing memory pressure. Retry shortly; trading remains blocked while this guard is active.",
+      memory:{rssMiB:Number((rss/1048576).toFixed(1)),guardMiB:280}
+    });
+  }
+  // Once RSS reaches the warning line, allow no more than two active API jobs
+  // to continue increasing the working set at the same time.
+  if(rss >= RENDER_MEMORY_WARN_BYTES && renderActiveApiRequests >= 2){
+    return res.status(503).json({
+      ok:false,
+      error:"RENDER_MEMORY_PRESSURE",
+      action:"WAIT / NO TRADE",
+      message:"Render is busy reducing memory pressure. Retry shortly; trading remains blocked while this guard is active.",
+      memory:{rssMiB:Number((rss/1048576).toFixed(1)),guardMiB:280,activeRequests:renderActiveApiRequests}
+    });
+  }
+  renderActiveApiRequests++;
+  let released=false;
+  const release=()=>{
+    if(released) return;
+    released=true;
+    renderActiveApiRequests=Math.max(0,renderActiveApiRequests-1);
+  };
+  res.once("finish",release);
+  res.once("close",release);
+  next();
 });
 
 app.use(express.static(path.join(__dirname, "public"), {
