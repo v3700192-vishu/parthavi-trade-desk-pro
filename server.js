@@ -2393,7 +2393,7 @@ app.get('/api/phase10/prediction',async(req,res)=>{
           },
           optionPlan,
           vix: Number.isFinite(vix) ? vix : null,
-          checkedAt,
+          checkedAt: new Date().toISOString(),
           dedupeKey: [symbol, prediction.action, m5?.rows?.at(-1)?.t || 'no-candle'].join(':')
         });
         if (review?.used) prediction.deepseekReview = review;
