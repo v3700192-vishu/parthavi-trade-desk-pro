@@ -14,6 +14,7 @@ import { isFreshExchangeTick, exchangeTickAgeMs } from "./marketFreshness.js";
 import { fetchUpstoxHistoricalCandles, shouldUseUpstoxFuturesFallback, upstoxConfigStatus } from "./marketDataProviders.js";
 import { summarizeContractMetrics } from "./contractAnalysis.js";
 import { status as phase11ProtectionStatus, evaluate as phase11Evaluate, onOrderSubmitted as phase11OnOrderSubmitted, recordOutcome as phase11RecordOutcome, resetProtection as phase11ResetProtection } from "./riskGuard.js";
+import { analyzeSignalWithDeepSeek, deepseekStatus } from "./deepseek.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -69,7 +70,7 @@ app.use((req,res,next)=>{
 // data-heavy API work well before the container's 512 MiB OOM threshold.
 const MEMORY_SAFE_API_PATHS = new Set([
   "/api/health", "/api/angel/status", "/api/angel/config-status",
-  "/api/data-health", "/api/phase12/readiness"
+  "/api/data-health", "/api/phase12/readiness", "/api/deepseek/status"
 ]);
 app.use((req,res,next)=>{
   if(!IS_RENDER_MEMORY_LIMITED_RUNTIME || !req.path.startsWith("/api/") || MEMORY_SAFE_API_PATHS.has(req.path)) return next();
@@ -185,6 +186,7 @@ function phase11PolicyForOrder({p,instrument,signalSnapshot=null,openPositions=0
   });
 }
 function modelSafe(x){return Number.isFinite(x)&&x>0?x:0;}
+function candleConnectedSafe(feed){return Array.isArray(feed?.rows)&&feed.rows.length>0;}
 function extractUnderlyingFromSymbol(symbol){
   const s=cleanTradingSymbol(symbol); if(s.startsWith('BANKNIFTY')) return 'BANKNIFTY'; if(s.startsWith('FINNIFTY')) return 'FINNIFTY'; if(s.startsWith('MIDCPNIFTY')) return 'MIDCPNIFTY'; if(s.startsWith('SENSEX')) return 'SENSEX'; if(s.startsWith('NIFTY')) return 'NIFTY'; return 'NIFTY';
 }
@@ -1460,6 +1462,8 @@ app.get('/api/phase6/order-events', async (req,res)=>{
   }catch(e){res.status(502).json({ok:false,error:e?.message||'Order events unavailable'});}
 });
 
+app.get("/api/deepseek/status",(req,res)=>res.set("Cache-Control","no-store").json(deepseekStatus()));
+
 app.get("/api/health",(req,res)=>{
   const m=process.memoryUsage();
   res.json({ok:true,service:"PARTHAVI TRADE DESK PRO",phase:12,demo:DEMO,time:nowISO(),pid:process.pid,uptimeSec:Math.round(process.uptime()),memoryMb:{rss:Number((m.rss/1048576).toFixed(1)),heapUsed:Number((m.heapUsed/1048576).toFixed(1)),heapTotal:Number((m.heapTotal/1048576).toFixed(1)),external:Number((m.external/1048576).toFixed(1))}});
@@ -2374,6 +2378,30 @@ app.get('/api/phase10/prediction',async(req,res)=>{
       (prediction.noTradeReasons||[]).length===0
     );
     prediction.tradeTiming=buildTradeTiming(prediction,{marketOpen,now:Date.now()});
+    // Optional DeepSeek advisory is called only for an already-eligible confirmed signal.
+    // It is informational only: it cannot change the core action, eligibility, or order gates.
+    if (['CALL','PUT'].includes(String(prediction.action||'').toUpperCase()) &&
+        (prediction.advisorEligible===true || prediction.commandCenterEligible===true)) {
+      try {
+        const review = await analyzeSignalWithDeepSeek({
+          symbol, prediction,
+          health: { marketOpen, market: candleConnectedSafe(m5), options: !!opt?.connected },
+          market: {
+            h1: h1?.summary || null,
+            m15: m15?.summary || null,
+            m5: { ...(m5?.summary || {}), lastCandleTime: m5?.rows?.at(-1)?.t || null }
+          },
+          optionPlan,
+          vix: Number.isFinite(vix) ? vix : null,
+          checkedAt,
+          dedupeKey: [symbol, prediction.action, m5?.rows?.at(-1)?.t || 'no-candle'].join(':')
+        });
+        if (review?.used) prediction.deepseekReview = review;
+        else if (review?.enabled) prediction.deepseekReview = { ...review, advisoryOnly: true };
+      } catch (e) {
+        console.warn('[DEEPSEEK_REVIEW]', e?.message || e);
+      }
+    }
     const candleConnected=Array.isArray(m5.rows)&&m5.rows.length>0;
     const checkedAt=nowISO();
     try{
