@@ -10,7 +10,7 @@ import { getLiveIndexCandles } from "./liveIndexCandles.js";
 import { normalizeNews, analyzeNews, normalizeGlobal, analyzeGlobal, analyzeEvents, fuse } from "./fusion.js";
 import { buildPrediction, buildTradeTiming, backtestFiveMinute } from "./prediction.js";
 import { productionReadiness } from "./phase12.js";
-import { isFreshExchangeTick, exchangeTickAgeMs } from "./marketFreshness.js";
+import { isFreshExchangeTick, exchangeTickAgeMs, exchangeTimestampMs } from "./marketFreshness.js";
 import { fetchUpstoxHistoricalCandles, shouldUseUpstoxFuturesFallback, upstoxConfigStatus } from "./marketDataProviders.js";
 import { summarizeContractMetrics } from "./contractAnalysis.js";
 import { status as phase11ProtectionStatus, evaluate as phase11Evaluate, onOrderSubmitted as phase11OnOrderSubmitted, recordOutcome as phase11RecordOutcome, resetProtection as phase11ResetProtection } from "./riskGuard.js";
@@ -303,7 +303,7 @@ function istParts(){
 function configuredHolidays(){ return new Set(String(process.env.EXTRA_HOLIDAYS_IST||'').split(',').map(x=>x.trim()).filter(x=>/^\d{4}-\d{2}-\d{2}$/.test(x))); }
 function exchangeSessionOpen(exchange='NSE'){
   const x=istParts(), date=`${x.year}-${x.month}-${x.day}`, day=x.weekday, mins=Number(x.hour)*60+Number(x.minute);
-  if(['Sat','Sun'].includes(day) || mins<555 || mins>=940) return false;
+  if(['Sat','Sun'].includes(day) || mins<555 || mins>=930) return false;
   const ex=String(exchange||'NSE').toUpperCase();
   // A verified, date-scoped regular-session override prevents stale holiday config from falsely closing NSE.
   // Weekend and regular-session time boundaries above remain hard gates; live-data/trade gates are unchanged.
@@ -2147,6 +2147,56 @@ function sendRenderOptimizedPhase10Response(res,payload){
   return res.json(compact);
 }
 
+// The Render screen must display the exchange-timestamped WebSocket price, not
+// a REST quote or a candle price labelled as live. REST close is only used to
+// calculate the percentage change; it never authenticates the displayed LTP.
+function renderQuoteSnapshot(symbol,{marketOpen=true,marketData=null,historicalCandle=null}={}){
+  const session=angelStatus();
+  if(historicalCandle){
+    const price=Number(historicalCandle.price);
+    return {
+      price:Number.isFinite(price)&&price>0?price:null,change:null,
+      exchangeTimestamp:historicalCandle.timestamp||null,
+      source:'LAST_COMPLETED_5M_CANDLE',isLive:false,verified:false,tickAgeSeconds:null,
+      sessionConnected:Boolean(session.connected),websocketConnected:Boolean(session.websocket),
+      verificationReason:'NSE session is closed; this is historical context, not a live quote.'
+    };
+  }
+  if(marketOpen&&session.connected){
+    const tick=freshIndexTick(symbol);
+    if(tick){
+      const data=tick.data||{};
+      const raw=data.last_traded_price??data.ltp??data.lastTradedPrice;
+      const price=Number(raw)/100;
+      const ageMs=exchangeTickAgeMs(data);
+      const stampMs=exchangeTimestampMs(data);
+      if(Number.isFinite(price)&&price>0&&ageMs!=null&&ageMs>=-15000&&ageMs<=120000){
+        const reference=marketData?.[symbol]||{};
+        const close=Number(reference.close);
+        const change=Number.isFinite(close)&&close>0?Number((((price-close)/close)*100).toFixed(2)):null;
+        return {
+          price,change,exchangeTimestamp:stampMs?new Date(stampMs).toISOString():null,
+          source:'ANGEL_ONE_WEBSOCKET_TICK',isLive:true,verified:true,
+          tickAgeSeconds:Number((Math.max(0,ageMs)/1000).toFixed(1)),
+          sessionConnected:true,websocketConnected:Boolean(session.websocket),
+          verificationReason:'Fresh Angel One exchange-timestamped NIFTY tick verified.'
+        };
+      }
+    }
+  }
+  const reason=!session.connected?'Angel One session is disconnected.'
+    :!marketOpen?'NSE session is closed.'
+    :!session.websocket?'Angel One WebSocket is disconnected.'
+    :'No fresh exchange-timestamped NIFTY tick received in the last 120 seconds.';
+  return {
+    price:null,change:null,exchangeTimestamp:null,
+    source:!session.connected?'FEED_DISCONNECTED':!marketOpen?'OFF_SESSION':'WEBSOCKET_NO_FRESH_NIFTY_TICK',
+    isLive:false,verified:false,tickAgeSeconds:null,
+    sessionConnected:Boolean(session.connected),websocketConnected:Boolean(session.websocket),
+    verificationReason:reason
+  };
+}
+
 app.get('/api/phase10/prediction',async(req,res)=>{
   const symbol=String(req.query.symbol||'NIFTY').toUpperCase();
   const marketExchange=indexFeedMeta(symbol).exchange;
@@ -2189,7 +2239,7 @@ app.get('/api/phase10/prediction',async(req,res)=>{
       return sendRenderOptimizedPhase10Response(res,{ok:true,phase:10,symbol,prediction,
         health:{market:m5Rows.length>0,marketOpen:false,options:false,news:false,global:false,eventBlocked:false,eventDayBlock:false,vix:null},
         greeks:null,greekRisk:{status:'WAIT',message:'Market is closed; live Greeks are not verified.'},
-        backtest:historical,optionBacktest:prediction.optionBacktest,checkedAt:nowISO(),mode:'OFF_SESSION_FAST_PATH',...(IS_RENDER_MEMORY_LIMITED_RUNTIME?{renderSnapshot:{price:last&&Number.isFinite(Number(last.c))&&Number(last.c)>0?Number(last.c):null,change:null,exchangeTimestamp:last?.t||null,source:'LAST_COMPLETED_5M_CANDLE',isLive:false}}:{})});
+        backtest:historical,optionBacktest:prediction.optionBacktest,checkedAt:nowISO(),mode:'OFF_SESSION_FAST_PATH',...(IS_RENDER_MEMORY_LIMITED_RUNTIME?{renderSnapshot:renderQuoteSnapshot(symbol,{marketOpen:false,historicalCandle:last?{price:last.c,timestamp:last.t}:null})}:{})});
     }
     if(!angelStatus().connected){
       const prediction=buildPrediction({marketOpen,h1:{trend:'WAIT',currentSessionHourConfirmed:false,unavailable:true},m15:{trend:'WAIT'},m5:{trend:'WAIT'},options:{connected:false},news:{connected:false,freshCount:0},global:{connected:false,freshInputs:0},events:{connected:false,eventSafe:false},vix:null});
@@ -2201,7 +2251,7 @@ app.get('/api/phase10/prediction',async(req,res)=>{
         optionBacktest:prediction.optionBacktest,
         checkedAt:nowISO(),mode:marketOpen?'LIVE_SESSION_FEED_DISCONNECTED':'OFF_SESSION_FAST_PATH',
         message:'Connect Angel One before running live prediction.'
-      ,...(IS_RENDER_MEMORY_LIMITED_RUNTIME?{renderSnapshot:{price:null,change:null,exchangeTimestamp:null,source:'FEED_DISCONNECTED',isLive:false}}:{}) });
+      ,...(IS_RENDER_MEMORY_LIMITED_RUNTIME?{renderSnapshot:renderQuoteSnapshot(symbol,{marketOpen,marketData:null})}:{}) });
     }
 
     // Start all independent live-feed work together so futures volume and the
@@ -2387,7 +2437,7 @@ app.get('/api/phase10/prediction',async(req,res)=>{
       await predictionReportStore.record({symbol,prediction,marketOpen,checkedAt,referencePrice:m5.summary.last,health:{market:candleConnected,options:opt.connected,news:ns.connected,global:gs.connected,eventBlocked:es.hardBlock,eventDayBlock:es.eventDayBlock,vix:Number.isFinite(vix)?vix:null},candles:dropIncompleteCandle(Array.isArray(m5.rows)?m5.rows:[],5)});
     }catch(reportError){console.warn('[PREDICTION_REPORT_SAVE]',reportError?.message||reportError);}
     res.setHeader('Cache-Control','no-store');
-    sendRenderOptimizedPhase10Response(res,{ok:true,phase:10,symbol,prediction,health:{market:candleConnected,options:opt.connected,news:ns.connected,global:gs.connected,eventBlocked:es.hardBlock,eventDayBlock:es.eventDayBlock,vix:Number.isFinite(vix)?vix:null},greeks:opt.greeks||null,greekRisk:opt.greekRisk||{status:'WAIT',message:'Live option Greeks not verified.'},backtest:historical,optionBacktest:prediction.optionBacktest,checkedAt,...(IS_RENDER_MEMORY_LIMITED_RUNTIME?{renderSnapshot:{price:md?.[symbol]?.ltp??null,change:md?.[symbol]?.change??null,exchangeTimestamp:md?.[symbol]?.exchangeTimestamp??null,source:'ANGEL_ONE_QUOTE',isLive:Boolean(freshIndexTick(symbol)&&Number(md?.[symbol]?.ltp)>0)}}:{})});
+    sendRenderOptimizedPhase10Response(res,{ok:true,phase:10,symbol,prediction,health:{market:candleConnected,options:opt.connected,news:ns.connected,global:gs.connected,eventBlocked:es.hardBlock,eventDayBlock:es.eventDayBlock,vix:Number.isFinite(vix)?vix:null},greeks:opt.greeks||null,greekRisk:opt.greekRisk||{status:'WAIT',message:'Live option Greeks not verified.'},backtest:historical,optionBacktest:prediction.optionBacktest,checkedAt,...(IS_RENDER_MEMORY_LIMITED_RUNTIME?{renderSnapshot:renderQuoteSnapshot(symbol,{marketOpen,marketData:md})}:{})});
   }catch(e){
     console.warn('[PREDICTION_ROUTE]',e?.message||e);
     if(res.headersSent) return;
@@ -2408,7 +2458,7 @@ app.get('/api/phase10/prediction',async(req,res)=>{
       greeks:null,greekRisk:{status:'WAIT',message:'Required live data is not verified.'},
       backtest:{available:false,kind:'UNDERLYING_PRICE_ONLY',instrument:'NIFTY INDEX',verified:false,reason:'Prediction request fell back before a verified analysis completed.'},
       optionBacktest:prediction.optionBacktest,
-      message:'Degraded safe response; inspect server logs. No Trade.',checkedAt:nowISO(),...(IS_RENDER_MEMORY_LIMITED_RUNTIME?{renderSnapshot:{price:null,change:null,exchangeTimestamp:null,source:'DEGRADED',isLive:false}}:{})});
+      message:'Degraded safe response; inspect server logs. No Trade.',checkedAt:nowISO(),...(IS_RENDER_MEMORY_LIMITED_RUNTIME?{renderSnapshot:renderQuoteSnapshot(symbol,{marketOpen,marketData:null})}:{})});
   }
 });
 
