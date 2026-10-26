@@ -335,10 +335,10 @@ async function market(symbol){
   if(DEMO) return { [symbol]:{ltp:null,change:null}, NIFTY:{ltp:null}, BANKNIFTY:{ltp:null}, FINNIFTY:{ltp:null}, MIDCPNIFTY:{ltp:null}, VIX:{ltp:null}, GLOBAL_RISK:{label:"DEMO OFF"} };
   if(!angelStatus().connected) return null;
   const tokens=IS_RENDER_MEMORY_LIMITED_RUNTIME
-    ? {NIFTY:['NSE','Nifty 50','99926000']}
+    ? {NIFTY:['NSE','Nifty 50','99926000'],VIX:['NSE','India VIX','99926017']}
     : {NIFTY:['NSE','Nifty 50','99926000'],BANKNIFTY:['NSE','Nifty Bank','99926009'],FINNIFTY:['NSE','Nifty Fin Service','99926037'],MIDCPNIFTY:['NSE','NIFTY MID SELECT','99926074'],SENSEX:['BSE','SENSEX','99919000'],VIX:['NSE','India VIX','99926017']};
   const exchangeTokens=IS_RENDER_MEMORY_LIMITED_RUNTIME
-    ? {NSE:['99926000']}
+    ? {NSE:['99926000','99926017']}
     : {NSE:['99926000','99926009','99926037','99926074','99926017'],BSE:['99919000']};
   const out={};
   let rows=[];
@@ -2289,8 +2289,10 @@ app.get('/api/phase10/prediction',async(req,res)=>{
       ,...(IS_RENDER_MEMORY_LIMITED_RUNTIME?{renderSnapshot:renderQuoteSnapshot(symbol,{marketOpen,marketData:null})}:{}) });
     }
 
-    // Start all independent live-feed work together so futures volume and the
-    // option chain do not add their network latency after the candle/news scan.
+    // Run the feed pipeline in bounded stages: candle timeframes first, then small
+    // context feeds, then option chain/Greeks and futures-volume history. This keeps
+    // full prediction inputs enabled without holding every provider response in memory
+    // at the same time on Render's small instance.
     const boundedFeed=(promise,fallback,label,ms=2800)=>{
       let timer;
       const timeout=new Promise(resolve=>{timer=setTimeout(()=>{
@@ -2305,26 +2307,26 @@ app.get('/api/phase10/prediction',async(req,res)=>{
         timeout
       ]).finally(()=>clearTimeout(timer));
     };
-    const settled=await Promise.allSettled([
-      // Historical candles are fetched immediately on a cold app open. Give the broker
-      // backfill enough time to return instead of timing out at 2.8s and analysing empty rows.
-      // This wait is network latency only; it does not wait for the next 5M/15M candle close.
+    const candleResults=await Promise.allSettled([
       boundedFeed(loadTfSummary(symbol,'ONE_HOUR',45),{rows:[],summary:{trend:'WAIT',currentSessionHourConfirmed:false,unavailable:true}},'candles-1h',12000),
       boundedFeed(loadTfSummary(symbol,'FIFTEEN_MINUTE',30),{rows:[],summary:{trend:'WAIT'}},'candles-15m',12000),
-      boundedFeed(loadTfSummary(symbol,'FIVE_MINUTE',15),{rows:[],summary:{trend:'WAIT'}},'candles-5m',12000),
-      IS_RENDER_MEMORY_LIMITED_RUNTIME?Promise.resolve([]):boundedFeed(news(symbol),[],'news'),
-      IS_RENDER_MEMORY_LIMITED_RUNTIME?Promise.resolve({}):boundedFeed(globalData(),{},'global'),
-      IS_RENDER_MEMORY_LIMITED_RUNTIME?Promise.resolve([]):boundedFeed(events(),[],'events'),
-      boundedFeed(market(symbol),{},'market',4500),
-      IS_RENDER_MEMORY_LIMITED_RUNTIME?Promise.resolve({connected:false,error:'Option-chain scan disabled in the memory-safe Render profile'}):boundedFeed(options(symbol),{connected:false,error:'Option feed timed out'},'options',5000),
-      IS_RENDER_MEMORY_LIMITED_RUNTIME?Promise.resolve({ratio10d:null,source:null,benchmarkDays:0,reason:'Futures-volume scan disabled in the memory-safe Render profile'}):boundedFeed(loadFuturesVolume(symbol),{ratio10d:null,source:null,benchmarkDays:0,reason:'Futures volume feed timed out'},'futures-volume',18000)
+      boundedFeed(loadTfSummary(symbol,'FIVE_MINUTE',15),{rows:[],summary:{trend:'WAIT'}},'candles-5m',12000)
     ]);
-    const val=(i,f)=>settled[i]?.status==='fulfilled'?settled[i].value:f;
-    const h1=val(0,{rows:[],summary:{trend:'WAIT',currentSessionHourConfirmed:false,unavailable:true}}), m15=val(1,{rows:[],summary:{trend:'WAIT'}}), m5=val(2,{rows:[],summary:{trend:'WAIT'}});
-    const ni=val(3,[]), gd=val(4,{}), ev=val(5,[]), md=val(6,{});
+    const candleVal=(i,f)=>candleResults[i]?.status==='fulfilled'?candleResults[i].value:f;
+    const h1=candleVal(0,{rows:[],summary:{trend:'WAIT',currentSessionHourConfirmed:false,unavailable:true}});
+    const m15=candleVal(1,{rows:[],summary:{trend:'WAIT'}});
+    const m5=candleVal(2,{rows:[],summary:{trend:'WAIT'}});
+    // All required prediction feeds are enabled on Render; failure/timeout is reported
+    // honestly as unavailable and the existing trade gates remain locked.
+    const ni=await boundedFeed(news(symbol),[],'news',6500);
+    const gd=await boundedFeed(globalData(),{},'global',8000);
+    const ev=await boundedFeed(events(),[],'events',8000);
+    const md=await boundedFeed(market(symbol),{},'market',4500);
     const ns=analyzeNews(ni), gs=analyzeGlobal(gd), es=analyzeEvents(ev);
-    let opt=val(7,{connected:false}), greeks=[];
-    const futuresVol=val(8,{ratio10d:null,source:null,benchmarkDays:0});
+    let opt=await boundedFeed(options(symbol),{connected:false,error:'Option feed timed out'},'options',9000);
+    let greeks=[];
+    const futuresVol=await boundedFeed(loadFuturesVolume(symbol),
+      {ratio10d:null,source:null,benchmarkDays:0,reason:'Futures volume feed timed out'},'futures-volume',18000);
     try{
       if(opt.expiry) greeks=await boundedFeed(liveOptionGreeks(symbol,opt.expiry),[],'option-greeks',5000);
       const pickStrike=Number(opt.atm);
@@ -2382,8 +2384,8 @@ app.get('/api/phase10/prediction',async(req,res)=>{
       contract:futuresVol?.contract??null,expiry:futuresVol?.expiry??null,
       reason:futuresVol?.reason??null,fetchErrors:futuresVol?.fetchErrors??[]
     };
-    let optionPlan={available:false,reason:IS_RENDER_MEMORY_LIMITED_RUNTIME?'Memory-safe Render mode: option-chain scan is disabled; only NIFTY + Phase 10 forecast runs.':'Waiting for a directional setup and all non-Greek safety confirmations.'};
-    if(!IS_RENDER_MEMORY_LIMITED_RUNTIME && prediction.contractScanEligible && prediction.candidatePlan?.available){
+    let optionPlan={available:false,reason:'Waiting for a directional setup and all non-Greek safety confirmations.'};
+    if(prediction.contractScanEligible && prediction.candidatePlan?.available){
       const optionAction=prediction.prediction==='BULLISH'?'CALL':prediction.prediction==='BEARISH'?'PUT':'';
       // Search for the actual executable contract using underlying levels even if the
       // arbitrary ATM Greek snapshot is unsafe. The selected contract must pass its own
@@ -2718,7 +2720,7 @@ if(IS_RENDER_MEMORY_LIMITED_RUNTIME){
     const now=Date.now();
     if(now-lastRenderMemoryLogAt>=30000){
       lastRenderMemoryLogAt=now;
-      console.warn('[MEMORY_GUARD] Render RSS MiB before='+Number((before.rss/1048576).toFixed(1))+' after='+Number((after.rss/1048576).toFixed(1))+' heapUsedMiB='+Number((after.heapUsed/1048576).toFixed(1))+' externalMiB='+Number((after.external/1048576).toFixed(1))+' gateMiB=320');
+      console.warn('[MEMORY_GUARD] Render RSS MiB before='+Number((before.rss/1048576).toFixed(1))+' after='+Number((after.rss/1048576).toFixed(1))+' heapUsedMiB='+Number((after.heapUsed/1048576).toFixed(1))+' externalMiB='+Number((after.external/1048576).toFixed(1))+' gateMiB='+Number((RENDER_MEMORY_GATE_BYTES/1048576).toFixed(0)));
     }
   },5000);
   memoryMonitor.unref();
