@@ -283,7 +283,7 @@ test("chart reports stale candle fallback and preserves selected historical day 
 });
 
 test("service-worker cache version is bumped and never caches live API responses", () => {
-  assert.match(serviceWorker, /const CACHE='ptd-shell-v44'/);
+  assert.match(serviceWorker, /const CACHE='ptd-shell-v45'/);
   assert.match(serviceWorker, /prediction-report\.html/);
   assert.match(serviceWorker, /if\(u\.pathname\.startsWith\('\/api\/'\)\) return/);
   assert.doesNotMatch(serviceWorker, /const CACHE='ptd-shell-v3[0-6]'/);

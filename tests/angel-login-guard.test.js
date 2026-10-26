@@ -10,6 +10,7 @@ import os from 'node:os';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const server = readFileSync(join(root, 'server.js'), 'utf8');
+const angel = readFileSync(join(root, 'angelone.js'), 'utf8');
 const html = readFileSync(join(root, 'public', 'index.html'), 'utf8');
 
 // The hosted Windows Actions runner's disposable profile can hang inside DPAPI; exercise this OS-bound integration test on the actual Kiran PC instead.
@@ -43,6 +44,16 @@ test('Angel One status remains safe to read when no session is connected', () =>
   assert.equal(status.connected, false);
   assert.equal(typeof status.refreshTokenStored, 'boolean');
   assert.equal(Object.hasOwn(status, 'refreshToken'), false);
+});
+
+test('rejected saved Angel session requires a fresh in-app login and never exposes tokens', () => {
+  assert.match(angel, /reauthRequired:sessionRecoveryRequired/);
+  assert.match(angel, /sessionRecoveryReason='REFRESH_REJECTED'/);
+  assert.match(angel, /reason:'RELOGIN_REQUIRED'/);
+  assert.match(angel, /saved refresh token was rejected/);
+  assert.match(html, /The saved Angel One session was rejected/);
+  assert.match(html, /RE-LOGIN REQUIRED/);
+  assert.doesNotMatch(angel, /reauthRequired:session\\.refreshToken/);
 });
 
 test('Angel One login API rejects overlapping login attempts and releases its lock', () => {

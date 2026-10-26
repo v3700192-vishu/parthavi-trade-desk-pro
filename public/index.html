@@ -1513,8 +1513,8 @@ body.chart-fullscreen-open>.app>.bottom{
       const stR=await fetch(base+'/api/angel/status',{cache:'no-store'});
       const st=await stR.json().catch(()=>({}));
       if(!st?.connected){
-        set('angelTestBadge','LOGIN REQUIRED');
-        set('angelTestNote','Angel One is not connected. Connect Angel One first, then run Test Live Feed.');
+        set('angelTestBadge',st?.reauthRequired?'RE-LOGIN REQUIRED':'LOGIN REQUIRED');
+        set('angelTestNote',st?.reauthRequired?'The saved Angel One refresh token was rejected. Enter your current PIN and TOTP in the connection panel, press Connect Angel One, then run Test Live Feed.':'Angel One is not connected. Connect Angel One first, then run Test Live Feed.');
         setGateSafe('cxLogin',false,'OFF'); setGateSafe('cxQuote',false,'OFF'); setGateSafe('cxWs',false,'OFF');
         return;
       }
@@ -1543,7 +1543,8 @@ body.chart-fullscreen-open>.app>.bottom{
   function note(v){const x=el('angelTestNote');if(x)x.textContent=v;}  function badge(v,cls){const x=el('angelTestBadge');if(x){x.textContent=v;x.className='badge '+cls;}}
   function statusText(d){
     const x=el('angelStatusText');
-    if(x)x.textContent=d?.connected?('CONNECTED • '+(d.clientCode||'')+(d.websocket?' • STREAM LIVE':' • REST ONLY')):'DISCONNECTED';
+    if(x)x.textContent=d?.connected?('CONNECTED • '+(d.clientCode||'')+(d.websocket?' • STREAM LIVE':' • REST ONLY')):(d?.reauthRequired?'RE-LOGIN REQUIRED':'DISCONNECTED');
+    if(!d?.connected&&d?.reauthRequired){badge('RE-LOGIN REQUIRED','warn');note('The saved Angel One session was rejected. Enter your current PIN and TOTP here, then press Connect Angel One. Do not share them in chat.');}
     if(typeof window.setGate==='function'){
       window.setGate('cxLogin',!!d?.connected,d?.connected?'ON':'OFF');
       window.setGate('cxWs',!!d?.websocket,d?.websocket?'LIVE':(d?.connected?'READY':'OFF'));

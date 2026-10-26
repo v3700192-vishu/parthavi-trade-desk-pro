@@ -22,6 +22,9 @@ const MASTER_URL = "https://margincalculator.angelbroking.com/OpenAPI_File/files
 
 let api = null;
 let session = { connected:false, clientCode:null, loginAt:null, jwtToken:null, refreshToken:null, feedToken:null, profile:null };
+// A rejected saved refresh token needs a fresh in-app PIN/TOTP login; never weaken live-data gates.
+let sessionRecoveryRequired = false;
+let sessionRecoveryReason = null;
 let masterCache = { loadedAt:0, items:[] };
 let masterInflight = null;
 let ws = null;
@@ -96,6 +99,8 @@ export function angelStatus(){
     connected:session.connected,
     clientCode:session.clientCode,
     loginAt:session.loginAt,
+    reauthRequired:sessionRecoveryRequired,
+    reauthReason:sessionRecoveryRequired?sessionRecoveryReason:null,
     websocket:!!ws && wsConnected,
     // Report presence only; never return the credential itself.
     refreshTokenStored:Boolean(session.refreshToken)||hasSecureRefreshToken(),
@@ -120,6 +125,7 @@ export async function loginAngel({clientCode, pin, totp}){
   const data = await api.generateSession(cc, pin, totp);
   if(!data?.status) throw new Error(data?.message || "Angel One login failed");
   session = {connected:true, clientCode:cc, loginAt:new Date().toISOString(), jwtToken:data.data?.jwtToken||null, refreshToken:data.data?.refreshToken||null, feedToken:data.data?.feedToken||null, profile:null};
+  sessionRecoveryRequired=false;sessionRecoveryReason=null;
   if(session.refreshToken){try{saveSecureRefreshToken(session.refreshToken);}catch{console.warn('[ANGEL_AUTH] secure refresh-token vault save failed; credentials were not logged.');}}
   if(session.feedToken){try{saveSecureFeedToken(session.feedToken);}catch{console.warn('[ANGEL_AUTH] secure feed-token vault save failed; credentials were not logged.');}}
   startConnectionGuards();
@@ -144,16 +150,23 @@ export async function restoreAngelSessionFromVault(){
   try{
     api=new SmartAPI({api_key:apiKey});
     const out=await api.generateToken(savedToken);
-    if(!out?.status||!out?.data?.jwtToken) throw new Error('REFRESH_REJECTED');
+    if(!out?.status||!out?.data?.jwtToken){
+      const providerCode=String(out?.errorcode||out?.data?.errorcode||'REFRESH_REJECTED').replace(/[^A-Za-z0-9_.-]/g,'').slice(0,48)||'REFRESH_REJECTED';
+      sessionRecoveryRequired=true;sessionRecoveryReason='REFRESH_REJECTED';
+      console.warn('[ANGEL_AUTH] saved refresh token was rejected; providerCode='+providerCode+'; fresh in-app PIN/TOTP login required.');
+      api=null;session={connected:false,clientCode:null,loginAt:null,jwtToken:null,refreshToken:null,feedToken:null,profile:null};wsConnected=false;
+      return {restored:false,reason:'RELOGIN_REQUIRED'};
+    }
     const refreshedToken=out.data.refreshToken||savedToken;
     try{saveSecureRefreshToken(refreshedToken);}catch{console.warn('[ANGEL_AUTH] refreshed session token could not be persisted securely.');}
     // Angel SmartAPI's refresh-token response may omit feedToken. Reuse only a feed
     // token protected by the same Windows-user DPAPI vault; otherwise require one login.
     const restoredFeedToken=out.data.feedToken||savedFeedToken;
-    if(!restoredFeedToken){api=null;return {restored:false,reason:'FEED_TOKEN_NOT_STORED'};}
+    if(!restoredFeedToken){api=null;sessionRecoveryRequired=true;sessionRecoveryReason='FEED_TOKEN_NOT_STORED';return {restored:false,reason:'RELOGIN_REQUIRED'};}
     session={connected:true,clientCode:cc,loginAt:new Date().toISOString(),
       jwtToken:out.data.jwtToken,refreshToken:out.data.refreshToken||savedToken,
       feedToken:restoredFeedToken,profile:null};
+    sessionRecoveryRequired=false;sessionRecoveryReason=null;
     try{api.setAccessToken?.(session.jwtToken);}catch{}
     try{api.setRefreshToken?.(session.refreshToken);}catch{}
     try{api.setFeedToken?.(session.feedToken);}catch{}
@@ -168,12 +181,15 @@ export async function restoreAngelSessionFromVault(){
     void connectMarketWebSocket().catch(e=>{wsError=e?.message||'WebSocket connection failed';scheduleReconnect();});
     console.log('[ANGEL_AUTH] saved session restored; WebSocket reconnect started.');
     return {restored:true,connected:true};
-  }catch{
+  }catch(error){
     api=null;
     session={connected:false,clientCode:null,loginAt:null,jwtToken:null,refreshToken:null,feedToken:null,profile:null};
     wsConnected=false;
-    console.warn('[ANGEL_AUTH] saved-session restore failed; manual login may be required.');
-    return {restored:false,reason:'REFRESH_FAILED'};
+    const httpStatus=Number(error?.response?.status)||0;
+    const errorCode=String(error?.code||(httpStatus?'HTTP_'+httpStatus:'REFRESH_FAILED')).replace(/[^A-Za-z0-9_.-]/g,'').slice(0,48)||'REFRESH_FAILED';
+    if(httpStatus===401||httpStatus===403){sessionRecoveryRequired=true;sessionRecoveryReason='REFRESH_REJECTED';}
+    console.warn('[ANGEL_AUTH] saved-session restore failed; code='+errorCode+(httpStatus?' httpStatus='+httpStatus:'')+(sessionRecoveryRequired?'; fresh in-app PIN/TOTP login required.':''));
+    return {restored:false,reason:sessionRecoveryRequired?'RELOGIN_REQUIRED':'REFRESH_FAILED'};
   }
 }
 
@@ -187,7 +203,7 @@ export async function logoutAngel(){
   reconnectDelayMs=5000;
   try{deleteSecureRefreshToken();}catch{console.warn('[ANGEL_AUTH] secure refresh-token vault could not be cleared during logout.');}
   try{deleteSecureFeedToken();}catch{console.warn('[ANGEL_AUTH] secure feed-token vault could not be cleared during logout.');}
-  api=null; session={connected:false,clientCode:null,loginAt:null,jwtToken:null,refreshToken:null,feedToken:null,profile:null}; latestTicks.clear(); tickWindows.clear(); subscribedTokens.clear();
+  api=null; session={connected:false,clientCode:null,loginAt:null,jwtToken:null,refreshToken:null,feedToken:null,profile:null}; sessionRecoveryRequired=false;sessionRecoveryReason=null; latestTicks.clear(); tickWindows.clear(); subscribedTokens.clear();
   wsConnectBusy=false;
   return angelStatus();
 }
