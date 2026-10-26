@@ -975,6 +975,12 @@ function scheduleReconnect(){
 
 async function connectMarketWebSocket(){
   if(!session.connected || !session.jwtToken || !session.feedToken) throw new Error("Angel One session is not connected");
+  if(isRenderMemoryLimitedRuntime() && !marketHoursNow()){
+    wsConnected=false;
+    wsError='NSE market is closed; WebSocket will reconnect during market hours';
+    if(ws){try{ws.close?.();ws.closeConnection?.();}catch{};ws=null;}
+    return angelStatus();
+  }
   if(ws && wsConnected) return angelStatus();
   if(wsConnectPromise) return await wsConnectPromise;
   wsConnectPromise=(async()=>{
@@ -1060,14 +1066,19 @@ async function connectMarketWebSocket(){
       reconnectDelayMs=5000;
       console.log('[ANGEL_WS] connected');
 
-      const sub=await subscribeOnSocket(["99926000","99926009","99926017","99926037","99926074"],1,1);
-      console.log('[ANGEL_WS] subscribed NSE index tokens='+sub.tokens);
-      // The BSE SENSEX cash-index token uses exchangeType 3, not NSE exchangeType 1.
-      // Isolate this optional subscription so a BSE-side failure never drops NSE live ticks.
-      try{
-        const bse=await subscribeOnSocket(["99919000"],3,1);
-        console.log('[ANGEL_WS] subscribed BSE index tokens='+bse.tokens);
-      }catch(e){console.warn('[ANGEL_WS] BSE SENSEX subscription unavailable:',e?.message||e);}
+      const nseTokens=isRenderMemoryLimitedRuntime()
+        ? ["99926000"]
+        : ["99926000","99926009","99926017","99926037","99926074"];
+      const sub=await subscribeOnSocket(nseTokens,1,1);
+      console.log('[ANGEL_WS] subscribed NSE index tokens='+sub.tokens+(isRenderMemoryLimitedRuntime()?' (Render NIFTY-only mode)':''));
+      // Render displays NIFTY only; do not retain a BSE socket subscription there.
+      // Local/PC keeps the complete NSE index and BSE SENSEX subscriptions.
+      if(!isRenderMemoryLimitedRuntime()){
+        try{
+          const bse=await subscribeOnSocket(["99919000"],3,1);
+          console.log('[ANGEL_WS] subscribed BSE index tokens='+bse.tokens);
+        }catch(e){console.warn('[ANGEL_WS] BSE SENSEX subscription unavailable:',e?.message||e);}
+      }
       return angelStatus();
     }catch(e){
       wsConnected=false;
