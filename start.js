@@ -6,7 +6,7 @@ const isRenderRuntime =
 
 // Keep Render's memory limit isolated from the Windows/local server launch.
 const nodeArgs = isRenderRuntime
-  ? ["--max-old-space-size=192", "--max-semi-space-size=8", "--expose-gc", "server.js"]
+  ? ["--max-old-space-size=96", "--max-semi-space-size=1", "--initial-old-space-size=16", "--expose-gc", "server.js"]
   : ["--max-old-space-size=320", "server.js"];
 
 const child = spawn(process.execPath, nodeArgs, {
