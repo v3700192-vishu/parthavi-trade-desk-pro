@@ -19,7 +19,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const app = express();
 const IS_RENDER_MEMORY_LIMITED_RUNTIME = /^(1|true|yes|on)$/i.test(String(process.env.RENDER||'')) || Boolean(String(process.env.RENDER_SERVICE_ID||'').trim());
-const RENDER_MEMORY_WARN_BYTES = 230 * 1024 * 1024;
+const RENDER_MEMORY_WARN_BYTES = 88 * 1024 * 1024;
 const RENDER_MEMORY_GATE_BYTES = 280 * 1024 * 1024;
 let lastRenderMemoryLogAt = 0;
 let renderActiveApiRequests = 0;
@@ -2203,6 +2203,40 @@ app.get('/api/phase10/prediction',async(req,res)=>{
   const marketExchange=indexFeedMeta(symbol).exchange;
   const marketOpen=exchangeSessionOpen(marketExchange);
   try{
+    // Render needs no historical backfill or backtest after market close. Those requests
+    // create avoidable transient buffers on the small instance, and live trading is locked anyway.
+    // Preserve the full historical off-session dashboard for the PC/local runtime below.
+    if(IS_RENDER_MEMORY_LIMITED_RUNTIME && !marketOpen){
+      const prediction=buildPrediction({
+        marketOpen:false,
+        h1:{trend:'WAIT',currentSessionHourConfirmed:false,unavailable:true},
+        m15:{trend:'WAIT',unavailable:true},
+        m5:{trend:'WAIT',unavailable:true},
+        options:{connected:false},oi:{connected:false},
+        news:{connected:false,freshCount:0},global:{connected:false,freshInputs:0},
+        events:{connected:false,eventSafe:false},vix:null
+      });
+      prediction.marketOpen=false;
+      prediction.prediction='NEUTRAL';
+      prediction.action='NO TRADE';
+      prediction.watchAction='NO TRADE';
+      prediction.signalState='NO TRADE';
+      prediction.opportunityEligible=false;
+      prediction.feedComplete=false;
+      prediction.directionalProbability=null;
+      prediction.directionalForecastEligible=false;
+      prediction.reasoning='No Trade: NSE session is closed. Render memory-safe mode skips historical backfill and backtest while the market is closed.';
+      prediction.noTradeReasons=[...new Set([...(prediction.noTradeReasons||[]),'No Trade: NSE session is closed; live prediction is unavailable outside trading hours.'])];
+      prediction.optionPlan={available:false,reason:'Market is closed; live option selection is disabled.'};
+      prediction.tradeTiming=buildTradeTiming(prediction,{marketOpen:false,now:Date.now()});
+      return sendRenderOptimizedPhase10Response(res,{
+        ok:true,phase:10,symbol,locked:true,prediction,
+        health:{marketOpen:false,market:false,options:false,news:false,global:false,eventBlocked:false,eventDayBlock:false,vix:null,angelConnected:angelStatus().connected},
+        checkedAt:nowISO(),mode:'OFF_SESSION_MEMORY_SAFE_FAST_PATH',
+        message:'NSE closed; historical backfill skipped to preserve Render memory.',
+        renderSnapshot:renderQuoteSnapshot(symbol,{marketOpen:false})
+      });
+    }
     // Off-session fast path: do not make broker/provider requests when the selected exchange is closed.
     // Historical candles may be shown for context, but every live-trade gate stays closed.
     if(!marketOpen){
