@@ -107,8 +107,9 @@ app.use((req,res,next)=>{
 });
 
 app.use(express.static(path.join(__dirname, "public"), {
+  index: IS_RENDER_MEMORY_LIMITED_RUNTIME ? "render.html" : "index.html",
   setHeaders(res, filePath){
-    if(filePath.endsWith("index.html") || filePath.endsWith("prediction-report.html") || filePath.endsWith("app-update.json")){
+    if(filePath.endsWith("index.html") || filePath.endsWith("render.html") || filePath.endsWith("prediction-report.html") || filePath.endsWith("app-update.json") || filePath.endsWith("app-update-render.json")){
       res.setHeader("Cache-Control","no-store, no-cache, must-revalidate, proxy-revalidate");
     }
   }
@@ -2140,6 +2141,12 @@ app.get('/api/chart/candles',async(req,res)=>{
 });
 
 // PHASE 10 â€” advanced prediction, confirmation and transparent historical target-hit analysis.
+function sendRenderOptimizedPhase10Response(res,payload){
+  if(!IS_RENDER_MEMORY_LIMITED_RUNTIME) return res.json(payload);
+  const {greeks,greekRisk,backtest,optionBacktest,candles,multiTf,...compact}=payload;
+  return res.json(compact);
+}
+
 app.get('/api/phase10/prediction',async(req,res)=>{
   const symbol=String(req.query.symbol||'NIFTY').toUpperCase();
   const marketExchange=indexFeedMeta(symbol).exchange;
@@ -2179,22 +2186,22 @@ app.get('/api/phase10/prediction',async(req,res)=>{
         reason:`${marketExchange} is closed; live futures-volume data was not requested.`};
       prediction.optionPlan={available:false,reason:`${marketExchange} is closed; live option selection is disabled until the next session.`};
       prediction.tradeTiming=buildTradeTiming(prediction,{marketOpen,now:Date.now()});
-      return res.json({ok:true,phase:10,symbol,prediction,
+      return sendRenderOptimizedPhase10Response(res,{ok:true,phase:10,symbol,prediction,
         health:{market:m5Rows.length>0,marketOpen:false,options:false,news:false,global:false,eventBlocked:false,eventDayBlock:false,vix:null},
         greeks:null,greekRisk:{status:'WAIT',message:'Market is closed; live Greeks are not verified.'},
-        backtest:historical,optionBacktest:prediction.optionBacktest,checkedAt:nowISO(),mode:'OFF_SESSION_FAST_PATH'});
+        backtest:historical,optionBacktest:prediction.optionBacktest,checkedAt:nowISO(),mode:'OFF_SESSION_FAST_PATH',...(IS_RENDER_MEMORY_LIMITED_RUNTIME?{renderSnapshot:{price:last&&Number.isFinite(Number(last.c))&&Number(last.c)>0?Number(last.c):null,change:null,exchangeTimestamp:last?.t||null,source:'LAST_COMPLETED_5M_CANDLE',isLive:false}}:{})});
     }
     if(!angelStatus().connected){
       const prediction=buildPrediction({marketOpen,h1:{trend:'WAIT',currentSessionHourConfirmed:false,unavailable:true},m15:{trend:'WAIT'},m5:{trend:'WAIT'},options:{connected:false},news:{connected:false,freshCount:0},global:{connected:false,freshInputs:0},events:{connected:false,eventSafe:false},vix:null});
       prediction.marketOpen=marketOpen;
       prediction.tradeTiming=buildTradeTiming(prediction,{marketOpen,now:Date.now()});
-      return res.json({
+      return sendRenderOptimizedPhase10Response(res,{
         ok:true,phase:10,symbol,locked:true,prediction,
         health:{marketOpen,market:false,options:false,news:false,global:false,eventBlocked:false,eventDayBlock:false,vix:null,angelConnected:false},
         optionBacktest:prediction.optionBacktest,
         checkedAt:nowISO(),mode:marketOpen?'LIVE_SESSION_FEED_DISCONNECTED':'OFF_SESSION_FAST_PATH',
         message:'Connect Angel One before running live prediction.'
-      });
+      ,...(IS_RENDER_MEMORY_LIMITED_RUNTIME?{renderSnapshot:{price:null,change:null,exchangeTimestamp:null,source:'FEED_DISCONNECTED',isLive:false}}:{}) });
     }
 
     // Start all independent live-feed work together so futures volume and the
@@ -2380,7 +2387,7 @@ app.get('/api/phase10/prediction',async(req,res)=>{
       await predictionReportStore.record({symbol,prediction,marketOpen,checkedAt,referencePrice:m5.summary.last,health:{market:candleConnected,options:opt.connected,news:ns.connected,global:gs.connected,eventBlocked:es.hardBlock,eventDayBlock:es.eventDayBlock,vix:Number.isFinite(vix)?vix:null},candles:dropIncompleteCandle(Array.isArray(m5.rows)?m5.rows:[],5)});
     }catch(reportError){console.warn('[PREDICTION_REPORT_SAVE]',reportError?.message||reportError);}
     res.setHeader('Cache-Control','no-store');
-    res.json({ok:true,phase:10,symbol,prediction,health:{market:candleConnected,options:opt.connected,news:ns.connected,global:gs.connected,eventBlocked:es.hardBlock,eventDayBlock:es.eventDayBlock,vix:Number.isFinite(vix)?vix:null},greeks:opt.greeks||null,greekRisk:opt.greekRisk||{status:'WAIT',message:'Live option Greeks not verified.'},backtest:historical,optionBacktest:prediction.optionBacktest,checkedAt});
+    sendRenderOptimizedPhase10Response(res,{ok:true,phase:10,symbol,prediction,health:{market:candleConnected,options:opt.connected,news:ns.connected,global:gs.connected,eventBlocked:es.hardBlock,eventDayBlock:es.eventDayBlock,vix:Number.isFinite(vix)?vix:null},greeks:opt.greeks||null,greekRisk:opt.greekRisk||{status:'WAIT',message:'Live option Greeks not verified.'},backtest:historical,optionBacktest:prediction.optionBacktest,checkedAt,...(IS_RENDER_MEMORY_LIMITED_RUNTIME?{renderSnapshot:{price:md?.[symbol]?.ltp??null,change:md?.[symbol]?.change??null,exchangeTimestamp:md?.[symbol]?.exchangeTimestamp??null,source:'ANGEL_ONE_QUOTE',isLive:Boolean(freshExchangeTick&&Number(md?.[symbol]?.ltp)>0)}}:{})});
   }catch(e){
     console.warn('[PREDICTION_ROUTE]',e?.message||e);
     if(res.headersSent) return;
@@ -2396,12 +2403,12 @@ app.get('/api/phase10/prediction',async(req,res)=>{
     prediction.noTradeReasons=[...(prediction.noTradeReasons||[]),'No Trade: prediction request did not complete all required feed checks.'];
     prediction.reasoning='Prediction is in safe fallback mode because required data could not be completed. No live order signal is available.';
     prediction.tradeTiming=buildTradeTiming(prediction,{marketOpen,now:Date.now()});
-    return res.json({ok:true,phase:10,symbol,prediction,degraded:true,
+    return sendRenderOptimizedPhase10Response(res,{ok:true,phase:10,symbol,prediction,degraded:true,
       health:{market:false,options:false,news:false,global:false,eventBlocked:false,eventDayBlock:false,vix:null},
       greeks:null,greekRisk:{status:'WAIT',message:'Required live data is not verified.'},
       backtest:{available:false,kind:'UNDERLYING_PRICE_ONLY',instrument:'NIFTY INDEX',verified:false,reason:'Prediction request fell back before a verified analysis completed.'},
       optionBacktest:prediction.optionBacktest,
-      message:'Degraded safe response; inspect server logs. No Trade.',checkedAt:nowISO()});
+      message:'Degraded safe response; inspect server logs. No Trade.',checkedAt:nowISO(),...(IS_RENDER_MEMORY_LIMITED_RUNTIME?{renderSnapshot:{price:null,change:null,exchangeTimestamp:null,source:'DEGRADED',isLive:false}}:{})});
   }
 });
 
@@ -2571,7 +2578,7 @@ app.get("/api/analyze",async(req,res)=>{
 
 app.post("/api/order",(req,res)=>res.status(423).json({ok:false,error:"USE_PHASE5_PREVIEW",message:"Phase 5 uses /api/order/preview then explicit /api/order/execute confirmation."}));
 
-app.get("*",(req,res)=>res.sendFile(path.join(__dirname,"public","index.html")));
+app.get("*",(req,res)=>res.sendFile(path.join(__dirname,"public",IS_RENDER_MEMORY_LIMITED_RUNTIME?"render.html":"index.html")));
 function trimRenderMemoryCaches(){
   const now=Date.now();
   const pruneByAge=(map,ttl)=>{
