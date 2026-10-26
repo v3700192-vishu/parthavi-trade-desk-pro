@@ -334,11 +334,12 @@ async function fetchProviderJson(url, token, params={}){
 async function market(symbol){
   if(DEMO) return { [symbol]:{ltp:null,change:null}, NIFTY:{ltp:null}, BANKNIFTY:{ltp:null}, FINNIFTY:{ltp:null}, MIDCPNIFTY:{ltp:null}, VIX:{ltp:null}, GLOBAL_RISK:{label:"DEMO OFF"} };
   if(!angelStatus().connected) return null;
-  const tokens={NIFTY:['NSE','Nifty 50','99926000'],BANKNIFTY:['NSE','Nifty Bank','99926009'],FINNIFTY:['NSE','Nifty Fin Service','99926037'],MIDCPNIFTY:['NSE','NIFTY MID SELECT','99926074'],SENSEX:['BSE','SENSEX','99919000'],VIX:['NSE','India VIX','99926017']};
-  const exchangeTokens={
-    NSE:['99926000','99926009','99926037','99926074','99926017'],
-    BSE:['99919000']
-  };
+  const tokens=IS_RENDER_MEMORY_LIMITED_RUNTIME
+    ? {NIFTY:['NSE','Nifty 50','99926000']}
+    : {NIFTY:['NSE','Nifty 50','99926000'],BANKNIFTY:['NSE','Nifty Bank','99926009'],FINNIFTY:['NSE','Nifty Fin Service','99926037'],MIDCPNIFTY:['NSE','NIFTY MID SELECT','99926074'],SENSEX:['BSE','SENSEX','99919000'],VIX:['NSE','India VIX','99926017']};
+  const exchangeTokens=IS_RENDER_MEMORY_LIMITED_RUNTIME
+    ? {NSE:['99926000']}
+    : {NSE:['99926000','99926009','99926037','99926074','99926017'],BSE:['99919000']};
   const out={};
   let rows=[];
   try{
@@ -2277,12 +2278,12 @@ app.get('/api/phase10/prediction',async(req,res)=>{
       boundedFeed(loadTfSummary(symbol,'ONE_HOUR',45),{rows:[],summary:{trend:'WAIT',currentSessionHourConfirmed:false,unavailable:true}},'candles-1h',12000),
       boundedFeed(loadTfSummary(symbol,'FIFTEEN_MINUTE',30),{rows:[],summary:{trend:'WAIT'}},'candles-15m',12000),
       boundedFeed(loadTfSummary(symbol,'FIVE_MINUTE',15),{rows:[],summary:{trend:'WAIT'}},'candles-5m',12000),
-      boundedFeed(news(symbol),[],'news'),
-      boundedFeed(globalData(),{},'global'),
-      boundedFeed(events(),[],'events'),
+      IS_RENDER_MEMORY_LIMITED_RUNTIME?Promise.resolve([]):boundedFeed(news(symbol),[],'news'),
+      IS_RENDER_MEMORY_LIMITED_RUNTIME?Promise.resolve({}):boundedFeed(globalData(),{},'global'),
+      IS_RENDER_MEMORY_LIMITED_RUNTIME?Promise.resolve([]):boundedFeed(events(),[],'events'),
       boundedFeed(market(symbol),{},'market',4500),
-      boundedFeed(options(symbol),{connected:false,error:'Option feed timed out'},'options',5000),
-      boundedFeed(loadFuturesVolume(symbol),{ratio10d:null,source:null,benchmarkDays:0,reason:'Futures volume feed timed out'},'futures-volume',18000)
+      IS_RENDER_MEMORY_LIMITED_RUNTIME?Promise.resolve({connected:false,error:'Option-chain scan disabled in the memory-safe Render profile'}):boundedFeed(options(symbol),{connected:false,error:'Option feed timed out'},'options',5000),
+      IS_RENDER_MEMORY_LIMITED_RUNTIME?Promise.resolve({ratio10d:null,source:null,benchmarkDays:0,reason:'Futures-volume scan disabled in the memory-safe Render profile'}):boundedFeed(loadFuturesVolume(symbol),{ratio10d:null,source:null,benchmarkDays:0,reason:'Futures volume feed timed out'},'futures-volume',18000)
     ]);
     const val=(i,f)=>settled[i]?.status==='fulfilled'?settled[i].value:f;
     const h1=val(0,{rows:[],summary:{trend:'WAIT',currentSessionHourConfirmed:false,unavailable:true}}), m15=val(1,{rows:[],summary:{trend:'WAIT'}}), m5=val(2,{rows:[],summary:{trend:'WAIT'}});
@@ -2347,8 +2348,8 @@ app.get('/api/phase10/prediction',async(req,res)=>{
       contract:futuresVol?.contract??null,expiry:futuresVol?.expiry??null,
       reason:futuresVol?.reason??null,fetchErrors:futuresVol?.fetchErrors??[]
     };
-    let optionPlan={available:false,reason:'Waiting for a directional setup and all non-Greek safety confirmations.'};
-    if(prediction.contractScanEligible && prediction.candidatePlan?.available){
+    let optionPlan={available:false,reason:IS_RENDER_MEMORY_LIMITED_RUNTIME?'Memory-safe Render mode: option-chain scan is disabled; only NIFTY + Phase 10 forecast runs.':'Waiting for a directional setup and all non-Greek safety confirmations.'};
+    if(!IS_RENDER_MEMORY_LIMITED_RUNTIME && prediction.contractScanEligible && prediction.candidatePlan?.available){
       const optionAction=prediction.prediction==='BULLISH'?'CALL':prediction.prediction==='BEARISH'?'PUT':'';
       // Search for the actual executable contract using underlying levels even if the
       // arbitrary ATM Greek snapshot is unsafe. The selected contract must pass its own
