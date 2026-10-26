@@ -578,7 +578,9 @@ export async function searchScrip({exchange, searchscrip}){
   return await secureJson("https://apiconnect.angelone.in/rest/secure/angelbroking/order/v1/searchScrip",{method:"POST",headers:secureHeaders(),body:JSON.stringify({exchange,searchscrip})});
 }
 
-const INDEX_UNDERLYINGS = new Set(["NIFTY","BANKNIFTY","FINNIFTY","MIDCPNIFTY","SENSEX"]);
+const INDEX_UNDERLYINGS = new Set(isRenderMemoryLimitedRuntime()
+  ? ["NIFTY"]
+  : ["NIFTY","BANKNIFTY","FINNIFTY","MIDCPNIFTY","SENSEX"]);
 let indexMasterCache = { loadedAt: 0, byUnderlying: new Map() };
 let indexMasterInflight = null;
 
