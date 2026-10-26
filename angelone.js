@@ -472,13 +472,17 @@ export function getTickDiagnostics(now=Date.now()){
     if(times.length) tickWindows.set(token,times); else tickWindows.delete(token);
     ticksLast60Sec+=times.length;
     const rawLtp=tick?.data?.last_traded_price??tick?.data?.ltp??tick?.data?.lastTradedPrice;
+    const exchangeStampMs=tick?exchangeTimestampMs(tick.data):null;
+    const exchangeAgeMs=exchangeStampMs==null?null:now-exchangeStampMs;
     instruments.push({
       token,
       symbol:meta.symbol||meta.name||token,
       exchange:meta.exchange||EXCHANGE_LABELS[meta.exchangeType]||'Unknown',
       subscribed:subscribedTokens.has(token),
-      lastTickAt:tick?new Date(tick.at).toISOString():null,
-      secondsSinceLastTick:tick?Math.max(0,Math.floor((now-tick.at)/1000)):null,
+      lastTickAt:exchangeStampMs==null?null:new Date(exchangeStampMs).toISOString(),
+      secondsSinceLastTick:exchangeAgeMs==null?null:Number((Math.max(0,exchangeAgeMs)/1000).toFixed(1)),
+      secondsSinceMessageReceived:tick?Number((Math.max(0,now-tick.at)/1000).toFixed(1)):null,
+      exchangeTimestampVerified:exchangeStampMs!=null&&exchangeAgeMs>=-15000&&exchangeAgeMs<=120000,
       ticksLast60Sec:times.length,
       ltp:rawLtp==null?null:Number(rawLtp)/100
     });
