@@ -415,18 +415,18 @@ async function options(symbol){
   const key=String(symbol||'NIFTY').toUpperCase();
   if(DEMO || !angelStatus().connected) return await fetchOptionsInternal(key);
   const now=Date.now(), cached=optionChainCache.get(key);
-  if(cached && now-cached.at<7000) return cached.data;
+  if(cached && now-cached.at<(cached.data?.connected?30000:90000)) return cached.data;
   if(optionChainInflight.has(key)) return await optionChainInflight.get(key);
   const job=fetchOptionsInternal(key);
   optionChainInflight.set(key,job);
   try{
     const data=await job;
-    if(data?.connected){
+    if(data&&typeof data==='object'){
+      // Cache failures briefly too, so a timed-out broker chain is not immediately
+      // rescanned on every client refresh. Failed data stays disconnected/WAIT.
       optionChainCache.set(key,{at:Date.now(),data});
-      // Warm Greeks as soon as the chain establishes the active expiry. The
-      // shared in-flight/cache path below prevents duplicate broker calls when
-      // Phase 10 immediately requests the same snapshot.
-      if(data.expiry) liveOptionGreeks(key,data.expiry).catch(e=>console.warn('[GREEKS_PREFETCH]',e?.message||e));
+      // Warm Greeks only after a verified active option chain is available.
+      if(data.connected&&data.expiry) liveOptionGreeks(key,data.expiry).catch(e=>console.warn('[GREEKS_PREFETCH]',e?.message||e));
     }
     return data;
   }finally{
@@ -1676,6 +1676,7 @@ const candleProviderDiagnostics=new Map();
 const candleInflight=new Map();
 const candleRetryAfter=new Map();
 const candleAlternateRetryAfter=new Map();
+const yahooFallbackRetryAfter=new Map();
 const candleOfflineRetry=new Set();
 function mergeLiveCandlesIntoCache(symbol, cache){
   const live=getLiveIndexCandles(indexFeedMeta(symbol).token);
@@ -1789,22 +1790,45 @@ async function loadCachedOrYahooFallback(key,cached,token){
   if(cached?.rows?.length){
     const base=String(cached.baseSource||cached.source||'ANGEL');
     const staleBaseSource=(base.startsWith('ANGEL')&&!base.includes('STALE CACHE'))
-      ?base.split(/STALE CACHE/i)[0].replace(/[^\\w]+$/,'').trim()+' [STALE CACHE]'
+      ?base.split(/STALE CACHE/i)[0].replace(/[^\w]+$/,'').trim()+' [STALE CACHE]'
       :base;
     candleCache.set(key,{...cached,at:cached.at,fetchedAt:cached.fetchedAt||cached.at,source:staleBaseSource,baseSource:staleBaseSource});
     return mergeLiveCandlesIntoCache(key,candleCache.get(key));
   }
+  const retryUntil=yahooFallbackRetryAfter.get(key)||0;
+  if(Date.now()<retryUntil){
+    const live=getLiveIndexCandles(token||indexFeedMeta(key).token);
+    if(live.length){
+      const entry={at:Date.now(),fetchedAt:Date.now(),rows:live,source:'WS_LIVE_ONLY',baseSource:'WS_LIVE_ONLY'};
+      candleCache.set(key,entry);
+      return mergeLiveCandlesIntoCache(key,entry);
+    }
+    // No verified cached candle source exists; keep the feed unavailable rather than
+    // hammering a provider that has already returned a rate-limit response.
+    return [];
+  }
   try{
     const fallback=await loadYahoo5m(key);
-    candleCache.set(key,{at:Date.now(),fetchedAt:Date.now(),rows:fallback,source:'YAHOO_FALLBACK',baseSource:'YAHOO_FALLBACK'});
-    return mergeLiveCandlesIntoCache(key,candleCache.get(key));
+    yahooFallbackRetryAfter.delete(key);
+    const entry={at:Date.now(),fetchedAt:Date.now(),rows:fallback,source:'YAHOO_FALLBACK',baseSource:'YAHOO_FALLBACK'};
+    candleCache.set(key,entry);
+    return mergeLiveCandlesIntoCache(key,entry);
   }catch(e){
-    console.warn('[YAHOO_FALLBACK] '+key+' '+(e?.message||e));
+    const message=String(e?.message||e);
+    const rateRejected=/HTTP 429|HTTP 403|Too Many Requests|rate.?limit|quota/i.test(message);
+    const retryMs=rateRejected?(IS_RENDER_MEMORY_LIMITED_RUNTIME?15*60*1000:5*60*1000):60*1000;
+    yahooFallbackRetryAfter.set(key,Date.now()+retryMs);
+    console.warn('[YAHOO_FALLBACK] '+key+' '+message+'; retry delayed '+Math.round(retryMs/1000)+'s');
     const live=getLiveIndexCandles(token||indexFeedMeta(key).token);
-    if(live.length){candleCache.set(key,{at:Date.now(),fetchedAt:Date.now(),rows:live,source:'WS_LIVE_ONLY',baseSource:'WS_LIVE_ONLY'});return live;}
+    if(live.length){
+      const entry={at:Date.now(),fetchedAt:Date.now(),rows:live,source:'WS_LIVE_ONLY',baseSource:'WS_LIVE_ONLY'};
+      candleCache.set(key,entry);
+      return mergeLiveCandlesIntoCache(key,entry);
+    }
     return [];
   }
 }
+
 async function loadBase5m(symbol){
   const key=String(symbol||'NIFTY').toUpperCase(), now=Date.now(), cached=candleCache.get(key);
   // A chart may have cached Yahoo fallback while Angel One was disconnected.
@@ -1857,7 +1881,7 @@ async function loadBase5m(symbol){
       const message=String(e?.message||e);
       const rateRejected=/HTTP 403|HTTP 429|Access denied|too many requests|rate.?limit|exceeding access rate|HISTORICAL_COOLDOWN_ACTIVE/i.test(message);
       candleProviderDiagnostics.set(key,{at:nowISO(),provider:'ANGEL',rows:0,error:message.slice(0,240),rateRejected,connected:!!angelStatus().connected});
-      const retryMs=rateRejected?5*60*1000:60000;
+      const retryMs=rateRejected?(IS_RENDER_MEMORY_LIMITED_RUNTIME?15*60*1000:5*60*1000):60000;
       candleRetryAfter.set(key,Date.now()+retryMs);
       console.warn('[ANGEL_CANDLES] '+key+' '+message+'; retry delayed '+Math.round(retryMs/1000)+'s');
     }
@@ -2674,7 +2698,7 @@ function trimRenderMemoryCaches(){
       if(at>0 && now-at>ttl) map.delete(key);
     }
   };
-  pruneByAge(optionChainCache,30000);
+  pruneByAge(optionChainCache,90000);
   pruneByAge(greekCache,60000);
   pruneByAge(greekFailureCache,60000);
   pruneByAge(newsCache,300000);

@@ -161,7 +161,7 @@ test("historical API pacing waits after each response and keeps shared throttle 
   const angelSource = fs.readFileSync(path.join(projectRoot, "angelone.js"), "utf8");
   assert.match(angelSource, /finally\s*\{\s*\/\/ Enforce a quiet interval after each response[\s\S]*?historicalNextRequestAt=Math\.max\(historicalNextRequestAt,Date\.now\(\)\+HISTORICAL_MIN_GAP_MS\)/);
   assert.match(angelSource, /const rateRejected=\/HTTP 429\|Access denied\|too many requests\|rate\.\?limit\|exceeding access rate\/i\.test\(message\)/);
-  assert.match(angelSource, /const cooldown=rateRejected\?5\*60\*1000:60\*1000/);
+  assert.match(angelSource, /const cooldown=rateRejected\?\(isRenderMemoryLimitedRuntime\(\)\?15\*60\*1000:5\*60\*1000\):60\*1000/);
   assert.match(angelSource, /const providerMessage=String\(out\.message\|\|out\.error\|\|''\)\.trim\(\)/);
   assert.match(angelSource, /HISTORICAL_COOLDOWN_ACTIVE: retry in/);
   assert.match(angelSource, /const detail=String\(rawBody\|\|''\)\.trim\(\)\.replace\(\/\\s\+\/g,' '\)\.slice\(0,180\)/);

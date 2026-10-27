@@ -554,10 +554,10 @@ export async function candles({exchange, symboltoken, interval, fromdate, todate
       const message=String(error?.message||error);
       if(/HTTP 403|HTTP 429|Access denied|too many requests|rate.?limit|exceeding access rate/i.test(message)){
         // SmartAPI can keep returning "exceeding access rate" even for isolated calls.
-        // Apply a shared 5-minute cooldown to ALL historical calls after a rate rejection;
+        // Apply a shared 15-minute Render / 5-minute local cooldown to ALL historical calls after a rate rejection;
         // per-request pacing alone is not enough when several UI panels share this client code.
         const rateRejected=/HTTP 429|Access denied|too many requests|rate.?limit|exceeding access rate/i.test(message);
-        const cooldown=rateRejected?5*60*1000:60*1000;
+        const cooldown=rateRejected?(isRenderMemoryLimitedRuntime()?15*60*1000:5*60*1000):60*1000;
         historicalNextRequestAt=Math.max(historicalNextRequestAt,Date.now()+cooldown);
         console.warn('[ANGEL_HISTORY_COOLDOWN] rejection detected; retry delayed '+Math.round(cooldown/1000)+'s');
       }
