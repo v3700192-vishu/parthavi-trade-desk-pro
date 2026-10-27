@@ -1790,7 +1790,7 @@ async function loadCachedOrYahooFallback(key,cached,token){
   if(cached?.rows?.length){
     const base=String(cached.baseSource||cached.source||'ANGEL');
     const staleBaseSource=(base.startsWith('ANGEL')&&!base.includes('STALE CACHE'))
-      ?base.split(/STALE CACHE/i)[0].replace(/[^\\w]+$/,'').trim()+' [STALE CACHE]'
+      ?base.split(/STALE CACHE/i)[0].replace(/[^\w]+$/,'').trim()+' [STALE CACHE]'
       :base;
     candleCache.set(key,{...cached,at:cached.at,fetchedAt:cached.fetchedAt||cached.at,source:staleBaseSource,baseSource:staleBaseSource});
     return mergeLiveCandlesIntoCache(key,candleCache.get(key));
