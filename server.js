@@ -2368,6 +2368,77 @@ app.get('/api/phase10/prediction',async(req,res)=>{
     const h1=candleVal(0,{rows:[],summary:{trend:'WAIT',currentSessionHourConfirmed:false,unavailable:true}});
     const m15=candleVal(1,{rows:[],summary:{trend:'WAIT'}});
     const m5=candleVal(2,{rows:[],summary:{trend:'WAIT'}});
+    // On the 512 MiB Render service, do not run every optional feed and the CE/PE
+    // scan when the core NIFTY input cannot be verified. Return a specific WAIT
+    // response promptly; keep all normal analysis enabled when the critical inputs pass.
+    if(IS_RENDER_MEMORY_LIMITED_RUNTIME && marketOpen){
+      const candleRowsForGate=Array.isArray(m5?.rows)?m5.rows:[];
+      const lastCandleForGate=candleRowsForGate.at(-1)||null;
+      const candleStartMs=lastCandleForGate?Date.parse(lastCandleForGate.t):NaN;
+      const candleAgeMinutes=Number.isFinite(candleStartMs)
+        ? (Date.now()-(candleStartMs+5*60*1000))/60000 : NaN;
+      const candleSource=String(m5?.summary?.candleSource||candleCache.get(symbol)?.source||'UNKNOWN').toUpperCase();
+      const candleSourceVerified=(candleSource.startsWith('ANGEL')&&!candleSource.includes('YAHOO')&&!candleSource.includes('STALE CACHE'))||candleSource==='UPSTOX_HISTORICAL';
+      const candlesVerified=candleRowsForGate.length>0&&candleSourceVerified&&Number.isFinite(candleAgeMinutes)&&candleAgeMinutes>=-0.25&&candleAgeMinutes<=10;
+      const liveQuoteForGate=renderQuoteSnapshot(symbol,{marketOpen,marketData:null});
+      const freshNiftyTickVerified=liveQuoteForGate.verified===true&&liveQuoteForGate.source==='ANGEL_ONE_WEBSOCKET_TICK';
+      if(!candlesVerified||!freshNiftyTickVerified){
+        const waitReason=!candlesVerified
+          ? 'No Trade: verified NIFTY 5-minute candles are missing, stale, rate-limited, or from an unverified fallback source. Optional feeds were skipped until core market data recovers.'
+          : 'No Trade: Angel One session may be connected, but a fresh exchange-timestamped NIFTY WebSocket tick is not verified. Waiting for a real market tick.';
+        const prediction=buildPrediction({
+          marketOpen,
+          h1:h1.summary,m15:m15.summary,m5:m5.summary,
+          rows5:candleRowsForGate,rows15:m15.rows||[],rows60:h1.rows||[],
+          options:{connected:false},oi:{connected:false},
+          news:{connected:false,freshCount:0},global:{connected:false,freshInputs:0},
+          events:{connected:false,eventSafe:false},vix:null
+        });
+        prediction.marketOpen=true;
+        prediction.prediction='NEUTRAL';
+        prediction.action='NO TRADE';
+        prediction.watchAction='NO TRADE';
+        prediction.signalState='NO TRADE';
+        prediction.opportunityEligible=false;
+        prediction.feedComplete=false;
+        prediction.advisorEligible=false;
+        prediction.commandCenterEligible=false;
+        prediction.directionalProbability=null;
+        prediction.directionalConfidence=null;
+        prediction.directionalForecastEligible=false;
+        prediction.optionPlan={available:false,tradeReady:false,reason:waitReason};
+        prediction.noTradeReasons=[...new Set([...(prediction.noTradeReasons||[]),waitReason])];
+        prediction.reasoning=waitReason;
+        if(!candlesVerified){
+          prediction.modelConfidence=null;
+          prediction.confirmedCount=null;
+          prediction.confirmationPct=null;
+          prediction.forwardForecast={
+            horizons:{
+              '5':{available:false,reason:waitReason},
+              '15':{available:false,reason:waitReason}
+            },
+            largeMoveRadar:{horizons:{
+              '30':{available:false,reason:waitReason},
+              '60':{available:false,reason:waitReason}
+            }}
+          };
+        }
+        prediction.tradeTiming=buildTradeTiming(prediction,{marketOpen,now:Date.now()});
+        const checkedAt=nowISO();
+        res.setHeader('Cache-Control','no-store');
+        return sendRenderOptimizedPhase10Response(res,{
+          ok:true,phase:10,symbol,locked:true,prediction,
+          health:{
+            market:candlesVerified,marketOpen:true,exchangeTick:freshNiftyTickVerified,
+            options:false,news:false,global:false,eventBlocked:false,eventDayBlock:false,
+            vix:null,angelConnected:angelStatus().connected
+          },
+          checkedAt,mode:'RENDER_FAST_WAIT_PRIMARY_DATA',message:waitReason,
+          renderSnapshot:liveQuoteForGate
+        });
+      }
+    }
     // All required prediction feeds are enabled on Render; failure/timeout is reported
     // honestly as unavailable and the existing trade gates remain locked.
     const [ni,gd,ev,md]=await Promise.all([

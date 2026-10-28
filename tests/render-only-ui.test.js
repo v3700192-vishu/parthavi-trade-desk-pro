@@ -7,5 +7,18 @@ test("Render uses a dedicated NIFTY screen and local/PC retains index.html",()=>
 test("Render has one Phase 10 fetch, no secondary panel calls, and a low refresh cadence",()=>{assert.equal((html.match(/\/api\/phase10\/prediction\?symbol=NIFTY/g)||[]).length,1);assert.equal((html.match(/\/api\/angel\/login/g)||[]).length,1);assert.equal((html.match(/\/api\/angel\/status/g)||[]).length,1);assert.match(html,/\/api\/phase10\/prediction\?symbol=NIFTY/);assert.doesNotMatch(html,/\/api\/(?:market|chart|phase11|phase12|risk|execution|news|global|broker)\b/);assert.match(html,/REFRESH_INTERVAL_MS=60000/);assert.match(html,/if\(busy\|\|document\.hidden\)return/);});
 test("Render response is compact, verifies live ticks, and keeps all required inputs enabled",()=>{assert.match(server,/function sendRenderOptimizedPhase10Response/);assert.ok(server.includes("source:\'ANGEL_ONE_WEBSOCKET_TICK\',isLive:true,verified:true"));assert.ok(server.includes("mins>=930"));assert.ok(angel.includes("exchangeTimestampVerified:exchangeStampMs!=null&&exchangeAgeMs>=-15000&&exchangeAgeMs<=120000"));assert.match(server,/const \[ni,gd,ev,md\]=await Promise\.all\(\[/);assert.match(server,/let \[opt,futuresVol\]=await Promise\.all\(\[/);assert.ok(server.includes("boundedFeed(options(symbol),{connected:false,error:'Option feed timed out'},'options',9000)"));assert.ok(server.includes("boundedFeed(loadFuturesVolume(symbol),"));assert.ok(server.includes("warmRenderNiftyInstrumentMaster(21000)"));assert.ok(angel.includes("RenderNiftyContracts.json"));assert.ok(angel.includes("compact Render NIFTY cache loaded rows="));assert.ok(server.includes("if(prediction.contractScanEligible && prediction.candidatePlan?.available)"));assert.ok(server.includes("VIX:['NSE','India VIX','99926017']"));assert.ok(angel.includes('? ["NIFTY"]'));});
 test("Render session prewarms NIFTY contracts and negative-caches failed public candle fallbacks",()=>{assert.match(server,/async function warmRenderNiftyInstrumentMaster/);assert.ok(server.includes("if(IS_RENDER_MEMORY_LIMITED_RUNTIME) await warmRenderNiftyInstrumentMaster(21000)"));assert.ok(server.includes("if(IS_RENDER_MEMORY_LIMITED_RUNTIME) void warmRenderNiftyInstrumentMaster(21000)"));assert.ok(angel.includes("compact Render NIFTY cache saved rows="));assert.ok(server.includes("fallback cooldown 300s"));assert.ok(server.includes("source:live.length?'WS_LIVE_ONLY':'NO_VERIFIED_HISTORY'"));assert.ok(server.includes("fallbackCooldownMs:300000"));});
+test("Render Phase 10 returns a fast locked response when verified NIFTY candles or a fresh exchange tick are missing",()=>{
+  const gate=server.indexOf("if(IS_RENDER_MEMORY_LIMITED_RUNTIME && marketOpen){");
+  const contextFeeds=server.indexOf("const [ni,gd,ev,md]=await Promise.all([",gate);
+  assert.ok(gate>=0,"Render critical-data fast path exists");
+  assert.ok(contextFeeds>gate,"critical-data gate runs before news/global/events/market feeds");
+  const fastPath=server.slice(gate,contextFeeds);
+  assert.match(fastPath,/candleSourceVerified/);
+  assert.match(fastPath,/freshNiftyTickVerified/);
+  assert.match(fastPath,/RENDER_FAST_WAIT_PRIMARY_DATA/);
+  assert.match(fastPath,/Optional feeds were skipped until core market data recovers/);
+  assert.match(fastPath,/directionalForecastEligible=false/);
+  assert.match(fastPath,/action='NO TRADE'/);
+});
 test("Service worker shell version is bumped",()=>{assert.match(sw,/ptd-shell-v49/);assert.doesNotMatch(sw,/ptd-shell-v45/);});
 test("Render inline JavaScript parses",()=>{const blocks=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];assert.equal(blocks.length,1);assert.doesNotThrow(()=>new Function(blocks[0][1]));});
