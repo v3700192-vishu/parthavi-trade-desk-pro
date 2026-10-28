@@ -902,6 +902,35 @@ app.post("/api/angel/reconnect", async (req,res)=>{
     res.status(502).json({ok:false,connected:angelStatus().connected,websocket:angelStatus().websocket,error:e?.message||"WebSocket reconnect failed"});
   }
 });
+async function warmRenderNiftyInstrumentMaster(deadlineMs=21000){
+  if(!IS_RENDER_MEMORY_LIMITED_RUNTIME) return true;
+  const started=Date.now();
+  const warm=Promise.all([
+    findLightContracts({underlying:"NIFTY",exchange:"NSE"}),
+    findLightFutures({underlying:"NIFTY"})
+  ]).then(([options,futures])=>{
+    console.log('[RENDER_WARMUP] NIFTY contract master ready options='+options.length+' futures='+futures.length+' ms='+(Date.now()-started));
+    return true;
+  }).catch(error=>{
+    console.warn('[RENDER_WARMUP] NIFTY contract master failed: '+String(error?.message||error).slice(0,200));
+    return false;
+  });
+  let timeout;
+  try{
+    return await Promise.race([
+      warm,
+      new Promise(resolve=>{
+        timeout=setTimeout(()=>{
+          console.warn('[RENDER_WARMUP] NIFTY contract master still warming after '+deadlineMs+'ms; no signal should be trusted until feeds verify.');
+          resolve(false);
+        },Math.max(1000,deadlineMs));
+      })
+    ]);
+  }finally{
+    if(timeout) clearTimeout(timeout);
+  }
+}
+
 let angelLoginInFlight = false;
 app.post("/api/angel/login", async (req,res)=>{
   if(angelLoginInFlight) return res.status(409).json({connected:false,error:"An Angel One login attempt is already in progress. Wait for it to finish before retrying."});
@@ -916,6 +945,9 @@ app.post("/api/angel/login", async (req,res)=>{
     ]);
     state.connected.market=true;
     console.log(`[ANGEL_LOGIN] success websocket=${!!out.websocket} wsError=${out.websocketError||"none"} ms=${Date.now()-started}`);
+    // Render's first contract lookup needs the instrument master. Warm it before
+    // returning login success so Phase 10 does not time out on a cold 20s scan.
+    if(IS_RENDER_MEMORY_LIMITED_RUNTIME) await warmRenderNiftyInstrumentMaster(21000);
     res.json(out);
   } catch(e) {
     console.error(`[ANGEL_LOGIN] failed ms=${Date.now()-started}: ${e?.message||"Angel One login failed"}`);
@@ -2318,15 +2350,22 @@ app.get('/api/phase10/prediction',async(req,res)=>{
     const m5=candleVal(2,{rows:[],summary:{trend:'WAIT'}});
     // All required prediction feeds are enabled on Render; failure/timeout is reported
     // honestly as unavailable and the existing trade gates remain locked.
-    const ni=await boundedFeed(news(symbol),[],'news',6500);
-    const gd=await boundedFeed(globalData(),{},'global',8000);
-    const ev=await boundedFeed(events(),[],'events',8000);
-    const md=await boundedFeed(market(symbol),{},'market',4500);
+    const [ni,gd,ev,md]=await Promise.all([
+      boundedFeed(news(symbol),[],'news',6500),
+      boundedFeed(globalData(),{},'global',8000),
+      boundedFeed(events(),[],'events',8000),
+      boundedFeed(market(symbol),{},'market',4500)
+    ]);
     const ns=analyzeNews(ni), gs=analyzeGlobal(gd), es=analyzeEvents(ev);
-    let opt=await boundedFeed(options(symbol),{connected:false,error:'Option feed timed out'},'options',9000);
+    // Option-chain and futures-volume lookups share the same warmed contract
+    // master. Start them together to avoid serial timeouts while preserving the
+    // API's internal historical-candle pacing.
+    let [opt,futuresVol]=await Promise.all([
+      boundedFeed(options(symbol),{connected:false,error:'Option feed timed out'},'options',9000),
+      boundedFeed(loadFuturesVolume(symbol),
+        {ratio10d:null,source:null,benchmarkDays:0,reason:'Futures volume feed timed out'},'futures-volume',18000)
+    ]);
     let greeks=[];
-    const futuresVol=await boundedFeed(loadFuturesVolume(symbol),
-      {ratio10d:null,source:null,benchmarkDays:0,reason:'Futures volume feed timed out'},'futures-volume',18000);
     try{
       if(opt.expiry) greeks=await boundedFeed(liveOptionGreeks(symbol,opt.expiry),[],'option-greeks',5000);
       const pickStrike=Number(opt.atm);
@@ -2730,8 +2769,10 @@ const HOST = String(process.env.HOST || "0.0.0.0");
 const server=app.listen(PORT,HOST,()=>{
   console.log(`PARTHAVI TRADE DESK PRO on http://${HOST}:${PORT}`);
   void restoreAngelSessionFromVault().then(result=>{
-    if(result.restored) console.log('[ANGEL_AUTH] secure saved session restored; live order execution remains locked.');
-    else if(result.reason==='NO_STORED_SESSION') console.log('[ANGEL_AUTH] no saved session yet; connect once in the app to enable secure restart recovery.');
+    if(result.restored){
+      console.log('[ANGEL_AUTH] secure saved session restored; live order execution remains locked.');
+      if(IS_RENDER_MEMORY_LIMITED_RUNTIME) void warmRenderNiftyInstrumentMaster(21000);
+    }else if(result.reason==='NO_STORED_SESSION') console.log('[ANGEL_AUTH] no saved session yet; connect once in the app to enable secure restart recovery.');
     else if(result.reason!=='UNSUPPORTED_PLATFORM') console.warn('[ANGEL_AUTH] startup restore not completed; reason='+String(result.reason||'UNKNOWN'));
   }).catch(()=>console.warn('[ANGEL_AUTH] startup restore failed; no credentials were logged.'));
 });

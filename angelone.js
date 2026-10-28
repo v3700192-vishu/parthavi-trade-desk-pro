@@ -1,6 +1,6 @@
 import SmartApiPackage from "smartapi-javascript";
 import address from "address";
-import { createReadStream, statSync } from "node:fs";
+import { createReadStream, statSync, readFileSync, writeFileSync, mkdirSync, renameSync } from "node:fs";
 import { Readable } from "node:stream";
 import { exchangeTimestampMs, isFreshExchangeTick } from "./marketFreshness.js";
 import { exchangeSessionOpen } from "./marketCalendar.js";
@@ -599,6 +599,21 @@ async function loadSharedIndexMaster(){
   if(indexMasterInflight) return await indexMasterInflight;
   const job=(async()=>{
     const byUnderlying=new Map([...INDEX_UNDERLYINGS].map(k=>[k,[]]));
+    if(isRenderMemoryLimitedRuntime()){
+      const compactCachePath=new URL("./data/RenderNiftyContracts.json",import.meta.url);
+      try{
+        const cacheStat=statSync(compactCachePath);
+        if(cacheStat.size>1000 && Date.now()-cacheStat.mtimeMs<12*60*60*1000){
+          const rows=JSON.parse(readFileSync(compactCachePath,"utf8"));
+          if(Array.isArray(rows)&&rows.length>=100&&rows.every(x=>String(x?.name||"").toUpperCase()==="NIFTY"&&x?.token&&x?.symbol)){
+            byUnderlying.set("NIFTY",rows);
+            indexMasterCache={loadedAt:Date.now(),byUnderlying};
+            console.log('[ANGEL_MASTER] compact Render NIFTY cache loaded rows='+rows.length+' ageMinutes='+Math.round((Date.now()-cacheStat.mtimeMs)/60000));
+            return byUnderlying;
+          }
+        }
+      }catch{}
+    }
     let reader;
     const cachePath=new URL("./data/OpenAPIScripMaster.json",import.meta.url);
     try{
@@ -679,6 +694,21 @@ async function loadSharedIndexMaster(){
     if(tail) consume(tail);
     if(![...byUnderlying.values()].some(items=>items.length)) throw new Error('Instrument master contained no supported index futures/options; parsed rows='+parsed);
     indexMasterCache={loadedAt:Date.now(),byUnderlying};
+    if(isRenderMemoryLimitedRuntime()){
+      try{
+        mkdirSync(new URL("./data/",import.meta.url),{recursive:true});
+        const compactCachePath=new URL("./data/RenderNiftyContracts.json",import.meta.url);
+        const compactTempPath=new URL("./data/RenderNiftyContracts.json.tmp",import.meta.url);
+        const compactRows=byUnderlying.get("NIFTY")||[];
+        if(compactRows.length>=100){
+          writeFileSync(compactTempPath,JSON.stringify(compactRows),{encoding:"utf8"});
+          renameSync(compactTempPath,compactCachePath);
+          console.log('[ANGEL_MASTER] compact Render NIFTY cache saved rows='+compactRows.length);
+        }
+      }catch(cacheError){
+        console.warn('[ANGEL_MASTER] compact Render NIFTY cache write failed: '+String(cacheError?.message||cacheError).slice(0,160));
+      }
+    }
     if(isRenderMemoryLimitedRuntime() && typeof global.gc==='function'){
       try{global.gc();}catch{}
     }
