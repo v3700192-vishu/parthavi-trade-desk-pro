@@ -1831,10 +1831,30 @@ async function loadCachedOrYahooFallback(key,cached,token){
     candleCache.set(key,{at:Date.now(),fetchedAt:Date.now(),rows:fallback,source:'YAHOO_FALLBACK',baseSource:'YAHOO_FALLBACK'});
     return mergeLiveCandlesIntoCache(key,candleCache.get(key));
   }catch(e){
-    console.warn('[YAHOO_FALLBACK] '+key+' '+(e?.message||e));
+    // Cache an empty/stale result briefly when all public history sources are
+    // rate-limited. Without this negative cache, the 60s Render refresh loop
+    // repeatedly hits Yahoo (429) after Angel One (403), worsening the outage.
     const live=getLiveIndexCandles(token||indexFeedMeta(key).token);
-    if(live.length){candleCache.set(key,{at:Date.now(),fetchedAt:Date.now(),rows:live,source:'WS_LIVE_ONLY',baseSource:'WS_LIVE_ONLY'});return live;}
-    return [];
+    const at=Date.now();
+    console.warn('[YAHOO_FALLBACK] '+key+' '+(e?.message||e)+'; fallback cooldown 300s');
+    const entry={
+      at,
+      fetchedAt:at,
+      rows:live,
+      source:live.length?'WS_LIVE_ONLY':'NO_VERIFIED_HISTORY',
+      baseSource:live.length?'WS_LIVE_ONLY':'NO_VERIFIED_HISTORY',
+      fallbackError:String(e?.message||e).slice(0,180)
+    };
+    candleCache.set(key,entry);
+    candleProviderDiagnostics.set(key,{
+      at:nowISO(),
+      provider:live.length?'WS_LIVE_ONLY':'UNAVAILABLE',
+      rows:live.length,
+      error:String(e?.message||e).slice(0,240),
+      fallbackCooldownMs:300000,
+      connected:!!angelStatus().connected
+    });
+    return mergeLiveCandlesIntoCache(key,entry);
   }
 }
 async function loadBase5m(symbol){
