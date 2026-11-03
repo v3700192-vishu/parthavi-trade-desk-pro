@@ -179,7 +179,7 @@ export function buildTradeTiming(p={}, {marketOpen=p.marketOpen===true,now=Date.
   }else if(p.exchangeTickVerified!==true||p.feedComplete!==true||p.eventSafe!==true||reasons.length>0){
     status='WAIT • SAFETY GATE BLOCKED';
     reason=reasons[0]||'Live exchange tick, complete verified feeds, event safety and all risk gates must pass.';
-  }else if(p.directionalCalibrationEligible!==true||!Number.isFinite(Number(p.directionProbability))||Number(p.directionProbability)<68){
+  }else if(p.directionalCalibrationEligible!==true||!Number.isFinite(Number(p.directionProbability))||Number(p.directionProbability)<70){
     status='WAIT • DIRECTION NOT VALIDATED';
     reason='The 15M chart direction must match a >=70% current estimate and pass a recent walk-forward hit-rate of >=70% over at least 30 resolved high-confidence forecasts.';
   }else if(p.signalState!=='CONFIRMED'||!hasAction||p.commandCenterEligible!==true||
