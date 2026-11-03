@@ -20,5 +20,17 @@ test("Render Phase 10 returns a fast locked response when verified NIFTY candles
   assert.match(fastPath,/directionalForecastEligible=false/);
   assert.match(fastPath,/action='NO TRADE'/);
 });
+test("Render includes the screenshot-style Final Trade Plan and releases a strike/premium only after verified 70% eligibility",()=>{
+  assert.match(html,/id="finalTradePlan"/);
+  for(const id of ["finalPlanDirection","finalPlanContract","finalPlanContractMeta","finalPlanEntry","finalPlanSL","finalPlanT1","finalPlanT2","finalPlanRR","finalPlanNote"])assert.ok(html.includes('id="'+id+'"'));
+  assert.match(html,/p\?\.finalTradePlanEligible===true/);
+  assert.match(html,/prob>=70/);
+  assert.match(html,/o\.candidateOnly!==true&&o\.greekStatus==='PASS'/);
+  assert.match(html,/BUY CE/);
+  assert.match(html,/BUY PE/);
+  assert.match(server,/prediction\.finalTradePlanEligible=Boolean\(/);
+  assert.match(server,/Number\(prediction\.directionalProbability\)>=70/);
+  assert.match(server,/selectedFinalContract\.greekStatus==='PASS'/);
+});
 test("Service worker shell version is bumped",()=>{assert.match(sw,/ptd-shell-v55/);assert.doesNotMatch(sw,/ptd-shell-v45/);});
 test("Render inline JavaScript parses",()=>{const blocks=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];assert.equal(blocks.length,1);assert.doesNotThrow(()=>new Function(blocks[0][1]));});
