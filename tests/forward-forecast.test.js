@@ -29,7 +29,7 @@ test("published direction never exceeds recent out-of-sample hit rate and keeps 
   assert.equal(capLeadingProbabilityForDisplay({up:82,down:12,sideways:6},"UP",null),null);
 });
 
-test("directional percentages stay hidden unless the walk-forward calibration passes 68% with enough signals",()=>{
+test("directional percentages stay hidden unless the walk-forward calibration passes 70% with enough signals",()=>{
   const forecast=buildForwardForecast(makeCandles());
   assert.equal(forecast.model,"HISTORICAL_ANALOGUE_V1");
   assert.equal(forecast.historyAvailable,true);
@@ -39,9 +39,10 @@ test("directional percentages stay hidden unless the walk-forward calibration pa
     assert.ok(horizon.calibration);
     if(horizon.available){
       assert.equal(horizon.calibration.eligible,true);
-      assert.ok(horizon.calibration.outOfSampleHitRate>=68);
+      assert.equal(horizon.calibration.requiredHitRate,70);
+      assert.ok(horizon.calibration.outOfSampleHitRate>=70);
       assert.ok(horizon.calibration.highConfidenceDirectionalSignals>=30);
-      assert.ok(horizon.leadingProbability>=68);
+      assert.ok(horizon.leadingProbability>=70);
       assert.ok(horizon.leadingProbability<=Math.floor(horizon.calibration.outOfSampleHitRate),
         "the published leader must never exceed the recent out-of-sample hit rate");
       assert.ok(horizon.leadingProbability<=horizon.rawLeadingProbability);
