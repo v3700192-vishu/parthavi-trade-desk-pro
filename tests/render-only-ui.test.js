@@ -20,6 +20,10 @@ test("Render Phase 10 returns a fast locked response when verified NIFTY candles
   assert.match(fastPath,/directionalForecastEligible=false/);
   assert.match(fastPath,/action='NO TRADE'/);
 });
+test("Every compact Phase 10 response explicitly fails closed when Final Trade Plan eligibility is absent",()=>{
+  const helper=server.slice(server.indexOf("function sendRenderOptimizedPhase10Response"),server.indexOf("// The Render screen must display"));
+  assert.match(helper,/payload\.prediction\.finalTradePlanEligible=payload\.prediction\.finalTradePlanEligible===true/);
+});
 test("Render includes the screenshot-style Final Trade Plan and releases a strike/premium only after verified 70% eligibility",()=>{
   assert.match(html,/id="finalTradePlan"/);
   for(const id of ["finalPlanDirection","finalPlanContract","finalPlanContractMeta","finalPlanEntry","finalPlanSL","finalPlanT1","finalPlanT2","finalPlanRR","finalPlanNote"])assert.ok(html.includes('id="'+id+'"'));
