@@ -2406,6 +2406,7 @@ app.get('/api/phase10/prediction',async(req,res)=>{
         prediction.directionalProbability=null;
         prediction.directionalConfidence=null;
         prediction.directionalForecastEligible=false;
+        prediction.finalTradePlanEligible=false;
         prediction.optionPlan={available:false,tradeReady:false,reason:waitReason};
         prediction.noTradeReasons=[...new Set([...(prediction.noTradeReasons||[]),waitReason])];
         prediction.reasoning=waitReason;
@@ -2554,8 +2555,8 @@ app.get('/api/phase10/prediction',async(req,res)=>{
     optionPlan.directionalConfidence=directionalConfidence;
     const contractDisplayConfidence=directionalConfidence;
     const contractSetupScore=Number(prediction.modelConfidence);
-    optionPlan.displayEligible=Number.isFinite(contractSetupScore)&&contractSetupScore>=70&&
-      contractDisplayConfidence!==null&&contractDisplayConfidence>=68&&optionPlan.available===true;
+    optionPlan.displayEligible=contractDisplayConfidence!==null&&contractDisplayConfidence>=70&&
+      optionPlan.available===true&&optionPlan.candidateOnly!==true&&optionPlan.greekStatus==='PASS';
     // This endpoint suggests/analyses contracts only; it never unlocks order placement.
     optionPlan.tradeReady=false;
     prediction.optionPlan=optionPlan;
@@ -2572,13 +2573,30 @@ app.get('/api/phase10/prediction',async(req,res)=>{
       prediction.reasoning='No Trade: fresh exchange-timestamped market data is missing; live entry is locked.';
       prediction.optionPlan={available:false,reason:'No Trade: fresh exchange-timestamped market data is required.'};
     }
+    const selectedFinalContract=prediction.optionPlan||optionPlan;
+    prediction.finalTradePlanEligible=Boolean(
+      prediction.directionalForecastEligible===true &&
+      Number.isFinite(Number(prediction.directionalProbability)) && Number(prediction.directionalProbability)>=70 &&
+      ['BULLISH','BEARISH'].includes(String(prediction.prediction||'')) &&
+      prediction.feedComplete===true && prediction.exchangeTickVerified===true &&
+      prediction.eventSafe===true && prediction.candlesVerified===true &&
+      prediction.confirmations?.trend===true && prediction.confirmations?.setup===true &&
+      prediction.confirmations?.trigger===true && prediction.confirmations?.options===true && prediction.confirmations?.greeks===true &&
+      prediction.optionDataVerified===true &&
+      selectedFinalContract.available===true && selectedFinalContract.candidateOnly!==true &&
+      ['CE','PE'].includes(String(selectedFinalContract.optionType||'').toUpperCase()) &&
+      !!String(selectedFinalContract.contract||'').trim() && selectedFinalContract.strike!=null && !!selectedFinalContract.expiry &&
+      ['entry','stopLoss','target1','target2'].every(k=>Number.isFinite(Number(selectedFinalContract[k]))&&Number(selectedFinalContract[k])>0) &&
+      selectedFinalContract.greekStatus==='PASS' && selectedFinalContract.riskPlanAvailable!==false &&
+      (prediction.noTradeReasons||[]).length===0
+    );
     prediction.finalPlanThreshold=70;
     prediction.advisorThreshold=80;
     prediction.commandCenterThreshold=90;
     prediction.advisorEligible=Boolean(
       prediction.directionalForecastEligible===true &&
       Number.isFinite(Number(prediction.directionalProbability)) &&
-      Number(prediction.directionalProbability)>=68 &&
+      Number(prediction.directionalProbability)>=70 &&
       prediction.advisorMomentumExceptionEligible===true &&
       optionPlan.available===true && optionPlan.candidateOnly!==true && optionPlan.greekStatus==='PASS' &&
       prediction.exchangeTickVerified===true && prediction.feedComplete===true &&
@@ -2590,7 +2608,7 @@ app.get('/api/phase10/prediction',async(req,res)=>{
     prediction.commandCenterEligible=Boolean(
       prediction.directionalForecastEligible===true &&
       Number.isFinite(Number(prediction.directionalProbability)) &&
-      Number(prediction.directionalProbability)>=68 &&
+      Number(prediction.directionalProbability)>=70 &&
       prediction.signalState==='CONFIRMED' && ['CALL','PUT'].includes(String(prediction.action||'')) &&
       Number(prediction.modelConfidence)>=90 && Number(prediction.confirmationPct)===100 && ptdAllConfirmationsPass &&
       prediction.feedComplete===true && prediction.exchangeTickVerified===true && prediction.eventSafe===true &&
@@ -2603,6 +2621,7 @@ app.get('/api/phase10/prediction',async(req,res)=>{
     try{
       await predictionReportStore.record({symbol,prediction,marketOpen,checkedAt,referencePrice:m5.summary.last,health:{market:candleConnected,options:opt.connected,news:ns.connected,global:gs.connected,eventBlocked:es.hardBlock,eventDayBlock:es.eventDayBlock,vix:Number.isFinite(vix)?vix:null},candles:dropIncompleteCandle(Array.isArray(m5.rows)?m5.rows:[],5)});
     }catch(reportError){console.warn('[PREDICTION_REPORT_SAVE]',reportError?.message||reportError);}
+    prediction.finalTradePlanEligible=prediction.finalTradePlanEligible===true;
     res.setHeader('Cache-Control','no-store');
     sendRenderOptimizedPhase10Response(res,{ok:true,phase:10,symbol,prediction,health:{market:candleConnected,options:opt.connected,news:ns.connected,global:gs.connected,eventBlocked:es.hardBlock,eventDayBlock:es.eventDayBlock,vix:Number.isFinite(vix)?vix:null},greeks:opt.greeks||null,greekRisk:opt.greekRisk||{status:'WAIT',message:'Live option Greeks not verified.'},backtest:historical,optionBacktest:prediction.optionBacktest,checkedAt,...(IS_RENDER_MEMORY_LIMITED_RUNTIME?{renderSnapshot:renderQuoteSnapshot(symbol,{marketOpen,marketData:md})}:{})});
   }catch(e){
@@ -2617,6 +2636,7 @@ app.get('/api/phase10/prediction',async(req,res)=>{
     prediction.signalState='NO TRADE';
     prediction.opportunityEligible=false;
     prediction.feedComplete=false;
+    prediction.finalTradePlanEligible=false;
     prediction.noTradeReasons=[...(prediction.noTradeReasons||[]),'No Trade: prediction request did not complete all required feed checks.'];
     prediction.reasoning='Prediction is in safe fallback mode because required data could not be completed. No live order signal is available.';
     prediction.tradeTiming=buildTradeTiming(prediction,{marketOpen,now:Date.now()});
