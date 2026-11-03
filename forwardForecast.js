@@ -22,9 +22,9 @@ const MOVE_LABELS = ["UP_100", "DOWN_100", "BOTH_100", "NEITHER_100"];
 const MIN_MOVE_ANALOGS = 15;
 
 // Publish a directional percentage only when high-confidence forecasts also prove
-// >=68% hit rate on a chronological walk-forward sample. Rule/confluence score is
+// >=70% hit rate on a chronological walk-forward sample. Rule/confluence score is
 // not a probability. Test cases use non-overlapping horizon steps to reduce leakage.
-const REQUIRED_DIRECTIONAL_HIT_RATE = 68;
+const REQUIRED_DIRECTIONAL_HIT_RATE = 70;
 const MIN_CALIBRATION_SIGNALS = 30;
 const CALIBRATION_WINDOW_BARS = 300;
 
@@ -200,7 +200,7 @@ function calibrateDirectionalHorizon(rows, features, atr, config) {
     hitRate !== null && hitRate >= REQUIRED_DIRECTIONAL_HIT_RATE;
   const status = eligible ? "WALK_FORWARD_VALIDATED" :
     qualified.length < MIN_CALIBRATION_SIGNALS ? "INSUFFICIENT_OUT_OF_SAMPLE_SIGNALS" :
-    "WALK_FORWARD_HIT_RATE_BELOW_68";
+    "WALK_FORWARD_HIT_RATE_BELOW_70";
   return {
     eligible,
     status,
@@ -390,7 +390,7 @@ export function buildForwardForecast(inputRows, options={}) {
       largeMoveRadar:{available:false,thresholdPoints:MOVE_POINTS,horizons:largeMoveHorizons,reason},
       moveMonitor:buildObservedMoveMonitor(rows,options),
       interpretation:"Forecast is shown only when the exchange session and latest closed candle can be verified. Percentages are not guarantees or option-premium win rates.",
-      calibrationStatus:"NO LIVE DIRECTIONAL PERCENTAGE UNLESS RECENT WALK-FORWARD HIGH-CONFIDENCE HIT RATE >=68% WITH AT LEAST 30 RESOLVED PREDICTIONS."
+      calibrationStatus:"NO LIVE DIRECTIONAL PERCENTAGE UNLESS RECENT WALK-FORWARD HIGH-CONFIDENCE HIT RATE >=70% WITH AT LEAST 30 RESOLVED PREDICTIONS."
     };
   };
   if(options.marketOpen===false) return baseResult("Market session is closed; no live forward estimate is active.");
@@ -421,7 +421,7 @@ export function buildForwardForecast(inputRows, options={}) {
     modelLabel:"Walk-forward gated directional estimate",
     asOf:selectedRows.at(-1)?.t??null,
     horizons, largeMoveRadar, moveMonitor:buildObservedMoveMonitor(selectedRows,options),
-    interpretation:"A directional percentage is published only when the current analogue direction is >=68% AND at least 30 recent high-confidence out-of-sample directional forecasts achieve >=68% hit rate. The displayed leader is capped at the lower of its analogue estimate and recent out-of-sample hit rate; remaining UP/DOWN/RANGE shares are normalized and are not independently calibrated. Otherwise the system withholds the percentage and displays WAIT. Underlying price direction is not option-premium profit probability.",
-    calibrationStatus:"GATE: current leading class >=68%, recent walk-forward hit rate >=68%, minimum 30 high-confidence resolved predictions."
+    interpretation:"A directional percentage is published only when the current analogue direction is >=70% AND at least 30 recent high-confidence out-of-sample directional forecasts achieve >=70% hit rate. The displayed leader is capped at the lower of its analogue estimate and recent out-of-sample hit rate; remaining UP/DOWN/RANGE shares are normalized and are not independently calibrated. Otherwise the system withholds the percentage and displays WAIT. Underlying price direction is not option-premium profit probability.",
+    calibrationStatus:"GATE: current leading class >=70%, recent walk-forward hit rate >=70%, minimum 30 high-confidence resolved predictions."
   };
 }
