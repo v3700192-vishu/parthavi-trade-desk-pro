@@ -2195,6 +2195,11 @@ app.get('/api/chart/candles',async(req,res)=>{
 
 // PHASE 10 â€” advanced prediction, confirmation and transparent historical target-hit analysis.
 function sendRenderOptimizedPhase10Response(res,payload){
+  // Every Phase 10 response carries an explicit fail-closed eligibility boolean.
+  // Keep this inside the response adapter so fast WAIT and catch/degraded paths cannot omit it.
+  if(payload?.prediction && typeof payload.prediction==='object'){
+    payload.prediction.finalTradePlanEligible=payload.prediction.finalTradePlanEligible===true;
+  }
   if(!IS_RENDER_MEMORY_LIMITED_RUNTIME) return res.json(payload);
   const {greeks,greekRisk,backtest,optionBacktest,candles,multiTf,...compact}=payload;
   return res.json(compact);
