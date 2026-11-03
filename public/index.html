@@ -984,7 +984,7 @@ body.chart-fullscreen-open>.app>.bottom{
     <div class="level"><small>Option IV</small><b id="riskIV">—</b></div>
     <div class="level"><small>Greek guard</small><b id="riskGreekGuard" class="neutral">WAIT</b></div>
   </div>
-  <div class="note" id="riskGreekMessage">A contract candidate is shown only after the validated 15M direction and recent out-of-sample hit rate both clear 68%; setup score is not a win probability. Quantity remains locked until all live contract and risk checks pass.</div>
+  <div class="note" id="riskGreekMessage">A contract candidate is shown only after the validated 15M direction and recent out-of-sample hit rate both clear 70%; setup score is not a win probability. Quantity remains locked until all live contract and risk checks pass.</div>
 </section>
 
 <section class="card" id="phase10Prediction">
@@ -1079,7 +1079,7 @@ body.chart-fullscreen-open>.app>.bottom{
       </div>
       <div class="prediction-meter"><i id="p10Meter"></i></div>
       <div class="finder-note" id="p10TradeFinder">🎯 <b>TWO-TRADE FINDER ACTIVE</b> • Confirmed opportunities today: <b id="p10OpportunityCount">0 / 2</b> • Scanner keeps searching during the NSE session and never manufactures a weak second trade.</div>
-      <div class="finder-note" id="p10Note">Setup score is a confluence score, NOT a win probability. Bullish/bearish percentages stay hidden unless the current direction estimate and recent out-of-sample hit rate both clear 68% with at least 30 resolved high-confidence forecasts. NIFTY index backtest is not an option-premium P&amp;L test.</div>
+      <div class="finder-note" id="p10Note">Setup score is a confluence score, NOT a win probability. Bullish/bearish percentages stay hidden unless the current direction estimate and recent out-of-sample hit rate both clear 70% with at least 30 resolved high-confidence forecasts. NIFTY index backtest is not an option-premium P&amp;L test.</div>
     </div>
     <div>
       <div class="card-head" style="margin-bottom:7px"><h3 style="font-size:12px">Confirmation Matrix</h3><span>Current decision inputs</span></div>
@@ -2399,7 +2399,7 @@ function stccRender(x){
       ? 'NSE is closed; live entries stay disabled until the next market session.'
       : blockers.length
         ? 'No confirmed trade: '+blockers.slice(0,3).join(' • ')+(blockers.length>3?' • +'+(blockers.length-3)+' more checks pending':'')
-        : (signalState==='CONFIRMED'&&Number(p?.modelConfidence||0)<PTD_COMMAND_CENTER_CONFIDENCE?'A confirmed setup below 90/100 confluence score stays hidden from the Command Center. The AI Adviser review tier is 80/100; these are setup scores, not win probabilities. A calibrated direction ≥68% and every final live safety gate are separately required.':(p?.reasoning||'No live confirmed option plan right now. The scanner keeps searching and will not manufacture a trade.'));
+        : (signalState==='CONFIRMED'&&Number(p?.modelConfidence||0)<PTD_COMMAND_CENTER_CONFIDENCE?'A confirmed setup below 90/100 confluence score stays hidden from the Command Center. The AI Adviser review tier is 80/100; these are setup scores, not win probabilities. A calibrated direction ≥70% and every final live safety gate are separately required.':(p?.reasoning||'No live confirmed option plan right now. The scanner keeps searching and will not manufacture a trade.'));
   }
   $('stccContract').textContent=plan?.contract||'—';
   $('stccContractMeta').textContent=plan?((plan.optionType||'OPTION')+' • Strike '+(plan.strike??'—')+' • Lot '+(plan.lotSize??'—')):'Live contract only';
@@ -2539,7 +2539,7 @@ function renderFreeAdvisor(p,resp={}){
   }
   const showPlan=hasCandidate;
   if(contract)contract.textContent=showPlan?String(plan.contract||'—'):'—';
-  if(meta)meta.textContent=showPlan?`${plan.optionType||''} ${plan.strike??''} • Expiry ${plan.expiry||'—'} • Lot ${plan.lotSize??'—'}${candidatePreview?' • ANALYSIS ONLY • NO TRADE':watchOnly?' • CANDIDATE ONLY':''} • Greeks ${plan.greekStatus||'UNVERIFIED'}`:'A directional contract candidate requires a validated 15M estimate ≥68%, out-of-sample hit rate ≥68%, and fresh live checks';
+  if(meta)meta.textContent=showPlan?`${plan.optionType||''} ${plan.strike??''} • Expiry ${plan.expiry||'—'} • Lot ${plan.lotSize??'—'}${candidatePreview?' • ANALYSIS ONLY • NO TRADE':watchOnly?' • CANDIDATE ONLY':''} • Greeks ${plan.greekStatus||'UNVERIFIED'}`:'A directional contract candidate requires a validated 15M estimate ≥70%, out-of-sample hit rate ≥70%, and fresh live checks';
   $('freeAdvisorEntry').textContent=showPlan?money(plan.entry):'—';
   $('freeAdvisorSL').textContent=showPlan?money(plan.stopLoss):'—';
   $('freeAdvisorT1').textContent=showPlan?money(plan.target1):'—';
