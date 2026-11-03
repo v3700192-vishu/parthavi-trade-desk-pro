@@ -20,5 +20,5 @@ test("Render Phase 10 returns a fast locked response when verified NIFTY candles
   assert.match(fastPath,/directionalForecastEligible=false/);
   assert.match(fastPath,/action='NO TRADE'/);
 });
-test("Service worker shell version is bumped",()=>{assert.match(sw,/ptd-shell-v49/);assert.doesNotMatch(sw,/ptd-shell-v45/);});
+test("Service worker shell version is bumped",()=>{assert.match(sw,/ptd-shell-v55/);assert.doesNotMatch(sw,/ptd-shell-v45/);});
 test("Render inline JavaScript parses",()=>{const blocks=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];assert.equal(blocks.length,1);assert.doesNotThrow(()=>new Function(blocks[0][1]));});
