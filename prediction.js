@@ -11,7 +11,7 @@ const SIGNAL_THRESHOLDS = Object.freeze({
   directionalMinScore: 20, adxMin: 20, volumeBreakout: 1.5, volumeContinuation: 0.90,
   thetaHardMax: 10, deltaHardMin: 0.20, thetaConfirmMax: 6, deltaConfirmMin: 0.35,
   vixMin: 12, vixMax: 22, watchMinConfirmations: 6,
-  directionalProbabilityMin: 68, directionalCalibrationMinSignals: 30,
+  directionalProbabilityMin: 70, directionalCalibrationMinSignals: 30,
   contractScanConfidence: 70, adviserConfidence: 80, commandCenterConfidence: 90
 });
 
@@ -181,7 +181,7 @@ export function buildTradeTiming(p={}, {marketOpen=p.marketOpen===true,now=Date.
     reason=reasons[0]||'Live exchange tick, complete verified feeds, event safety and all risk gates must pass.';
   }else if(p.directionalCalibrationEligible!==true||!Number.isFinite(Number(p.directionProbability))||Number(p.directionProbability)<68){
     status='WAIT • DIRECTION NOT VALIDATED';
-    reason='The 15M chart direction must match a >=68% current estimate and pass a recent walk-forward hit-rate of >=68% over at least 30 resolved high-confidence forecasts.';
+    reason='The 15M chart direction must match a >=70% current estimate and pass a recent walk-forward hit-rate of >=70% over at least 30 resolved high-confidence forecasts.';
   }else if(p.signalState!=='CONFIRMED'||!hasAction||p.commandCenterEligible!==true||
     confidence<90||Number(p.confirmationPct)!==100||
     p.optionPlan?.available!==true||p.optionPlan?.candidateOnly===true||
@@ -265,7 +265,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],rows15=[],rows60=[],news={},
   movementDiagnostics.source=candleSource;
   movementDiagnostics.verified=candlesVerified;
   // The analogue model publishes no directional percentage until recent
-  // chronological walk-forward tests prove >=68% hit rate on >=30 resolved,
+  // chronological walk-forward tests prove >=70% hit rate on >=30 resolved,
   // high-confidence directional forecasts.
   const forwardForecast=buildForwardForecast(rows5,{marketOpen});
   const directionalForecast=forwardForecast?.horizons?.["15"]||{};
@@ -502,7 +502,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],rows15=[],rows60=[],news={},
   // At a 70/100 setup score, start searching for a *candidate contract* only when direction is calibrated, even if
   // other safety confirmations fail. The server still requires a fresh live exchange tick,
   // a live quoted option chain and verified contract Greeks; this flag never means BUY/ready.
-  const contractScanEligible=prediction!=='NEUTRAL' && calibratedDirectionMatches && modelConfidence>=SIGNAL_THRESHOLDS.contractScanConfidence && marketOpen;
+  const contractScanEligible=prediction!=='NEUTRAL' && calibratedDirectionMatches && marketOpen;
   const tradeTiming=buildTradeTiming({marketOpen,signalBarTime:rows5?.at?.(-1)?.t||null,signalState,action,prediction,modelConfidence,confirmationPct,finalPlan:plan,candlesVerified,feedComplete,eventSafe,noTradeReasons,exchangeTickVerified:false,commandCenterEligible:false,optionPlan:null,directionalCalibrationEligible:calibratedDirectionMatches,directionProbability:calibratedDirectionMatches?directionalForecast.leadingProbability:null},{marketOpen,now:Date.now()});
   const reasoning = `Early direction: ${earlyDirection} (${earlyScore >= 0 ? '+' : ''}${earlyScore}). ${earlyDirectionReason} ` + (signalState==='CONFIRMED'
     ? `${prediction} structure aligns across 1H/15M/5M with ${confirmedCount}/${required.length} confirmation checks; VIX/ADX/volume/event filters passed and minimum RR is 1:2.`
@@ -559,7 +559,7 @@ export function buildPrediction({h1,m15,m5,rows5=[],rows15=[],rows60=[],news={},
       feeds:{marketOpen,candlesFresh,candlesVerified,optionFlowVerified,newsVerified,globalVerified,eventSafe},
       rewardRisk:{minimum:2,pass:planGatesPassed&&!!plan?.available}
     },
-    note:'Scanner stays active during the NSE session, but a bullish/bearish percentage and directional option candidate are released only when the current 15M analogue estimate is >=68% and at least 30 recent high-confidence walk-forward predictions also achieve >=68% hit rate. Otherwise the chart can show an early observation only and the signal remains NO TRADE. A 1.5x 10-day same-slot volume breakout is preferred; strong trend-continuation may qualify from 0.90x when 1H/15M/5M, momentum and ADX agree. India VIX 12–22, event safety, complete verified feeds and minimum 1:2 risk-to-reward remain hard protections. This is a quality filter, not a guarantee of profit. Final SL/targets are volatility-based planning levels on the underlying index; option premium SL/targets must be verified from the selected live contract and its Greeks.',
+    note:'Scanner stays active during the NSE session, but a bullish/bearish percentage and directional option candidate are released only when the current 15M analogue estimate is >=70% and at least 30 recent high-confidence walk-forward predictions also achieve >=70% hit rate. Otherwise the chart can show an early observation only and the signal remains NO TRADE. A 1.5x 10-day same-slot volume breakout is preferred; strong trend-continuation may qualify from 0.90x when 1H/15M/5M, momentum and ADX agree. India VIX 12–22, event safety, complete verified feeds and minimum 1:2 risk-to-reward remain hard protections. This is a quality filter, not a guarantee of profit. Final SL/targets are volatility-based planning levels on the underlying index; option premium SL/targets must be verified from the selected live contract and its Greeks.',
     reasoning
   };
 }
