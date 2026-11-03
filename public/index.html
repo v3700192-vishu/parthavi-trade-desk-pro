@@ -961,14 +961,14 @@ body.chart-fullscreen-open>.app>.bottom{
 <section class="card" id="finalTradePlan">
   <div class="card-head"><h3>FINAL TRADE PLAN • SL / TARGET SEPARATE</h3><span id="finalPlanBar">WAIT • CLOSED 5M</span></div>
   <div class="finalplan">
-    <div class="plan-card main"><small>Action</small><b id="finalPlanDirection" class="neutral">NO TRADE</b><span>Watch plan can show the live contract early; live execution unlocks only after confirmation.</span></div>
-    <div class="plan-card"><small>Recommended Contract</small><b id="finalPlanContract">—</b><span id="finalPlanContractMeta">Live option premium target band ₹25–₹50</span></div>
-    <div class="plan-card"><small>Entry / Trigger</small><b id="finalPlanEntry">—</b><span>Underlying index level</span></div>
-    <div class="plan-card"><small>Stop Loss</small><b id="finalPlanSL">—</b><span>1.0 × ATR planning risk</span></div>
-    <div class="plan-card"><small>Target 1</small><b id="finalPlanT1">—</b><span>2.0R minimum planning level</span></div>
-    <div class="plan-card"><small>Target 2</small><b id="finalPlanT2">—</b><span>2.5R planning level</span></div>
+    <div class="plan-card main"><small>Action</small><b id="finalPlanDirection" class="neutral">NO TRADE</b><span>Manual BUY instruction only after every verified gate passes. Automatic order execution remains OFF.</span></div>
+    <div class="plan-card"><small>Recommended Contract</small><b id="finalPlanContract">—</b><span id="finalPlanContractMeta">Waiting for a verified 70%+ direction and safe live CE/PE contract.</span></div>
+    <div class="plan-card"><small>Entry / Premium</small><b id="finalPlanEntry">—</b><span>Selected live option premium (₹)</span></div>
+    <div class="plan-card"><small>Stop Loss</small><b id="finalPlanSL">—</b><span>Option premium stop-loss (₹)</span></div>
+    <div class="plan-card"><small>Target 1</small><b id="finalPlanT1">—</b><span>Option premium target (₹)</span></div>
+    <div class="plan-card"><small>Target 2</small><b id="finalPlanT2">—</b><span>Option premium target (₹)</span></div>
     <div class="plan-card"><small>R:R</small><b id="finalPlanRR">—</b><span>T1 / T2</span></div>
-    <div class="plan-foot" id="finalPlanNote">No trade plan loaded. Wait for a confirmed setup. The plan is based on the underlying index; the actual option premium entry/SL/targets must be checked against the selected live option contract and its Greeks.</div>
+    <div class="plan-foot" id="finalPlanNote">NO TRADE until the validated 15M probability is at least 70%, the live CE/PE strike and premium are verified, and timeframe, market-data, option-flow, Greeks and risk gates all pass. No strike or premium is guessed.</div>
   </div>
 </section>
 
@@ -2302,7 +2302,7 @@ function stccCurrentPlan(p){
   const plan=p?.optionPlan||{};
   const action=String(p?.action||'NO TRADE').toUpperCase();
   const rawDirectionalProbability=p?.directionalProbability;
-  const directionalGatePassed=rawDirectionalProbability!=null&&rawDirectionalProbability!==''&&Number.isFinite(Number(rawDirectionalProbability))&&Number(rawDirectionalProbability)>=68;
+  const directionalGatePassed=rawDirectionalProbability!=null&&rawDirectionalProbability!==''&&Number.isFinite(Number(rawDirectionalProbability))&&Number(rawDirectionalProbability)>=70;
   const required=['trend','setup','trigger','momentum','volume','strength','options','greeks','news','global','eventSafe'];
   const allConfirmationsPass=required.every(k=>p?.confirmations?.[k]===true);
   const usable=directionalGatePassed && p?.commandCenterEligible===true && p?.signalState==='CONFIRMED' && ['CALL','PUT'].includes(action) && !!plan.available && plan.candidateOnly!==true && plan.greekStatus==='PASS' && Number(p?.modelConfidence)>=PTD_COMMAND_CENTER_CONFIDENCE && Number(p?.confirmationPct)===100 && allConfirmationsPass && p?.feedComplete===true && p?.exchangeTickVerified===true && p?.eventSafe===true && (p?.noTradeReasons||[]).length===0;
@@ -2477,7 +2477,7 @@ function renderFreeAdvisor(p,resp={}){
   const setupScore=Number(p?.modelConfidence)||0;
   const rawDirectionalProbability=p?.directionalProbability;
   const directionalConfidence=rawDirectionalProbability==null||rawDirectionalProbability===''||!Number.isFinite(Number(rawDirectionalProbability))?null:Number(rawDirectionalProbability);
-  const directionalGatePassed=directionalConfidence!==null&&directionalConfidence>=68;
+  const directionalGatePassed=directionalConfidence!==null&&directionalConfidence>=70;
   const optionConfidence=setupScore;
   const strictConfirmed=!marketClosed&&directionalGatePassed&&p?.commandCenterEligible===true&&state==='CONFIRMED'&&['CALL','PUT'].includes(action)&&plan.available===true&&plan.candidateOnly!==true
     &&p?.exchangeTickVerified===true&&p?.feedComplete===true
@@ -2638,7 +2638,7 @@ function renderForwardForecast(forecast,movement,decision,marketOpenFlag){
   }
   if(chartBias){chartBias.textContent=bias;chartBias.className=(bias.startsWith('BULLISH')?'bullish':bias.startsWith('BEARISH')?'bearish':'wait');}
   if(chartDirection)chartDirection.textContent=direction;
-  if(chartProbability)chartProbability.textContent=horizon.available&&Number.isFinite(up)&&Number.isFinite(down)&&Number.isFinite(range)?('UP '+up+'% / DOWN '+down+'% / RANGE '+range+'%'):(horizon.historyAvailable?'WITHHELD • 68% WALK-FORWARD GATE NOT PASSED':'NO VERIFIED ESTIMATE');
+  if(chartProbability)chartProbability.textContent=horizon.available&&Number.isFinite(up)&&Number.isFinite(down)&&Number.isFinite(range)?('UP '+up+'% / DOWN '+down+'% / RANGE '+range+'%'):(horizon.historyAvailable?'WITHHELD • 70% WALK-FORWARD GATE NOT PASSED':'NO VERIFIED ESTIMATE');
   if(chartPrice)chartPrice.textContent=movement?.available&&Number.isFinite(Number(movement.latestPrice))?Number(movement.latestPrice).toLocaleString('en-IN',{maximumFractionDigits:2}):'NO CANDLE DATA';
   if(freshness){freshness.textContent=!marketOpen?'MARKET CLOSED':!liveFresh?'LIVE DATA NOT VERIFIED':'FRESH CANDLE';freshness.className='forward-forecast-badge';}
   if(chartDrivers){
@@ -2720,10 +2720,12 @@ function renderPredictionPanel(resp){
   const setupScore=Number(conf)||0;
   const rawDirectionalProbability=p?.directionalProbability;
   const directionalConfidence=rawDirectionalProbability==null||rawDirectionalProbability===''||!Number.isFinite(Number(rawDirectionalProbability))?null:Number(rawDirectionalProbability);
-  const directionalGatePassed=directionalConfidence!==null&&directionalConfidence>=68;
+  const directionalGatePassed=directionalConfidence!==null&&directionalConfidence>=70;
   const optionConfidence=setupScore;
   const levelsAvailable=optionPlan.riskPlanAvailable!==false;
-  const finalPlanVisible=!!optionPlan?.available&&optionConfidence>=PTD_FINAL_PLAN_CONFIDENCE&&directionalGatePassed&&levelsAvailable;
+  const finalPremiumLevelsAvailable=['entry','stopLoss','target1','target2'].every(k=>Number.isFinite(Number(optionPlan?.[k]))&&Number(optionPlan[k])>0);
+  const finalContractVerified=!!String(optionPlan?.contract||'').trim()&&['CE','PE'].includes(String(optionPlan?.optionType||'').toUpperCase())&&optionPlan?.strike!=null&&!!optionPlan?.expiry;
+  const finalPlanVisible=p?.finalTradePlanEligible===true&&directionalGatePassed&&finalContractVerified&&finalPremiumLevelsAvailable&&optionPlan?.available===true&&optionPlan.candidateOnly!==true&&optionPlan.greekStatus==='PASS'&&levelsAvailable;
   const optionVisible=!!optionPlan?.available&&optionConfidence>=PTD_ADVISOR_CONFIDENCE&&directionalGatePassed;
   const candidatePreview=finalPlanVisible&&(optionPlan?.candidateOnly===true||!['CONFIRMED','WATCH'].includes(state));
   const pct=p?.confirmationPct;
@@ -2790,57 +2792,39 @@ function renderPredictionPanel(resp){
     const contractLine=optionVisible
       ? ` • ${optionPlan.candidateOnly?'Candidate (NO TRADE)':'Contract'}: <b>${escapeHtml(optionPlan.contract||'—')}</b> • LTP ₹${Number(optionPlan.entry||0).toFixed(2)} • Δ ${Number(optionPlan.delta||0).toFixed(3)} • Θ ${Number(optionPlan.theta||0).toFixed(2)} • Greek ${escapeHtml(optionPlan.greekStatus||'WAIT')}`
       : (setupScore>=PTD_ADVISOR_CONFIDENCE?' • Setup score ≥80/100: checking live contract and calibration gates.':'');
-    finder.innerHTML="&#127919; <b>CONTINUOUS SETUP SCANNER ACTIVE</b> | Confirmed opportunities today: <b id='p10OpportunityCount'>0 / 2</b> | Setup-score tiers: 70/100 scan • 80/100 adviser review • >=90/100 command-center tier. These are not win probabilities. A validated 15M direction >=68% and all live safety gates are required."+contractLine+" | Scanner keeps searching during the NSE session.";
+    finder.innerHTML="&#127919; <b>CONTINUOUS SETUP SCANNER ACTIVE</b> | Confirmed opportunities today: <b id='p10OpportunityCount'>0 / 2</b> | Setup-score tiers: 70/100 scan • 80/100 adviser review • >=90/100 command-center tier. These are not win probabilities. A validated 15M direction >=70% and all live safety gates are required."+contractLine+" | Scanner keeps searching during the NSE session.";
   }
   renderP10OpportunityCount();
   recordP10Opportunity(p);
 
-  // Final Plan scans from 70/100 setup score; this is not a win probability and cannot bypass validation or risk gates.
+  // Final Trade Plan is released only by the server-approved 70% calibrated probability and all live gates.
   const finalPlanBlockers=Array.isArray(p?.noTradeReasons)?p.noTradeReasons.filter(Boolean):[];
   try{
     const fd=$('finalPlanDirection'), fc=$('finalPlanContract'), fm=$('finalPlanContractMeta');
     const fe=$('finalPlanEntry'), fsl=$('finalPlanSL'), ft1=$('finalPlanT1'), ft2=$('finalPlanT2'), frr=$('finalPlanRR'), fn=$('finalPlanNote'), fb=$('finalPlanBar');
-    if(state==='CONFIRMED' || state==='WATCH' || candidatePreview){
-      if(fd){fd.textContent=candidatePreview?`${optionPlan.optionType} CANDIDATE • NO TRADE`:state==='CONFIRMED'?action:displayAction;fd.className=(optionPlan.optionType==='CE'||displayAction==='CALL'||displayAction==='CE WATCH')?'bullish':(optionPlan.optionType==='PE'||displayAction==='PUT'||displayAction==='PE WATCH')?'bearish':'neutral';}
-      if(fe)fe.textContent=candidatePreview?Number(optionPlan.entry).toFixed(2):p?.finalPlan?.entry!=null?Number(p.finalPlan.entry).toFixed(2):'—';
-      if(fsl)fsl.textContent=!levelsAvailable?'WAIT':candidatePreview?Number(optionPlan.stopLoss).toFixed(2):p?.finalPlan?.sl!=null?Number(p.finalPlan.sl).toFixed(2):'—';
-      if(ft1)ft1.textContent=!levelsAvailable?'WAIT':candidatePreview?Number(optionPlan.target1).toFixed(2):p?.finalPlan?.target1!=null?Number(p.finalPlan.target1).toFixed(2):'—';
-      if(ft2)ft2.textContent=!levelsAvailable?'WAIT':candidatePreview?Number(optionPlan.target2).toFixed(2):p?.finalPlan?.target2!=null?Number(p.finalPlan.target2).toFixed(2):'—';
-      if(frr)frr.textContent=!levelsAvailable?'WAIT':candidatePreview?`1:${optionPlan.rr1} / 1:${optionPlan.rr2}`:p?.finalPlan?.rr1!=null?`1:${p.finalPlan.rr1} / 1:${p.finalPlan.rr2}`:'—';
-      if(fc){
-        fc.textContent=finalPlanVisible?String(optionPlan.contract):'WAIT';
-        fc.className=finalPlanVisible?(optionPlan.optionType==='PE'?'bearish':'bullish'):'wait';
-      }
-      if(fm){
-        fm.textContent=finalPlanVisible
-          ? `${optionPlan.optionType} ${optionPlan.strike} • Expiry ${optionPlan.expiry} • Premium ₹${Number(optionPlan.entry).toFixed(2)} • Δ ${Number(optionPlan.delta).toFixed(3)} • Θ ${Number(optionPlan.theta).toFixed(2)} • ${candidatePreview?'ANALYSIS ONLY • NO TRADE':optionPlan.candidateOnly?'GREEK CAUTION':'WATCH / CONFIRMED'}`
-          : (setupScore>=PTD_FINAL_PLAN_CONFIDENCE?'Setup score ≥70/100; calibration gate also required':'Contract scan begins at a 70/100 setup score');
-      }
-      if(fn){
-        fn.textContent=finalPlanVisible
-          ? `${candidatePreview?'Candidate only. ':'Contract candidate. '}Premium Entry ₹${Number(optionPlan.entry).toFixed(2)} • SL ₹${Number(optionPlan.stopLoss).toFixed(2)} • T1 ₹${Number(optionPlan.target1).toFixed(2)} • T2 ₹${Number(optionPlan.target2).toFixed(2)} • R:R 1:${optionPlan.rr1}/1:${optionPlan.rr2}. Delta ${Number(optionPlan.delta).toFixed(3)}, Theta ${Number(optionPlan.theta).toFixed(2)} (${optionPlan.greekStatus||'UNVERIFIED'}). Setup score ${setupScore.toFixed(0)}/100 (not probability); validated direction ${p?.directionalProbability==null?'NOT VALIDATED':Number(p.directionalProbability).toFixed(0)+'%'}. Live execution remains OFF and all failed gates remain NO TRADE.`
-          : !levelsAvailable?'SL/T1/T2/R:R WAIT — live risk levels are not verified; no trade.':'No contract candidate until the 15M direction estimate and recent out-of-sample hit rate both validate at >=68% with >=30 resolved forecasts. The scanner keeps monitoring; failed gates remain NO TRADE.';
-      }
-      if(fb)fb.textContent=candidatePreview?'NO TRADE • CANDIDATE ONLY':state==='CONFIRMED'?'CONFIRMED TRADE PLAN':'WATCH • WAIT FOR FINAL GATES';
+    if(finalPlanVisible){
+      const optionType=String(optionPlan.optionType).toUpperCase();
+      const finalAction=optionType==='CE'?'BUY CE':'BUY PE';
+      const premium=Number(optionPlan.entry);
+      if(fd){fd.textContent=finalAction;fd.className=optionType==='CE'?'bullish':'bearish';}
+      if(fc){fc.textContent=String(optionPlan.contract);fc.className=optionType==='PE'?'bearish':'bullish';}
+      if(fm)fm.textContent=`NIFTY ${optionType} ${optionPlan.strike} • Expiry ${optionPlan.expiry} • Live premium ₹${premium.toFixed(2)} • Δ ${Number(optionPlan.delta).toFixed(3)} • Θ ${Number(optionPlan.theta).toFixed(2)}`;
+      if(fe)fe.textContent=`₹${premium.toFixed(2)}`;
+      if(fsl)fsl.textContent=`₹${Number(optionPlan.stopLoss).toFixed(2)}`;
+      if(ft1)ft1.textContent=`₹${Number(optionPlan.target1).toFixed(2)}`;
+      if(ft2)ft2.textContent=`₹${Number(optionPlan.target2).toFixed(2)}`;
+      if(frr)frr.textContent=Number.isFinite(Number(optionPlan.rr1))&&Number.isFinite(Number(optionPlan.rr2))?`1:${Number(optionPlan.rr1).toFixed(2)} / 1:${Number(optionPlan.rr2).toFixed(2)}`:'—';
+      if(fn)fn.textContent=`Validated 15M directional probability ${directionalConfidence.toFixed(0)}%. Selected live ${optionType} contract passed quote, liquidity, premium, Delta/Theta and risk checks. Entry ₹${premium.toFixed(2)} • SL ₹${Number(optionPlan.stopLoss).toFixed(2)} • T1 ₹${Number(optionPlan.target1).toFixed(2)} • T2 ₹${Number(optionPlan.target2).toFixed(2)}. Review the live premium before placing any manual order; automatic order execution remains OFF.`;
+      if(fb)fb.textContent='70%+ VERIFIED • BUY PLAN';
+      window.selectedContract={contract:optionPlan.contract,symbol:optionPlan.symbol,token:optionPlan.token,underlying:optionPlan.underlying,expiry:optionPlan.expiry,optionType:optionType,strike:optionPlan.strike,exchange:'NFO',lotsize:optionPlan.lotSize,ltp:optionPlan.entry};
     }else{
       if(fd){fd.textContent='NO TRADE';fd.className='neutral';}
       if(fc){fc.textContent='—';fc.className='neutral';}
-      if(fm)fm.textContent=setupScore>=PTD_FINAL_PLAN_CONFIDENCE
-        ? `Setup score ${setupScore.toFixed(0)}/100 • 70/100 unlocks scan only, not a win probability. Final Trade also requires validated 15M direction, resolved out-of-sample history and all live risk gates.`
-        : 'Live option premium target band ₹25–₹50';
+      if(fm)fm.textContent='Waiting for a validated 70%+ 15M probability and a verified live CE/PE contract.';
       if(fe)fe.textContent='—'; if(fsl)fsl.textContent='—'; if(ft1)ft1.textContent='—'; if(ft2)ft2.textContent='—'; if(frr)frr.textContent='—';
-      if(fn)fn.textContent=setupScore>=PTD_FINAL_PLAN_CONFIDENCE
-        ? `Setup score ${setupScore.toFixed(0)}/100 reached the scan tier, but FINAL TRADE is blocked. ${finalPlanBlockers.slice(0,3).join(' ')||p?.tradeTiming?.reason||p?.reasoning||'Required validation or safety checks remain incomplete.'} No entry is authorized until every gate passes.`
-        : 'No actionable plan yet. Wait for a directional WATCH/CONFIRMED state; setup score alone does not authorize a trade.';
-      if(fb)fb.textContent=setupScore>=PTD_FINAL_PLAN_CONFIDENCE?'NO TRADE • GATES BLOCKED':'WAIT • SCANNING';
-    }
-
-    if(optionVisible && optionPlan?.available && optionPlan.candidateOnly!==true && (state==='WATCH'||state==='CONFIRMED')){
-      window.selectedContract={
-        contract:optionPlan.contract,symbol:optionPlan.symbol,token:optionPlan.token,
-        underlying:optionPlan.underlying,expiry:optionPlan.expiry,optionType:optionPlan.optionType,
-        strike:optionPlan.strike,exchange:'NFO',lotsize:optionPlan.lotSize,ltp:optionPlan.entry
-      };
+      if(fn)fn.textContent=finalPlanBlockers.length?'NO TRADE • '+finalPlanBlockers.slice(0,4).join(' • '):'No trade plan yet. The 70% calibrated probability, live quote, timeframe confirmation, option-flow and selected-contract risk checks must all pass. No strike or premium is guessed.';
+      if(fb)fb.textContent=directionalGatePassed?'WAIT • LIVE CONTRACT / RISK CHECKS':'WAIT • 70% VALIDATED PROBABILITY NEEDED';
+      window.selectedContract=null;
     }
   }catch(_){}
   try{
