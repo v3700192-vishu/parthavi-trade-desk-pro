@@ -216,7 +216,7 @@ function calibrateDirectionalHorizon(rows, features, atr, config) {
       ? "Recent high-confidence directional forecasts passed the out-of-sample hit-rate and sample-size gates."
       : qualified.length < MIN_CALIBRATION_SIGNALS
         ? "Fewer than 30 out-of-sample high-confidence directional forecasts are resolved; do not display a directional percentage."
-        : "Recent out-of-sample high-confidence directional hit rate is below 68%; suppress directional percentage and wait."
+        : "Recent out-of-sample high-confidence directional hit rate is below 70%; suppress directional percentage and wait."
   };
 }
 
@@ -273,7 +273,7 @@ function forecastHorizon(rows, features, atr, config) {
   const reason=available
     ? "Published direction is capped at the lower of the analogue estimate and recent walk-forward hit rate; at least 30 resolved high-confidence forecasts must validate."
     : !currentDirectionalGate
-      ? "Current leading directional estimate is below 68% or the leading class is RANGE; suppress directional percentage."
+      ? "Current leading directional estimate is below 70% or the leading class is RANGE; suppress directional percentage."
       : calibration.reason;
   return {
     available,historyAvailable:true,horizonMinutes:config.minutes,
