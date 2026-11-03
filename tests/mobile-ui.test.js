@@ -127,10 +127,12 @@ test("candidate contract scanner is single-flight, parallelizes independent quot
   assert.ok(server.includes(")].slice(0,2);"));
   assert.ok(server.includes("boundedFeed(findBuyableOptionPlanCoalesced"));
   assert.ok(server.includes("const contractDisplayConfidence=directionalConfidence;"));
-  assert.ok(server.includes("contractSetupScore>=70"));
-  assert.ok(server.includes("contractDisplayConfidence>=68"));
+  assert.ok(server.includes("contractDisplayConfidence>=70"));
+  assert.ok(server.includes("prediction.finalTradePlanEligible=Boolean("));
+  assert.ok(server.includes("Number(prediction.directionalProbability)>=70"));
+  assert.ok(server.includes("prediction.optionDataVerified===true"));
   assert.ok(server.includes("prediction.directionalForecastEligible===true"));
-  assert.ok(server.includes("Number(prediction.directionalProbability)>=68"));
+  assert.ok(server.includes("Number(prediction.directionalProbability)>=70"));
   assert.match(server, /const rawDirectionalProbability=prediction\.directionalProbability/);
   assert.match(server, /const finalRawDirectionalProbability=prediction\.directionalProbability/);
   assert.doesNotMatch(server, /rawDirectionalProbability=prediction\.modelConfidence/);
@@ -143,9 +145,16 @@ test("staged contract visibility thresholds are distinct and the Command Center 
   assert.ok(html.includes("const PTD_ADVISOR_CONFIDENCE=80;"));
   assert.ok(html.includes("const PTD_COMMAND_CENTER_CONFIDENCE=90;"));
   assert.match(html, /const optionConfidence=setupScore/);
-  assert.match(html, /const finalPlanVisible=!!optionPlan\?\.available&&optionConfidence>=PTD_FINAL_PLAN_CONFIDENCE&&directionalGatePassed/);
+  assert.match(html, /const finalPlanVisible=p\?\.finalTradePlanEligible===true&&directionalGatePassed/);
+  const planStart=html.indexOf('<section class="card" id="finalTradePlan">');
+  const planEnd=html.indexOf('</section>',planStart);
+  const finalPlanMarkup=planStart>=0&&planEnd>planStart?html.slice(planStart,planEnd):"";
+  for(const field of ["finalPlanContract","finalPlanContractMeta","finalPlanEntry","finalPlanSL","finalPlanT1","finalPlanT2","finalPlanRR","finalPlanNote"])assert.ok(finalPlanMarkup.includes('id="'+field+'"'));
+  assert.match(html,/const finalPremiumLevelsAvailable=/);
+  assert.match(html,/const finalContractVerified=/);
+  assert.match(html,/const finalAction=optionType==='CE'\?'BUY CE':'BUY PE'/);
   assert.match(html, /const optionVisible=!!optionPlan\?\.available&&optionConfidence>=PTD_ADVISOR_CONFIDENCE&&directionalGatePassed/);
-  assert.match(html, /const directionalGatePassed=directionalConfidence!==null&&directionalConfidence>=68/);
+  assert.match(html, /const directionalGatePassed=directionalConfidence!==null&&directionalConfidence>=70/);
   assert.match(html, /const usable=directionalGatePassed && p\?\.commandCenterEligible===true/);
   assert.doesNotMatch(html, /directionalConfidence\?\?p\?\.modelConfidence|directionalConfidence\?\?conf/);
   assert.match(html, /Number\(p\?\.modelConfidence\)>=PTD_COMMAND_CENTER_CONFIDENCE/);
@@ -283,7 +292,7 @@ test("chart reports stale candle fallback and preserves selected historical day 
 });
 
 test("service-worker cache version is bumped and never caches live API responses", () => {
-  assert.match(serviceWorker, /const CACHE='ptd-shell-v49'/);
+  assert.match(serviceWorker, /const CACHE='ptd-shell-v55'/);
   assert.match(serviceWorker, /prediction-report\.html/);
   assert.match(serviceWorker, /if\(u\.pathname\.startsWith\('\/api\/'\)\) return/);
   assert.doesNotMatch(serviceWorker, /const CACHE='ptd-shell-v3[0-6]'/);
