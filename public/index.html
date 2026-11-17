@@ -220,6 +220,11 @@ body{-webkit-overflow-scrolling:touch}
 .trade-timing-panel{margin-top:10px;border:1px solid var(--line2);border-radius:13px;padding:10px;background:linear-gradient(135deg,rgba(100,230,255,.055),rgba(169,139,255,.055)),#070d18}.timing-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:10px}.timing-decision{font-size:9px;font-weight:900;border:1px solid var(--line2);border-radius:999px;padding:5px 8px;color:var(--amber)}.timing-decision.ready{color:var(--green);border-color:rgba(33,230,161,.45)}.timing-decision.blocked{color:var(--red);border-color:rgba(255,95,128,.45)}.trade-timing-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:8px}.trade-timing-cell{border:1px solid var(--line);border-radius:9px;background:#050a14;padding:8px;min-width:0}.trade-timing-cell small{display:block;color:var(--muted);font-size:7px;text-transform:uppercase;letter-spacing:.45px}.trade-timing-cell b{display:block;margin-top:4px;font-size:11px;overflow-wrap:anywhere}.timing-tier{display:flex;justify-content:space-between;flex-wrap:wrap;gap:5px;margin-top:8px;color:#bac7dc;font-size:8px}.timing-reason{margin:7px 0 0;color:var(--muted);font-size:8px;line-height:1.5}
 @media(max-width:620px){.trade-timing-grid{grid-template-columns:1fr 1fr}.timing-head{align-items:flex-start;flex-direction:column}}
 @media(max-width:820px){.prediction-grid{grid-template-columns:1fr}.prediction-stats{grid-template-columns:repeat(2,1fr)}.backtest{grid-template-columns:repeat(2,1fr)}}
+.final-plan-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+#finalPlanRefreshBtn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:8px 12px;border-radius:11px;font-size:10px;font-weight:900;white-space:nowrap;touch-action:manipulation}
+#finalPlanRefreshBtn[disabled]{opacity:.65;cursor:wait}
+#finalPlanRefreshBtn.is-refreshing .refresh-icon{display:inline-block;animation:ptd-spin .8s linear infinite}
+@media(max-width:620px){#finalTradePlan>.card-head{align-items:flex-start;flex-direction:column}.final-plan-actions{width:100%;justify-content:space-between}#finalPlanRefreshBtn{min-height:42px;font-size:11px}}
 .finalplan{display:grid;grid-template-columns:1.1fr repeat(5,1fr);gap:8px;margin-top:9px}
 .finalplan .plan-card{border:1px solid var(--line2);background:#070d18;border-radius:12px;padding:10px}
 .finalplan .plan-card small{display:block;color:var(--muted);font-size:7px;text-transform:uppercase;letter-spacing:.45px}
@@ -959,7 +964,13 @@ body.chart-fullscreen-open>.app>.bottom{
 </section>
 
 <section class="card" id="finalTradePlan">
-  <div class="card-head"><h3>FINAL TRADE PLAN • SL / TARGET SEPARATE</h3><span id="finalPlanBar">WAIT • CLOSED 5M</span></div>
+  <div class="card-head">
+    <h3>FINAL TRADE PLAN • SL / TARGET SEPARATE</h3>
+    <div class="final-plan-actions">
+      <span id="finalPlanBar">WAIT • CLOSED 5M</span>
+      <button class="btn primary" type="button" id="finalPlanRefreshBtn" onclick="refreshFinalTradePlanNow()" aria-label="Run a fresh Final Trade Plan scan" title="Refresh Phase 10 data and re-check the final trade gates"><span class="refresh-icon" aria-hidden="true">↻</span> SCAN NOW</button>
+    </div>
+  </div>
   <div class="finalplan">
     <div class="plan-card main"><small>Action</small><b id="finalPlanDirection" class="neutral">NO TRADE</b><span>Manual BUY instruction only after every verified gate passes. Automatic order execution remains OFF.</span></div>
     <div class="plan-card"><small>Recommended Contract</small><b id="finalPlanContract">—</b><span id="finalPlanContractMeta">Waiting for a verified 70%+ direction and safe live CE/PE contract.</span></div>
@@ -3480,6 +3491,24 @@ document.addEventListener('DOMContentLoaded',()=>{
       if(toast){toast.textContent='Prediction refresh failed';toast.classList.add('show');}
     }finally{
       if(button){button.disabled=false;button.classList.remove('is-refreshing');button.removeAttribute('aria-busy');if(label)label.textContent=previous;}
+    }
+  };
+  window.refreshFinalTradePlanNow=async function(){
+    const button=document.getElementById('finalPlanRefreshBtn');
+    if(button&&button.disabled)return;
+    const previous=button?button.innerHTML:'↻ SCAN NOW';
+    const bar=document.getElementById('finalPlanBar');
+    if(button){button.disabled=true;button.classList.add('is-refreshing');button.setAttribute('aria-busy','true');button.innerHTML='<span class="refresh-icon" aria-hidden="true">↻</span> SCANNING';}
+    if(bar)bar.textContent='SCANNING • FRESH LIVE CHECK';
+    try{
+      if(typeof window.refreshPredictionNow!=='function')throw new Error('Phase 10 refresh is unavailable. Reload the app and retry.');
+      await window.refreshPredictionNow();
+    }catch(error){
+      if(bar)bar.textContent='SCAN FAILED • RETRY';
+      const note=document.getElementById('finalPlanNote');
+      if(note)note.textContent='Fresh scan failed: '+(error&&error.message||'Prediction endpoint unavailable')+'. Previous values may be stale; no trade is authorized.';
+    }finally{
+      if(button){button.disabled=false;button.classList.remove('is-refreshing');button.removeAttribute('aria-busy');button.innerHTML=previous;}
     }
   };
 })();
